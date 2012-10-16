@@ -387,7 +387,7 @@ public class BrowserOutput
            }
 
 	   String szsuffix;
-           if ((szsuffix = (String) hmlabelExtend.get(szID))!=null)
+           if ((szsuffix = (String) hmlabelExtend.get(szFullID))!=null)
 	   {
               szID = szID+"_"+szsuffix;
 	   }
@@ -425,6 +425,8 @@ public class BrowserOutput
        //stores the set of interval coordinates for each chromosome and label
        HashMap hmcoords = new HashMap();
 
+       //maps a label without the prefix back to the full label
+       HashMap hmlabelToFull = new HashMap();
 
        String szLabelFull=null;
        while ((szLine = brsegment.readLine())!=null)
@@ -435,6 +437,8 @@ public class BrowserOutput
 	   int nend = Integer.parseInt(st.nextToken());
 	   szLabelFull = st.nextToken();
 	   String szLabel = szLabelFull.substring(1);
+
+	   hmlabelToFull.put(szLabel, szLabelFull);
 
 	   hschroms.add(szchrom);
 	   hslabels.add(szLabel);
@@ -514,7 +518,7 @@ public class BrowserOutput
 
 	       String szoutlabel;
 	       String szsuffix;
-	       if ((szsuffix = (String) hmlabelExtend.get(szLabels[nlabel]))!=null)
+	       if ((szsuffix = (String) hmlabelExtend.get((String) hmlabelToFull.get(szLabels[nlabel])))!=null)
 	       {
 		   szoutlabel = szLabels[nlabel]+"_"+szsuffix;
 	       }

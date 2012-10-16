@@ -3445,7 +3445,7 @@ public class ChromHMM
 
 	if (szcommand.equalsIgnoreCase("Version"))
 	{
-	    System.out.println("This is Version 1.04 of ChromHMM (c) Copyright 2008-2012 Massachusetts Institute of Technology");
+	    System.out.println("This is Version 1.05 of ChromHMM (c) Copyright 2008-2012 Massachusetts Institute of Technology");
 	}
         else if (szcommand.equalsIgnoreCase("BinarizeBed"))
 	{
