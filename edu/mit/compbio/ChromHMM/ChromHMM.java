@@ -43,6 +43,8 @@ public class ChromHMM
     static boolean BVERBOSE = false;
 
     static String SZSEGMENTEXTENSION = "_segments.bed";
+    static String SZPOSTERIOREXTENSION = "_posterior.txt";
+    static String SZSTATEBYLINEEXTENSION = "_statebyline.txt";
 
     /**
      * The default number of base pairs in a bin
@@ -423,6 +425,44 @@ public class ChromHMM
      */
     HashMap hmlabelExtend;
 
+    ///////////////////////
+    //code for confusion matrix
+    /**
+     * True iff EvalSubset should read input from posterior files
+     */
+    boolean breadposterior;
+
+    /**
+     * True iff EvalSubset should read input from standard segment files 
+     */
+    boolean breadsegment;
+
+    /**
+     * True iff EvalSubset should read input from segmentation file with one position per line
+     */
+    boolean breadstatebyline;
+
+    /**
+     * A bit string specifying for each mark whether each mark is included '1' or not included '0'
+     */
+    String szincludemarks;
+
+    /**
+     * True if the confusion matrix should be appended to the confusion output file
+     */
+    boolean bappend;
+
+    /**
+     * The directory containing the segmentations
+     */
+    String szsegmentdir;
+
+    /**
+     * The file to output confusion matrix 
+     */
+    String szconfusionfileprefix;
+
+
     ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
     /**
      * Stores an integer index and array of boolean flags
@@ -663,6 +703,47 @@ public class ChromHMM
 	    colordering[ni] = ni;
 	}
     }
+
+    ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    /**
+     * Constructor used for computing confusion results using a subset of marks for the EvalSubset command
+     */
+    public ChromHMM(String szinputdir, String szsegmentdir, String szinputfilelist, String szconfusionfileprefix,
+                    String szInitFile, String szoutfileID,
+                    int nbinsize, boolean breadposterior, boolean breadsegment,boolean breadstatebyline,
+                    String szincludemarks, boolean bappend, Color theColor) throws IOException
+    {
+	this.bappend = bappend;
+	this.szinputdir = szinputdir;
+	this.szsegmentdir = szsegmentdir;
+	this.szinputfilelist = szinputfilelist;
+	this.szchromlengthfile = szchromlengthfile;
+	this.breadposterior = breadposterior;
+	this.breadsegment = breadsegment;
+	this.breadstatebyline = breadstatebyline;
+	this.szoutfileID = szoutfileID;
+	this.szconfusionfileprefix = szconfusionfileprefix;
+	this.szInitFile = szInitFile;
+	this.nbinsize = nbinsize;
+	this.szincludemarks = szincludemarks;
+	this.theColor = theColor;
+        hmlabelExtend = new HashMap();
+	loadData();
+	loadModel();
+
+	stateordering = new int[numstates];
+	colordering = new int[numdatasets];
+	for (int ni = 0; ni < stateordering.length; ni++)
+	{
+	    stateordering[ni] = ni;
+	}
+
+	for (int ni = 0; ni < colordering.length; ni++)
+	{
+	    colordering[ni] = ni;
+	}
+    }
+
 
     ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -1918,10 +1999,620 @@ public class ChromHMM
 	}
     }
 
+    /**
+     * Takes an existing model and segmentation and outputs a confusion matrix by a selected subset
+     */
+    public void makeSegmentationConfusion() throws IOException
+    {
+        NumberFormat nf = NumberFormat.getInstance();
+        nf.setMaximumFractionDigits(4);
+
+       //number of non-zero transition required to be less than this at the more stringent cutoff 
+       //for trying to exploit sparsity in the transition matrix for efficiency gains
+       int nsparsecutoff = (int) (numstates * ChromHMM.SPARSECUTOFFRATIO);
+
+       int[] numtime = new int[traindataObservedIndex.length];
+
+       //stores the maximum number of locations in any sequence and in each sequence
+       int nmaxtime = 0;
+       for (int nseq = 0; nseq < traindataObservedIndex.length; nseq++)
+       {
+          numtime[nseq] = traindataObservedIndex[nseq].length;
+          if (numtime[nseq] > nmaxtime)
+	  {
+      	     nmaxtime = numtime[nseq];
+	  }
+       }
+
+       //double
+       double[][] fullposterior = null;
+
+       int[] fullmax = null;
+       double[][] confusion = new double[numstates][numstates];
+       double[][] normalizedconfusion = new double[numstates][numstates];
+
+       if (breadposterior)
+       {
+          fullposterior = new double[nmaxtime][numstates];
+       }
+
+       if ((breadstatebyline)||(breadsegment))
+       {
+	  fullmax = new int[nmaxtime];
+       }
+
+
+       if (ChromHMM.BVERBOSE)
+       {
+          System.out.println("Maximum number of locations\t"+nmaxtime);
+       }
+
+
+       //stores the emission probability for the i^th combination of marks in the j^th state
+       double[][] emissionproducts = new double[traindataObservedValues.length][numstates];
+
+       //stores temporary product terms
+       double[] tempproductbetaemiss = new double[numstates];
+
+       //This stores the alpha values at each time point and number of states
+       double[][] alpha = new double[nmaxtime][numstates];
+
+       //Temporary storage of the gamma's for each state
+       double[][] gamma = new double[nmaxtime][numstates];
+
+       //Temporary storage of the beta values for each state
+       double[] beta_nt = new double[numstates];
+
+       //Temporary storage of the beta values for each state at the next time point
+       double[] beta_ntp1 = new double[numstates];
+
+       //stores the scaling value for each time point
+       double[] scale = new double[nmaxtime];
+
+       //stores the transition probabilities for each column
+       double[][] coltransitionprobs = new double[numstates][numstates];
+
+       boolean[] includemarks = new boolean[numdatasets];
+
+       double[] surplus = new double[numstates];
+       double[] deficit = new double[numstates];
+       double[] dstatesagree = new double[numstates];
+
+       if (szincludemarks.length()!=numdatasets)
+       {
+	   throw new IllegalArgumentException("Number of marks in "+szincludemarks+" of "+szincludemarks.length()+" does not equal expected number of "+numdatasets);
+       }
+      
+
+       if ((breadstatebyline)||(breadsegment))
+       {
+	   //stores the maximum assignment with all marks
+          fullmax = new int[nmaxtime];
+       }
+       else
+       {
+	   //stores the posterior assignment with all marks
+          fullposterior = new double[nmaxtime][numstates];
+       }
+
+       String szdatasets = "";
+       for (int nmark = 0; nmark < includemarks.length; nmark++)
+       {
+	   if (szincludemarks.charAt(nmark) == '1')
+	   {
+	       //stores in includemarks those data sets that have a '1' for the mark
+	       includemarks[nmark] = true;
+	       if (szdatasets.equals(""))
+	       {
+		   szdatasets += datasets[nmark];
+	       }
+	       else
+	       {
+		   szdatasets += "," + datasets[nmark];
+	       }
+	   }
+	   else if (szincludemarks.charAt(nmark) == '0')
+	   {
+	       includemarks[nmark] = false;
+	   }
+	   else
+	   {
+	       throw new IllegalArgumentException(szincludemarks+" is not a valid bit string for includemarks!");
+	   }
+       }
+
+       RecIntString[] ordered = new RecIntString[chromfiles.length];
+       for (int nindex = 0; nindex < ordered.length; nindex++)
+       {
+	   ordered[nindex] = new RecIntString(nindex,chromfiles[nindex]);
+       }
+       Arrays.sort(ordered,new RecIntStringCompare());
+
+
+
+       hsprefix = new HashSet();
+
+       for (int nseq = 0; nseq < traindataObservedIndex.length; nseq++)
+       {
+          int nordered_nseq = ordered[nseq].nindex;
+	  //goes through each sequence
+
+          int[] traindataObservedIndex_nseq = traindataObservedIndex[nordered_nseq];
+          boolean[] traindataObservedSeqFlags_nseq = traindataObservedSeqFlags[nordered_nseq];
+
+	  String szprefix = "";
+	  if (!cellSeq[nordered_nseq].equals(""))
+	  {
+	     szprefix += cellSeq[nordered_nseq]+"_";
+	  }
+	  szprefix += numstates;
+	  if (!szoutfileID.equals(""))
+	  {
+	     szprefix += "_"+szoutfileID;
+          }
+	  hsprefix.add(szprefix);
+	  
+	  if (breadposterior)
+	  {
+	     BufferedReader brprobs = null;
+	     //creates the posterior file
+	     String szposteriorinfilename = szsegmentdir+"/POSTERIOR/"+szprefix+"_"+chromSeq[nordered_nseq]+ChromHMM.SZPOSTERIOREXTENSION;
+
+	     brprobs = new BufferedReader(new FileReader(szposteriorinfilename));
+
+	     //skips the header lines
+	     brprobs.readLine();
+	     brprobs.readLine();
+	     String szLinePosterior;
+
+	     int nline = 0;
+	     while ((szLinePosterior = brprobs.readLine())!=null)
+	     {
+		StringTokenizer stposterior = new StringTokenizer(szLinePosterior,"\t");
+	        for (int nstate = 0; nstate < numstates; nstate++)
+	        {
+		   fullposterior[nline][nstate] = Double.parseDouble(stposterior.nextToken());
+		}
+		nline++;
+	     }
+	     brprobs.close(); 
+	  } 
+          else if (breadstatebyline)
+	  {
+	      String szcurrchrom = chromSeq[nordered_nseq];
+	      //reads a file which has the state with the maximum posterior probability
+	      String szmaxinfilename = szsegmentdir+"/STATEBYLINE/"+szprefix+"_"+szcurrchrom+ChromHMM.SZSTATEBYLINEEXTENSION;
+
+ 	      BufferedReader brmax = new BufferedReader(new FileReader(szmaxinfilename));
+	      //skip the header lines
+	      brmax.readLine();
+	      brmax.readLine();
+	      String szLineMax;
+	      int nline = 0;
+	      while ((szLineMax = brmax.readLine())!=null)
+	      {
+		  fullmax[nline] = Integer.parseInt(szLineMax)-1;
+		  nline++;
+	      }
+	      brmax.close(); 
+	  }
+	  else if (breadsegment)
+	  {
+
+	     BufferedReader brbed = null;
+	     //creates a file which has the maximum segmentation
+	     //we only have one file per cell type here
+	     String szcurrchrom = chromSeq[nordered_nseq];
+
+	     String szsegmentinfilename = szsegmentdir+"/" + szprefix+ChromHMM.SZSEGMENTEXTENSION;
+
+	     brbed = new BufferedReader(new FileReader(szsegmentinfilename));
+		 
+	     String szLineMax;
+	     while ((szLineMax = brbed.readLine())!=null)
+	     {
+		 StringTokenizer stchrom = new StringTokenizer(szLineMax,"\t");
+		 String szchrom = stchrom.nextToken();
+
+		 if (szchrom.equals(szcurrchrom))
+	         {
+		     int nbegin = Integer.parseInt(stchrom.nextToken())/nbinsize;
+		     int nend = (Integer.parseInt(stchrom.nextToken())-1)/nbinsize;
+		     int nstate = Integer.parseInt(stchrom.nextToken().substring(1))-1;		        		
+		     for (int nj = nbegin; nj <= nend; nj++)
+		     {
+			 fullmax[nj] = nstate;
+		     }
+		 }	      
+	     }
+	     brbed.close();		
+	  }
+
+
+	  for (int ni = 0; ni < emissionproducts.length; ni++)
+          {
+	     //going through each combination of marks
+	     if (traindataObservedSeqFlags_nseq[ni])
+	     {
+	        //this signature of marks is observed on the current chromosome so
+	        //updating its emission probabilities
+	        double[] emissionproducts_ni = emissionproducts[ni];
+	        boolean[] traindataObservedValues_ni = traindataObservedValues[ni];
+	        boolean[] traindataNotMissing_ni = traindataNotMissing[ni];		  
+	        for (int ns = 0; ns < numstates; ns++)
+	        {
+	           double dproduct = 1;
+	           double[][] emissionprobs_ni = emissionprobs[ns];
+
+		   //going through all marks
+		   for (int nmod = 0; nmod < numdatasets; nmod++)
+	           {
+		      if ((traindataNotMissing_ni[nmod])&&(includemarks[nmod]))
+		      {
+			  //we have observed the mark
+		         if (traindataObservedValues_ni[nmod])
+		         {
+		            dproduct *= emissionprobs_ni[nmod][1];
+		         }
+		         else 
+	                 {
+		            dproduct *= emissionprobs_ni[nmod][0];
+		         }
+		      }
+		      // otherwise treated as missing omitting from product
+		   }
+	           emissionproducts_ni[ns] = dproduct;
+		}
+	     }
+	  }
+
+	  //initial probability in state s is initial probability times emission probability at first position
+          double[] alpha_nt = alpha[0];
+	  double dscale = 0;
+	  double[] emissionproducts_nobserveindex =emissionproducts[traindataObservedIndex_nseq[0]];
+ 	  for (int ns = 0; ns < numstates; ns++)
+          {
+	      alpha_nt[ns] = probinit[ns] * emissionproducts_nobserveindex[ns];
+	      dscale += alpha_nt[ns];
+	  }
+	  scale[0] = dscale;
+
+	  //alpha_t(s)=P(o_0,...,o_t,x_t=s|lambda)
+          //converts the alpha terms to probabilities
+	  for (int ni = 0; ni < numstates; ni++)
+          {
+             alpha_nt[ni] /= dscale;
+	  }
+	
+          //stores in coltransitionprobs the transpose of transitionprobs
+          for (int ni = 0; ni < numstates; ni++)
+          {
+             double[] coltransitionprobs_ni = coltransitionprobs[ni];
+             for (int nj = 0; nj < numstates; nj++)
+	     {
+	        coltransitionprobs_ni[nj] = transitionprobs[nj][ni];
+	     }
+	  }
+
+          //forward step
+          int numtime_nseq = numtime[nordered_nseq];
+          for (int nt = 1; nt < numtime_nseq; nt++)
+          {
+             //the actual observed combination at position t	        
+	     double[] alpha_ntm1 = alpha[nt-1];
+	     alpha_nt = alpha[nt];
+	      
+	     dscale = 0;
+	     emissionproducts_nobserveindex = emissionproducts[traindataObservedIndex_nseq[nt]];
+	     for (int ns = 0; ns < numstates; ns++)
+	     {
+	        //going through each state		   
+
+	        int transitionprobsnumCol_ns = transitionprobsnumCol[ns];
+	        int[] transitionprobsindexCol_ns = transitionprobsindexCol[ns];
+	        double[] coltransitionprobs_ns = coltransitionprobs[ns];
+
+	        double dtempsum = 0;
+                if (transitionprobsnumCol_ns < nsparsecutoff)
+	        {
+		    //if it is sparse enough then it is worth the extra array indirection here
+	           for (int nj = 0; nj < transitionprobsnumCol_ns; nj++)
+	           {
+	               //for each next state computing inner sum of all previous alpha and the transition probability
+	               //for all non-zero transitions into the state
+			int nmappedindex = transitionprobsindexCol_ns[nj];
+			dtempsum += coltransitionprobs_ns[nmappedindex]*alpha_ntm1[nmappedindex];
+		   }
+		}
+	        else
+	        {
+                   for (int nj = 0; nj < numstates; nj++)
+	           {
+	              //for each next state computing inner sum of all previous alpha and the transition probability
+	              //for all transitions into the state
+		      dtempsum += coltransitionprobs_ns[nj]*alpha_ntm1[nj];
+		   }
+		}
+
+                //multiply the transition sum by the emission probability
+	        double dalphaval = dtempsum*emissionproducts_nobserveindex[ns];
+                alpha_nt[ns] = dalphaval;
+	        dscale += dalphaval;
+	     }
+
+	      //rescaling alpha
+              scale[nt] = dscale;
+              //scale_t(s)=P(o_0,...,o_t|lambda) summed over all states
+
+	      for (int ns = 0; ns < numstates; ns++)
+              {
+		  alpha_nt[ns] /= dscale;
+	      }      	       
+	  }
+	    
+          //backward step
+          //beta_t(s)=P(o_t+1,...,o_T|x_t=s,lambda)
+          int nlastindex = numtime_nseq-1;
+          double dinitval = 1.0/scale[nlastindex];
+          for (int ns = 0; ns < numstates; ns++)
+          {
+              beta_ntp1[ns] = dinitval;
+	  }
+	
+	  int nmappedindexouter;
+ 
+	  double ddenom = 0;	      
+
+          //gamma_nt - P(x=S| o_0,...,o_t)
+          //P(o_t+1,...,o_T|x_t=s,lambda) * P(o_0,...,o_t,x_t=s|lambda)
+	  double[] gamma_nt = gamma[nlastindex]; 
+          for (int ns = 0; ns < gamma_nt.length; ns++)
+          {
+	      double dval = alpha[nlastindex][ns]*beta_ntp1[ns];
+	      ddenom += dval;
+	      gamma_nt[ns] = dval;
+	  }
+
+          for (int ns = 0; ns < gamma_nt.length; ns++)
+          {
+	     gamma_nt[ns] /= ddenom;
+	  }
+
+
+          for (int nt = nlastindex - 1; nt >= 0; nt--)
+          {
+	      gamma_nt = gamma[nt];
+	      int ntp1 = (nt+1);
+		   
+	      double[] emissionproducts_ncombo_ntp1 = emissionproducts[traindataObservedIndex_nseq[ntp1]];		
+	      double dscale_nt = scale[nt];
+
+	      for (int ns = 0; ns < numstates; ns++)
+              {
+		  tempproductbetaemiss[ns] = beta_ntp1[ns]*emissionproducts_ncombo_ntp1[ns];
+	      }
+
+	      //double dscaleinv = 1.0/scale[nt];
+              //scale_t(s)=P(o_0,...,o_t|lambda) summed over all states
+	      for (int ni = 0; ni < numstates; ni++)
+	      {
+		  double dtempsum = 0;
+		  int[] transitionprobsindex_ni =  transitionprobsindex[ni];
+		  double[] transitionprobs_ni = transitionprobs[ni];
+		  int transitionprobsnum_ni = transitionprobsnum[ni];
+
+                  if (transitionprobsnum_ni < nsparsecutoff)
+	          {
+		    //if it is sparse enough then it is worth the extra array indirection here
+	             for (int nj = 0; nj < transitionprobsnum_ni; nj++)
+	             {
+	                //for each state summing over transition probability to state j, emission probablity in j at next step
+	                //and probability of observing the remaining sequence
+		        nmappedindexouter = transitionprobsindex_ni[nj];
+		        dtempsum += transitionprobs_ni[nmappedindexouter]*tempproductbetaemiss[nmappedindexouter];			
+		     }
+		  }
+	          else
+	          {
+                     for (int nj = 0; nj < numstates; nj++)
+	             {
+	                //for each state summing over transition probability to state j, emission probablity in j at next step
+	                //and probability of observing the remaining sequence
+		        dtempsum += transitionprobs_ni[nj]*tempproductbetaemiss[nj];
+		     }
+		  }
+
+		  beta_nt[ni] = dtempsum/dscale_nt;
+	      }
+
+	      ddenom = 0;		
+	      alpha_nt = alpha[nt];
+
+	       //gamma_nt - P(x=S| o_0,...,o_t)
+               //P(o_t+1,...,o_T|x_t=s,lambda) * P(o_0,...,o_t,xt=s|lambda)
+
+	       for (int ns = 0; ns < gamma_nt.length; ns++)
+               {
+		   double dval = alpha_nt[ns]*beta_nt[ns];
+
+		   ddenom += dval;
+		   gamma_nt[ns] = dval;
+	       }
+
+	       for (int ns = 0; ns < gamma_nt.length; ns++)
+               {
+		   gamma_nt[ns]/=ddenom;       		   
+	       }
+	       beta_ntp1 = beta_nt;		
+	  }
+
+
+          for (int nt = 0; nt < numtime_nseq; nt++)
+	  {
+
+             gamma_nt = gamma[nt];
+
+	     //handling the first line
+	     if ((breadsegment)||(breadstatebyline))
+	     {
+	        double dmaxval = 0;
+                int nmaxstate = 0;
+
+                for (int ns = 0; ns < gamma_nt.length; ns++)
+                {	   	
+	           double dprob = gamma_nt[ns];
+	     
+	           if (dprob > dmaxval)
+	           {
+		      //best one found so far 
+	              dmaxval = dprob;
+	              nmaxstate = ns;
+		   }
+		}
+
+		confusion[fullmax[nt]][nmaxstate]++;
+	     }
+	     else
+	     {
+		 double[] fullposterior_nt = fullposterior[nt];
+		 for (int nstate = 0; nstate < numstates; nstate++)
+		 {
+		     double dfullval = fullposterior_nt[nstate];
+		     double dpartialval = gamma_nt[nstate];
+		     if (dfullval >= dpartialval)
+		     {
+			 //assigned less to this state with the subset of the marks adding that amount to the decifict
+			 dstatesagree[nstate] += dpartialval;
+			 deficit[nstate] = dfullval - dpartialval;
+			 surplus[nstate] = 0;
+		     } 
+		     else
+		     {
+			 //we have a surplus of posterior assigned to this state with a subset of marks
+			 dstatesagree[nstate] += dfullval;
+			 surplus[nstate] = dpartialval - dfullval;
+			 deficit[nstate] = 0;
+		     }
+		 }
+
+		 double dsumdenom = 0;
+		 for (int nb = 0; nb < surplus.length; nb++)
+		 {
+		    dsumdenom += surplus[nb];
+		 }
+		 for (int nb = 0; nb < surplus.length; nb++)
+		 {
+	            //re-normalize surplus
+		    surplus[nb] /= dsumdenom;
+		 }
+
+	         for (int nb = 0; nb < confusion.length; nb++)
+		 {
+		    double[] confusion_nb = confusion[nb];
+		    if (deficit[nb] > 0)
+		    {
+		       double ddeficit_nb = deficit[nb];
+		       for (int nc = 0; nc < confusion_nb.length; nc++)
+		       {
+			   confusion_nb[nc] += ddeficit_nb*surplus[nc];
+                           //there is a deficit for state nb with the subset of marks
+			   //allocating it to the states that proportionally have additional posterior
+		       }
+		    }
+		 }		 		 
+	     	  
+	         for (int nb = 0; nb < confusion.length; nb++)
+	         {
+	            confusion[nb][nb] = dstatesagree[nb];
+		 }
+	     }
+	  }
+       }
+
+       System.out.println("Writing to file "+szconfusionfileprefix+".txt");
+       System.out.println("Writing to file "+szconfusionfileprefix+".svg");
+       System.out.println("Writing to file "+szconfusionfileprefix+".png");
+       PrintWriter pwconfusion = new PrintWriter(new FileWriter(szconfusionfileprefix+".txt",bappend));
+       pwconfusion.print("EvalSubset\t"+szincludemarks);
+       pwconfusion.println("\t"+szdatasets);
+
+       for (int na = 0; na < confusion.length; na++)
+       {
+	   pwconfusion.print("\t"+chorder+(na+1));
+       }
+       pwconfusion.println();
+
+       for (int na = 0; na < confusion.length; na++)
+       {
+	   pwconfusion.print(""+chorder+(na+1));
+	   double ddenom = 0;
+           for (int nb = 0; nb < confusion[na].length; nb++)
+	   {
+	       ddenom += confusion[na][nb];
+	   }
+
+	   for (int nb = 0; nb < confusion[na].length; nb++)
+	   {
+	       normalizedconfusion[na][nb] = confusion[na][nb]/(double) ddenom;
+	       pwconfusion.print("\t"+nf.format(normalizedconfusion[na][nb]));
+	   }
+	   pwconfusion.println();
+       }
+       pwconfusion.close();
+       printConfusionImage(normalizedconfusion, szconfusionfileprefix, szincludemarks);
+    }
+
 
     ///////////////////////////////////////////////////////////////////////////////////////////
 
+    /**
+     * Outputs the confusion matrix as a '.png' and '.svg' 
+     */
+    public void printConfusionImage(double[][] confusion, String szconfusionfileprefix,
+				    String szincludemarks) throws IOException
+    {
 
+        String[] rowlabels = new String[numstates];
+
+        for (int ni = 0; ni < numstates; ni++)
+        {
+	    rowlabels[ni] = ""+(ni+1);
+	    String szsuffix;
+	    if ((szsuffix = (String) hmlabelExtend.get(""+chorder+(stateordering[ni]+1)))!=null)
+	    {
+		rowlabels[ni]+= "_"+szsuffix;
+	    }
+	}
+
+
+        HeatChart map = new HeatChart(confusion);
+
+        map.setTitle("Confusion Matrix");
+        map.setXAxisLabel("State Subset of Marks ("+szincludemarks+")");
+        map.setAxisValuesFont(new Font("SansSerif",0,20));
+        map.setAxisLabelsFont(new Font("SansSerif",0,22));
+        map.setTitleFont(new Font("SansSerif",0,24));
+        map.setYAxisLabel("State All Marks");
+        if (confusion.length <=5)
+        {
+	   map.setChartMargin(125);
+        }
+        else
+        {
+	   map.setChartMargin(100);
+        }
+        map.setXValues(rowlabels);
+        map.setYValues(rowlabels);
+        map.setHighValueColour(theColor);
+
+
+        Util.printImageToSVG(map, szconfusionfileprefix+".svg");
+        map.saveToFile(new File(szconfusionfileprefix+".png"));
+
+    }
+
+
+    ///////////////////////////////////////////////////////////////////////////////////////////
 
     /**
      * Takes an existing model and outputs information about the segmentation depending on the values of
@@ -2034,7 +2725,7 @@ public class ChromHMM
 	  {
 	      //creates the posterior file
  
-	      String szposterioroutfilename = szoutputdir+"/POSTERIOR/"+szprefix+"_"+chromSeq[nordered_nseq]+"_posterior.txt";
+	      String szposterioroutfilename = szoutputdir+"/POSTERIOR/"+szprefix+"_"+chromSeq[nordered_nseq]+ChromHMM.SZPOSTERIOREXTENSION;
 
              System.out.println("Writing to file "+szposterioroutfilename);
 	     pwprobs = new PrintWriter(szposterioroutfilename);
@@ -2050,7 +2741,7 @@ public class ChromHMM
 	  if (bprintstatebyline)
 	  {
 	      //creates a file which has the state with the maximum posterior probability
-	      String szmaxoutfilename = szoutputdir+"/STATEBYLINE/"+szprefix+"_"+chromSeq[nordered_nseq]+"_statebyline.txt";
+	      String szmaxoutfilename = szoutputdir+"/STATEBYLINE/"+szprefix+"_"+chromSeq[nordered_nseq]+ChromHMM.SZSTATEBYLINEEXTENSION;
 
 	      System.out.println("Writing to file "+szmaxoutfilename);
 	     pwmax = new PrintWriter(szmaxoutfilename);
@@ -3445,7 +4136,7 @@ public class ChromHMM
 
 	if (szcommand.equalsIgnoreCase("Version"))
 	{
-	    System.out.println("This is Version 1.05 of ChromHMM (c) Copyright 2008-2012 Massachusetts Institute of Technology");
+	    System.out.println("This is Version 1.06 of ChromHMM (c) Copyright 2008-2012 Massachusetts Institute of Technology");
 	}
         else if (szcommand.equalsIgnoreCase("BinarizeBed"))
 	{
@@ -3714,6 +4405,7 @@ public class ChromHMM
 	    int ng=ChromHMM.DEFAULTCOLOR_G;
 	    int nb=ChromHMM.DEFAULTCOLOR_B;
 
+
 	    int nargindex = 1;
 	    if (args.length == 5)
 	    {
@@ -3807,6 +4499,114 @@ public class ChromHMM
                System.out.println("usage: StatePruning [-correlation] inputdir outputdir"); 
             }	       	    
 	}
+	else if (szcommand.equalsIgnoreCase("EvalSubset"))
+	{
+	    int nr=ChromHMM.DEFAULTCOLOR_R;
+	    int ng=ChromHMM.DEFAULTCOLOR_G;
+	    int nb=ChromHMM.DEFAULTCOLOR_B;
+	    Color theColor = new Color(nr, ng, nb);
+
+	    String szinputfilelist = null;
+	    boolean breadposterior = false;
+	    boolean breadstatebyline = false;
+	    boolean breadsegment = false;
+	    String szchromlengthfile = null;
+	    int nbinsize = ChromHMM.DEFAULT_BINSIZEBASEPAIRS;
+	    String szoutfileID = "";
+	    boolean bappend = false;
+	    int nargindex = 1;
+
+            try
+	    {
+	       while (nargindex < args.length-5)
+	       {
+                  if (args[nargindex].equals("-color"))
+		  {
+		     String szcolor = args[++nargindex];
+		     StringTokenizer stcolor = new StringTokenizer(szcolor,",");
+		     if (stcolor.countTokens()==3)
+		     {
+		        nr = Integer.parseInt(stcolor.nextToken());
+		        ng = Integer.parseInt(stcolor.nextToken());
+		        nb = Integer.parseInt(stcolor.nextToken());
+		     }
+		     else
+		     {
+		        bok = false;
+		     }
+		  }
+	          else if (args[nargindex].equals("-b"))
+		  {
+		     nbinsize = Integer.parseInt(args[++nargindex]);
+		  }
+		  else if (args[nargindex].equals("-f"))
+		  {
+		     szinputfilelist = args[++nargindex];
+		  }
+		  else if (args[nargindex].equals("-i"))
+		  {
+		     szoutfileID = args[++nargindex];
+		  }
+                  else if (args[nargindex].equals("-append"))
+		  {
+		      bappend = true;
+		  }
+		  else if (args[nargindex].equals("-readposterior"))
+		  {
+		     breadposterior = true;
+		  }
+		  else if (args[nargindex].equals("-readstatesbyline"))
+		  {
+		     breadstatebyline = true;
+		  }
+		  else
+		  { 
+		     bok = false;
+		     break;
+		  }
+		  nargindex++;
+	       }
+	    }
+	    catch (NumberFormatException ex)
+	    {
+		bok = false;
+	    }
+
+	    if (bok&&(nargindex==args.length-5))
+	    {
+	       String szmodelfile = args[nargindex++];
+	       String szinputdir = args[nargindex++];
+	       String szsegmentdir = args[nargindex++];
+	       String szconfusionfileprefix = args[nargindex++];
+	       String szinclude = args[nargindex];
+
+	       boolean breadsegments = !breadstatebyline&&!breadposterior;
+	       if (breadposterior && breadstatebyline)
+	       {
+		   System.out.println("Invalid to specify both -readposterior and -readstatesbyline output");
+	       }
+	       else
+	       {
+		   ChromHMM theHMM = new ChromHMM(szinputdir, szsegmentdir,szinputfilelist,szconfusionfileprefix, 
+                                                  szmodelfile, szoutfileID, nbinsize, breadposterior,
+						  breadsegments,breadstatebyline,szinclude,bappend, theColor);
+
+	          theHMM.makeSegmentationConfusion();
+	       }
+
+	    }
+	    else
+	    {
+		bok = false;
+	    }
+
+	    if (!bok)
+	    {
+		System.out.println("usage: EvalSubset [-append][-b binsize][-f inputfilelist][-i outfileID]"+
+                                   "[-readposterior|-readstatesbyline]"+
+                                   "  inputmodel inputdir segmentdir outconfusionfileprefix includemarks");
+	    }
+        }
 	else if (szcommand.equalsIgnoreCase("MakeSegmentation"))
 	{
 	    String szinputfilelist = null;
@@ -4837,7 +5637,7 @@ public class ChromHMM
 	}
 	else
 	{
-	    System.out.println("Need to specify the mode BinarizeBed|BinarizeSignal|CompareModels|LearnModel|MakeBrowserFiles"+
+	    System.out.println("Need to specify the mode BinarizeBed|BinarizeSignal|CompareModels|EvalSubset|LearnModel|MakeBrowserFiles"+
                                "|MakeSegmentation|NeighborhoodEnrichment|StatePruning|OverlapEnrichment|Reorder|Version");
 
 	}
