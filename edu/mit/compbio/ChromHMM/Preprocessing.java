@@ -358,7 +358,14 @@ public class Preprocessing
 
 	     if (!bdatafound)
 	     {
-	        System.out.println("WARNING not able to load any data for "+szcell+"\t"+marks[nmark]);
+	        if (bcontrol)
+		{
+	           System.out.println("WARNING not able to load any control data for "+szcell+"\t"+marks[nmark]);
+		}
+		else
+		{
+	      	   System.out.println("WARNING not able to load any data for "+szcell+"\t"+marks[nmark]);
+	        }
 	     }
 	  }
        }
@@ -577,6 +584,7 @@ public class Preprocessing
                         hmfilescontrol,szcell,szcontroldir,hmchrom,npseudocountcontrol,szcolfields,bpeaks,true);
 	    }
 	    
+
 	    if (szoutputsignaldir!=null)
 	    {
 		//printing signal is requested
@@ -610,53 +618,54 @@ public class Preprocessing
 		      pw.close();	       
 		  }
 	       }
+	    }
 
 
-	       if ((bcontrolfile)&&(szoutputcontroldir!=null))
-	       {
-                  for (int nchrom = 0; nchrom < chroms.length; nchrom++)
-                  {
-	             if (bpresent[nchrom])
-	             {
-	                //we have signal for this chromosome
-			String szfile = szoutputcontroldir+"/"+szcell+"_"+chroms[nchrom]+"_controlsignal.txt";
-		        System.out.println("Writing to file "+szfile);
-	                PrintWriter pw = new PrintWriter(szfile);
-			pw.println(szcell+"\t"+chroms[nchrom]);
-	                //outputs mark header
-			if (numcontrolmarks == 1)
-			{
-			    pw.println("Control");
-			}
-			else
-			{
-                           for (int nmark = 0; nmark < marks.length-1; nmark++)
-                           {
-       	                      pw.print(marks[nmark]+"\t");
-	                   }
-	       	           pw.println(marks[marks.length-1]);
-			}
-
-		        //outputs mark signal data
-		        int[][] gridcontrol_nchrom = gridcontrol[nchrom];
- 	                for (int nbin = 0; nbin < gridcontrol[nchrom].length; nbin++)
-                        {  
-	        	   int[] gridcontrol_nchrom_nbin = gridcontrol_nchrom[nbin];
-			   if (gridcontrol_nchrom_nbin.length == 1)
-			   {
-		              pw.println(gridcontrol_nchrom_nbin[0]-npseudocountcontrol);
-			   }
-			   else
-			   {
-	                      for (int nmark = 0; nmark < gridcontrol_nchrom_nbin.length-1; nmark++)
-	                      {
-				  pw.print((gridcontrol_nchrom_nbin[nmark]-npseudocountcontrol)+"\t");
-		              }
-		              pw.println(gridcontrol_nchrom_nbin[marks.length-1]-npseudocountcontrol);
-			   }
-		        }
-		        pw.close();	       
+	    //changed in version 1.07 to allow printing of control signal without regular signal
+	    if ((bcontrolfile)&&(szoutputcontroldir!=null))
+	    {
+               for (int nchrom = 0; nchrom < chroms.length; nchrom++)
+               {
+	          if (bpresent[nchrom])
+	          {
+	             //we have signal for this chromosome
+		     String szfile = szoutputcontroldir+"/"+szcell+"_"+chroms[nchrom]+"_controlsignal.txt";
+		     System.out.println("Writing to file "+szfile);
+	             PrintWriter pw = new PrintWriter(szfile);
+		     pw.println(szcell+"\t"+chroms[nchrom]);
+	             //outputs mark header
+		     if (numcontrolmarks == 1)
+		     {
+		        pw.println("Control");
 		     }
+		     else
+		     {
+                        for (int nmark = 0; nmark < marks.length-1; nmark++)
+                        {
+       	                   pw.print(marks[nmark]+"\t");
+	                }
+	       	        pw.println(marks[marks.length-1]);
+		     }
+
+		     //outputs mark signal data
+		     int[][] gridcontrol_nchrom = gridcontrol[nchrom];
+ 	             for (int nbin = 0; nbin < gridcontrol[nchrom].length; nbin++)
+                     {  
+	                int[] gridcontrol_nchrom_nbin = gridcontrol_nchrom[nbin];
+		        if (gridcontrol_nchrom_nbin.length == 1)
+		        {
+	                   pw.println(gridcontrol_nchrom_nbin[0]-npseudocountcontrol);
+		        }
+		        else
+		        {
+	                   for (int nmark = 0; nmark < gridcontrol_nchrom_nbin.length-1; nmark++)
+	                   {
+		      	      pw.print((gridcontrol_nchrom_nbin[nmark]-npseudocountcontrol)+"\t");
+		           }
+		           pw.println(gridcontrol_nchrom_nbin[marks.length-1]-npseudocountcontrol);
+		        }
+		     }
+		     pw.close();	       		     
 		  }		  
 	       }
 	    }

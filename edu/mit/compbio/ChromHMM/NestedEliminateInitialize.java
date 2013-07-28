@@ -337,7 +337,7 @@ public class NestedEliminateInitialize
 	   {
 	      if (!elim[ni])
 	      {
-		  pw.println("probinit\t"+nj+"\t"+(probinit[nj]+dextra));
+		  pw.println("probinit\t"+(nj+1)+"\t"+(probinit[nj]+dextra));
 		  nj++;
 	      }
 	   }
@@ -370,7 +370,7 @@ public class NestedEliminateInitialize
 		  {
 		     if (!elim[ni])
 		     {
-			 pw.println("transitionprobs\t"+nk+"\t"+nj+"\t"+(transitionprob[nj]+dextra));
+			 pw.println("transitionprobs\t"+(nk+1)+"\t"+(nj+1)+"\t"+(transitionprob[nj]+dextra));
 			 nj++;
 		     }
 		  }
@@ -387,7 +387,7 @@ public class NestedEliminateInitialize
 		 int numlines = emissionsline[na].size();
 	         for (int ni = 0; ni < numlines; ni++)
 		 {
-		     pw.println("emissionprobs\t"+nk+"\t"+emissionsline[na].get(ni));	  
+		     pw.println("emissionprobs\t"+(nk+1)+"\t"+emissionsline[na].get(ni));	  
 		 }
 		 nk++;
 	      }

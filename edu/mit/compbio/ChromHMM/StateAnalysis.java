@@ -2331,6 +2331,10 @@ public class StateAnalysis
 	int[] mappedcol = new int[hmNameToID.size()];
 
 	File emissionsdir = new File(szcomparedir);
+	if (!emissionsdir.exists())
+	{
+	    throw new IllegalArgumentException(szcomparedir+" was not found!");
+	}
 	String[] comparefiles = emissionsdir.list();
 
 	for (int nfile = 0; nfile < comparefiles.length; nfile++)
