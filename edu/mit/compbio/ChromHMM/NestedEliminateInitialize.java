@@ -2,19 +2,18 @@
  * ChromHMM - automating chromatin state discovery and characterization 
  * Copyright (C) 2008-2012 Massachusetts Institute of Technology
  * 
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- * 
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ *  This program is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  **/
 package edu.mit.compbio.ChromHMM;
 
@@ -45,6 +44,11 @@ public class NestedEliminateInitialize
         int nummodels = 0;
 
         File inputdir = new File(szinputdir);
+        if (!inputdir.exists())
+	{
+       	   throw new IllegalArgumentException(szinputdir+" was not found!");
+        }
+
         String[] files = inputdir.list();
 
         double dbestlikelihood = Double.NEGATIVE_INFINITY;
@@ -63,7 +67,7 @@ public class NestedEliminateInitialize
 	    //also for the first found determines the number of marks
 	    //and a mapping from marks to IDs
 
-	   if (files[nfile].startsWith("model_"))
+	   if ((files[nfile].startsWith("model_"))&&(!(new File(files[nfile])).isHidden()))
 	   {
 	       if (!bfound)
 	       {
@@ -109,7 +113,7 @@ public class NestedEliminateInitialize
            //going through all the model files and loading in the emission parameters
 	    //also recording the model with the best score
 
-	   if (files[nfile].startsWith("model_"))
+	   if ((files[nfile].startsWith("model_"))&&(!(new File(files[nfile])).isHidden()))
 	   {
 	       //assuming file
 	       String szfile = files[nfile];
@@ -231,7 +235,7 @@ public class NestedEliminateInitialize
         brfile.close();
 
 
-        double dmaxcorrouterouter = -Integer.MAX_VALUE;
+        //double dmaxcorrouterouter = -Integer.MAX_VALUE;
         int nstatesleft = nbestnumstates;
         boolean[] elim = new boolean[nbestnumstates];
 	double[][] modelemissions_nbestmodel = modelemissions[nbestmodel];

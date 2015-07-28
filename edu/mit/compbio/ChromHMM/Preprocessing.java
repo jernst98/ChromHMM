@@ -3,23 +3,23 @@
  * ChromHMM - automating chromatin state discovery and characterization
  * Copyright (C) 2008-2012 Massachusetts Institute of Technology
  * 
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- * 
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ *  This program is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  **/
 
 package edu.mit.compbio.ChromHMM;
 
+import htsjdk.samtools.*;
 import java.io.*;
 import java.util.*;
 
@@ -72,7 +72,7 @@ public class Preprocessing
      * bpresent[i] is set to 1 if a there is a read for a chromosome with an index in hmchrom
      * bpresentmark[i] is set to 1 if the mark is present in cell type
      * marks - contains the names of the header marks
-     * nshift - is the number of bases a read should be shifted in the 5' to 3' direction of a red
+     * nshift - is the number of bases a read should be shifted in the 5' to 3' direction of a read
      * nbinsize - is the number of base pairs in a bin
      * bcenterinterval - if true uses the center of the read instead of shifting if the read has already been extended
      * noffsetleft - the amount that should be subtracted from the left coordinate so it is 0-based inclusive
@@ -88,7 +88,7 @@ public class Preprocessing
     private static void loadGrid(int[][][] grid,boolean[] bpresent, boolean[] bpresentmarks, String[] marks,int nshift, int nbinsize,
                                  boolean bcenterinterval,int noffsetleft,
 				 int noffsetright,HashMap hmfiles, String szcell, String szmarkdir,HashMap hmchrom, 
-                                 int ninitval, String szcolfields,boolean bpeaks,boolean bcontrol) throws IOException
+                                 int ninitval, String szcolfields,boolean bpeaks,boolean bcontrol, boolean bbinarizebam) throws IOException
     {
 	int nummarks = grid[0][0].length;
 	//initalizes all values in grid to ninitval
@@ -187,173 +187,253 @@ public class Preprocessing
              for (int nfile = 0; nfile < alfiles.size(); nfile++)
 	     {
 		 String szfile = (String) alfiles.get(nfile);
-		 BufferedReader brbed = Util.getBufferedReader(szmarkdir+"/"+szfile);
-		 String szLine;
+		 if (bbinarizebam)
+		 {
+		     SamReaderFactory srf = SamReaderFactory.make();
+		     srf.validationStringency(ValidationStringency.LENIENT);
+		     SamReader samReader = srf.open(new File(szmarkdir+"/"+szfile));
+		     SAMRecordIterator iter = samReader.iterator();
 
-	         if (szcolfields != null)
-	         {
-	            while ((szLine = brbed.readLine())!= null)
-	            {
-		       String[] szLineA = szLine.split("\\s+");
-		       String szchrom = szLineA[nchromcol];
+		     while (iter.hasNext())
+		     {
+			 SAMRecord rec= iter.next();
+			 int nstartorig  = rec.getAlignmentStart()-1;
+			 int nendorig = rec.getAlignmentEnd();
+			 String szchrom = rec.getReferenceName();
+			 boolean bnegstrand = rec.getReadNegativeStrandFlag();
+			 boolean bunmapped = rec.getReadUnmappedFlag();
 
- 	               Integer objInt = (Integer) hmchrom.get(szchrom);
+			 if (bunmapped)
+			 {
+			     continue;
+			 }
 
-		       if (nmaxindex >= szLineA.length)
-		       {
-			  throw new IllegalArgumentException("Column index "+nmaxindex+" exceeds maximum index "+(szLineA.length-1)+" indicies are 0 based");		           
-		       }
+		         Integer objInt = (Integer) hmchrom.get(szchrom);
 
-		       //if we don't have the chromosome for the read will ignore it
-	               if (objInt != null)
-	               {
-	                  int nchrom = objInt.intValue();
-		          int nbin;
-		          if (bpeaks)
-		          {
-			     int nstart = Math.max(0,(Integer.parseInt(szLineA[nbegincol])-noffsetleft)/nbinsize); 
-			     int nend = Math.min(grid[nchrom].length-1, (Integer.parseInt(szLineA[nendcol])-noffsetright)/nbinsize);		      
+		         //if we don't have the chromosome for the read will ignore it
+	                 if (objInt != null)
+	                 {
+		            int nchrom = objInt.intValue();
+			    int nbin;
 
-			     for (nbin = nstart; nbin <= nend; nbin++)
-	                     {
-		                //increment bin count if falls into valid interval
-	                        grid[nchrom][nbin][nmark]++;
-		                //we do have this chromosome
-	                        bpresent[nchrom] = true;			    
-			        bdatafound = true;
-			     }
-			  }
-		          else
-		          { 
-                             if (bcenterinterval)
-		             {
-		                //uses the center of the interval which is useful if read is already extended
-			        nbin = (Integer.parseInt(szLineA[nbegincol])-noffsetleft+Integer.parseInt(szLineA[nendcol])-noffsetright)/(2*nbinsize);
-			     }
-		             else
-		             {
-			        String szstrand = szLineA[nstrandcol];
-			     	 	      
-		                if (szstrand.equals("+"))
-		                {		      
-			           nbin = (Integer.parseInt(szLineA[nbegincol])-noffsetleft+nshift)/nbinsize; 
-                                   //removed one from here may need it for backwards consistency		      		       		      
-				}
-		                else if (szstrand.equals("-"))
-	                        {
-		                   nbin = (Integer.parseInt(szLineA[nendcol])-noffsetright-nshift)/nbinsize;		      
+		            if (bpeaks)
+		            {
+			       int nstart = Math.max(0,(nstartorig-noffsetleft)/nbinsize); 
+			       int nend = Math.min(grid[nchrom].length-1, (nendorig-noffsetright)/nbinsize);		      
+
+			       for (nbin = nstart; nbin <= nend; nbin++)
+	                       {
+		                  //increment bin count if falls into valid interval
+	                          grid[nchrom][nbin][nmark]++;
+		                  //we do have this chromosome
+	                          bpresent[nchrom] = true;			    
+			          bdatafound = true;
+			       }
+			    }
+		            else
+		            {
+		                if (bcenterinterval)
+		                {
+		                   //uses the center of the interval which is useful if read is already extended
+		                   nbin = (nstartorig-noffsetleft+nendorig-noffsetright)/(2*nbinsize);
 				}
 		                else
 		                {
-				    throw new IllegalArgumentException(szstrand+" is an invalid strand!");
+		                   if (bnegstrand) 
+		                   {		   
+				       //"-"   
+		                      nbin = (nendorig-noffsetright-nshift)/nbinsize;	
+                                      //removed one from here may need it for backwards consistency		      		       		      	      
+				   }
+				   else
+				   {
+				       //"+"
+		                      nbin = (nstartorig-noffsetleft+nshift)/nbinsize; 
+				   }
+				}
+		   
+		                if ((nbin>=0)&&(nbin < grid[nchrom].length))
+	                        {
+		                   //increment bin count if falls into valid interval
+	                           grid[nchrom][nbin][nmark]++;
+		                   //we do have this chromosome
+	                           bpresent[nchrom] = true;			    
+			           bdatafound = true;
+				}
+			    }
+			 }
+		     }         		    
+		 }
+		 else
+		 {
+		    BufferedReader brbed = Util.getBufferedReader(szmarkdir+"/"+szfile);
+		    String szLine;
+
+	            if (szcolfields != null)
+	            {
+	               while ((szLine = brbed.readLine())!= null)
+	               {
+		          String[] szLineA = szLine.split("\\s+");
+		          String szchrom = szLineA[nchromcol];
+
+ 	                  Integer objInt = (Integer) hmchrom.get(szchrom);
+
+		          if (nmaxindex >= szLineA.length)
+		          {
+			     throw new IllegalArgumentException("Column index "+nmaxindex+" exceeds maximum index "+(szLineA.length-1)+" indicies are 0 based");		           
+			  }
+
+		          //if we don't have the chromosome for the read will ignore it
+	                  if (objInt != null)
+	                  {
+	                     int nchrom = objInt.intValue();
+		             int nbin;
+		             if (bpeaks)
+		             {
+			        int nstart = Math.max(0,(Integer.parseInt(szLineA[nbegincol])-noffsetleft)/nbinsize); 
+			        int nend = Math.min(grid[nchrom].length-1, (Integer.parseInt(szLineA[nendcol])-noffsetright)/nbinsize);		      
+
+			        for (nbin = nstart; nbin <= nend; nbin++)
+	                        {
+		                   //increment bin count if falls into valid interval
+	                           grid[nchrom][nbin][nmark]++;
+		                   //we do have this chromosome
+	                           bpresent[nchrom] = true;			    
+			           bdatafound = true;
 				}
 			     }
+		             else
+		             { 
+                                if (bcenterinterval)
+		                {
+		                   //uses the center of the interval which is useful if read is already extended
+			           nbin = (Integer.parseInt(szLineA[nbegincol])-noffsetleft+Integer.parseInt(szLineA[nendcol])-noffsetright)/(2*nbinsize);
+				}
+		                else
+		                {
+			           String szstrand = szLineA[nstrandcol];
+			     	 	      
+		                   if (szstrand.equals("+"))
+		                   {		      
+			              nbin = (Integer.parseInt(szLineA[nbegincol])-noffsetleft+nshift)/nbinsize; 
+                                      //removed one from here may need it for backwards consistency		      		       		      
+				   }
+		                   else if (szstrand.equals("-"))
+	                           {
+		                      nbin = (Integer.parseInt(szLineA[nendcol])-noffsetright-nshift)/nbinsize;		      
+				   }
+		                   else
+		                   {
+				      throw new IllegalArgumentException(szstrand+" is an invalid strand!");
+				   }
+				}
  		   
-		             if ((nbin>=0)&&(nbin < grid[nchrom].length))
-	                     {
-		                //increment bin count if falls into valid interval
-	                        grid[nchrom][nbin][nmark]++;
-		                //we do have this chromosome
-	                        bpresent[nchrom] = true;			    
-			        bdatafound = true;
+		                if ((nbin>=0)&&(nbin < grid[nchrom].length))
+	                        {
+		                   //increment bin count if falls into valid interval
+	                           grid[nchrom][nbin][nmark]++;
+		                   //we do have this chromosome
+	                           bpresent[nchrom] = true;			    
+			           bdatafound = true;
+				}
 			     }
 			  }
 		       }
-		    }
-		    brbed.close();
-		 }	     
-	         else
-	         {
-	            while ((szLine = brbed.readLine())!= null)
+		       brbed.close();
+		    }	  
+	            else
 	            {
-	               StringTokenizer st = new StringTokenizer(szLine,"\t ");
-		       if (!st.hasMoreTokens())
-		       {
-		          throw new IllegalArgumentException("Empty line found in "+szmarkdir+"/"+szfile);
-		       }
-		       String szchrom = st.nextToken();
-		       Integer objInt = (Integer) hmchrom.get(szchrom);
-
-		       //if we don't have the chromosome for the read will ignore it
-	               if (objInt != null)
+	               while ((szLine = brbed.readLine())!= null)
 	               {
-		          int nchrom = objInt.intValue();
- 		          if (!st.hasMoreTokens())
-		          {
-		             throw new IllegalArgumentException("Missing begin coordinate in "+szmarkdir+"/"+szfile);
-			  }
-
-			  String szbegin = st.nextToken();
-
+	                  StringTokenizer st = new StringTokenizer(szLine,"\t ");
 		          if (!st.hasMoreTokens())
 		          {
-		             throw new IllegalArgumentException("Missing end coordinate in "+szmarkdir+"/"+szfile);
+		             throw new IllegalArgumentException("Empty line found in "+szmarkdir+"/"+szfile);
 			  }
-			  String szend = st.nextToken();
-			  int nbin;
+		          String szchrom = st.nextToken();
+		          Integer objInt = (Integer) hmchrom.get(szchrom);
 
-		          if (bpeaks)
-		          {
-			     int nstart = Math.max(0,(Integer.parseInt(szbegin)-noffsetleft)/nbinsize); 
-			     int nend = Math.min(grid[nchrom].length-1, (Integer.parseInt(szend)-noffsetright)/nbinsize);		      
-
-			     for (nbin = nstart; nbin <= nend; nbin++)
-	                     {
-		                //increment bin count if falls into valid interval
-	                        grid[nchrom][nbin][nmark]++;
-		                //we do have this chromosome
-	                        bpresent[nchrom] = true;			    
-			        bdatafound = true;
-			     }
-			  }
-		          else
-		          {
-		             if (bcenterinterval)
+		          //if we don't have the chromosome for the read will ignore it
+	                  if (objInt != null)
+	                  {
+		             int nchrom = objInt.intValue();
+ 		             if (!st.hasMoreTokens())
 		             {
-		                //uses the center of the interval which is useful if read is already extended
-		                nbin = (Integer.parseInt(szbegin)-noffsetleft+Integer.parseInt(szend)-noffsetright)/(2*nbinsize);
+		                throw new IllegalArgumentException("Missing begin coordinate in "+szmarkdir+"/"+szfile);
+			     }
+
+			     String szbegin = st.nextToken();
+
+		             if (!st.hasMoreTokens())
+		             {
+		                throw new IllegalArgumentException("Missing end coordinate in "+szmarkdir+"/"+szfile);
+			     }
+			     String szend = st.nextToken();
+			     int nbin;
+
+		             if (bpeaks)
+		             {
+			        int nstart = Math.max(0,(Integer.parseInt(szbegin)-noffsetleft)/nbinsize); 
+			        int nend = Math.min(grid[nchrom].length-1, (Integer.parseInt(szend)-noffsetright)/nbinsize);		      
+
+			        for (nbin = nstart; nbin <= nend; nbin++)
+	                        {
+		                   //increment bin count if falls into valid interval
+	                           grid[nchrom][nbin][nmark]++;
+		                   //we do have this chromosome
+	                           bpresent[nchrom] = true;			    
+			           bdatafound = true;
+				}
 			     }
 		             else
 		             {
-			        if (!st.hasMoreTokens())
-			        {
-				   throw new IllegalArgumentException("strand column expected, but not found in "+szmarkdir+"/"+szfile);
-				}
-		                //looks for strand in sixth column or last column if less than six
-	                        String szstrand = st.nextToken();
-	                        if (st.hasMoreTokens())
-	                           szstrand = st.nextToken();
-	                        if (st.hasMoreTokens())
-	    	                   szstrand = st.nextToken();
-			     	 	      
-		                if (szstrand.equals("+"))
-		                {		      
-		                   nbin = (Integer.parseInt(szbegin)-noffsetleft+nshift)/nbinsize; 
-                                   //removed one from here may need it for backwards consistency		      		       		      
-				}
-		                else if (szstrand.equals("-"))
-	                        {
-		                   nbin = (Integer.parseInt(szend)-noffsetright-nshift)/nbinsize;		      
+		                if (bcenterinterval)
+		                {
+		                   //uses the center of the interval which is useful if read is already extended
+		                   nbin = (Integer.parseInt(szbegin)-noffsetleft+Integer.parseInt(szend)-noffsetright)/(2*nbinsize);
 				}
 		                else
 		                {
-		                   throw new IllegalArgumentException(szstrand+" is an invalid strand!");
+			           if (!st.hasMoreTokens())
+			           {
+				      throw new IllegalArgumentException("strand column expected, but not found in "+szmarkdir+"/"+szfile);
+				   }
+		                   //looks for strand in sixth column or last column if less than six
+	                           String szstrand = st.nextToken();
+	                           if (st.hasMoreTokens())
+	                              szstrand = st.nextToken();
+	                           if (st.hasMoreTokens())
+	    	                      szstrand = st.nextToken();
+			     	 	      
+		                   if (szstrand.equals("+"))
+		                   {		      
+		                      nbin = (Integer.parseInt(szbegin)-noffsetleft+nshift)/nbinsize; 
+                                      //removed one from here may need it for backwards consistency		      		       		      
+				   }
+		                   else if (szstrand.equals("-"))
+	                           {
+		                      nbin = (Integer.parseInt(szend)-noffsetright-nshift)/nbinsize;		      
+				   }
+		                   else
+		                   {
+		                      throw new IllegalArgumentException(szstrand+" is an invalid strand!");
+				   }
+				}
+		   
+		                if ((nbin>=0)&&(nbin < grid[nchrom].length))
+	                        {
+		                   //increment bin count if falls into valid interval
+	                           grid[nchrom][nbin][nmark]++;
+		                   //we do have this chromosome
+	                           bpresent[nchrom] = true;			    
+			           bdatafound = true;
 				}
 			     }
-		   
-		             if ((nbin>=0)&&(nbin < grid[nchrom].length))
-	                     {
-		                //increment bin count if falls into valid interval
-	                        grid[nchrom][nbin][nmark]++;
-		                //we do have this chromosome
-	                        bpresent[nchrom] = true;			    
-			        bdatafound = true;
-			     }
-		          }
-		       }
-		    }	   
+			  }
+		       }	  		    
+		       brbed.close();
+		    }
 		 }
-	         brbed.close();
 	     }
 
 	     if (!bdatafound)
@@ -398,12 +478,14 @@ public class Preprocessing
      * nbinsize - is the number of base pairs in a bin
      * szcolfields - a comma delimited string indicating the 0-based columns of the chromosome, start,end,and optionally strand position
      * if null use 0,1,2 for chromosome, start, and end with strand the sixth column or last if fewer
+     * dcountthresh - absolute signal threshold for a present call 
+     * bbinarizebam - if true reads files as if bam files otherwise as bed files
      */
     public static void makeBinaryDataFromBed(String szchromlengthfile, String szmarkdir, String szcontroldir, int nflankwidthcontrol,String szcellmarkfiletable,
 					     int nshift,  boolean bcenterinterval,int noffsetleft, int noffsetright,
                                              String szoutputsignaldir,String szoutputbinarydir, String szoutputcontroldir, 
 					     double dpoissonthresh, double dfoldthresh,boolean bcontainsthresh, int npseudocountcontrol,int nbinsize,
-					     String szcolfields, boolean bpeaks
+					     String szcolfields, boolean bpeaks, double dcountthresh, boolean bbinarizebam
                                             ) throws IOException
     {
 
@@ -472,7 +554,12 @@ public class Preprocessing
 		   alfilescontrol = new ArrayList();
 		   hmfilescontrol.put(szcell+"\t"+szmark,alfilescontrol);
 		}
-		alfilescontrol.add(szcontrolfile);
+
+		if (!alfilescontrol.contains(szcontrolfile))
+	        {
+		    //added in version 1.11 to only count control file once, if appearing multiple times
+		   alfilescontrol.add(szcontrolfile);
+		}
 
 		HashSet hscellcontrol = (HashSet) hmfilescellcontrol.get(szcell);
 		if (hscellcontrol == null)
@@ -565,7 +652,7 @@ public class Preprocessing
 
 	    //loading data for the cell type
 	    loadGrid(grid,bpresent,bpresentmarks,marks,nshift,nbinsize,bcenterinterval,noffsetleft,
-		     noffsetright,hmfiles,szcell,szmarkdir,hmchrom,0,szcolfields,bpeaks,false);
+		     noffsetright,hmfiles,szcell,szmarkdir,hmchrom,0,szcolfields,bpeaks,false,bbinarizebam);
 	    if (bcontrolfile)
 	    {
 	       if ((gridcontrol[0] == null)||(gridcontrol[0][0].length !=numcontrolmarks))
@@ -581,7 +668,7 @@ public class Preprocessing
 
 	       //we have control data loading cell type data for that
 	       loadGrid(gridcontrol,bpresentcontrol,bpresentmarkscontrol,marks,nshift,nbinsize,bcenterinterval,noffsetleft,noffsetright,
-                        hmfilescontrol,szcell,szcontroldir,hmchrom,npseudocountcontrol,szcolfields,bpeaks,true);
+                        hmfilescontrol,szcell,szcontroldir,hmchrom,npseudocountcontrol,szcolfields,bpeaks,true,bbinarizebam);
 	    }
 	    
 
@@ -685,7 +772,7 @@ public class Preprocessing
 	       if (!bpeaks)
 	       {
                   thresholds = determineMarkThresholdsFromBinnedDataArrayAgainstControl(grid,sumgridcontrol,
-				        bpresent,bpresentcontrol,dpoissonthresh,dfoldthresh,bcontainsthresh);
+					   bpresent,bpresentcontrol,dpoissonthresh,dfoldthresh,bcontainsthresh,dcountthresh);
 	       }
 
 	       for (int nchrom = 0; nchrom < chroms.length; nchrom++)
@@ -784,7 +871,7 @@ public class Preprocessing
 
 	       if (!bpeaks)
 	       {
-                  thresholds = determineMarkThresholdsFromBinnedDataArray(grid,bpresent,dpoissonthresh,dfoldthresh,bcontainsthresh);
+		   thresholds = determineMarkThresholdsFromBinnedDataArray(grid,bpresent,dpoissonthresh,dfoldthresh,bcontainsthresh,dcountthresh);
 	       }
 		
 	      for (int nchrom = 0; nchrom < chroms.length; nchrom++)
@@ -853,10 +940,12 @@ public class Preprocessing
      * dfoldthresh - the fold threshold required for a present call
      * bcontainsthresh - if true poisson cut off should be highest that still contains dpoissonthresh probability
      * and if false requires strictly greater     
+     * dcountthresh - absolute signal threshold for a present call
      **/
     public static int[][] determineMarkThresholdsFromBinnedDataArrayAgainstControl(int[][][] grid, int[][][] gridcontrol,
 										   boolean[] bpresent, boolean[] bpresentcontrol,
-										   double dpoissonthresh, double dfoldthresh,boolean bcontainsthresh)
+										   double dpoissonthresh, double dfoldthresh,
+                                                                                   boolean bcontainsthresh, double dcountthresh)
     {
      
        double dcumthreshold = 1-dpoissonthresh;
@@ -891,11 +980,11 @@ public class Preprocessing
 
 	      for (int nbin = 0; nbin < grid_nchrom.length; nbin++)
 	      {
-	         int[] grid_nchrom_nbin = grid[nchrom][nbin];
-	         int[] gridcontrol_nchrom_nbin = gridcontrol[nchrom][nbin];
+	         int[] grid_nchrom_nbin = grid_nchrom[nbin];
+	         int[] gridcontrol_nchrom_nbin = gridcontrol_nchrom[nbin];
                  for (int nmark = 0; nmark < nummarks; nmark++)
                  {
-		    int nval = grid_nchrom_nbin[nmark];
+		     //int nval = grid_nchrom_nbin[nmark];
 		    int ncontrolval;
 
 		    if (numcontrolmarks == 1)
@@ -929,7 +1018,7 @@ public class Preprocessing
 	   double davgratio = sumtags[nmark]/(double)sumtagscontrol[nmark];
 
 	   //sets a background of 0 threshold to 1
-	   thresholds_nmark[0] = 1;
+	   thresholds_nmark[0] = Math.max((int) Math.ceil(dcountthresh),1);
 	   
 	   //going through each background value
            for (int nbackground = 1; nbackground < maxcontrol[nmark]; nbackground++)
@@ -956,15 +1045,15 @@ public class Preprocessing
 
 		  if (bcontainsthresh)
 		  {
-		      //decreasing to include the dpoissonthreshold porbability
+		      //decreasing to include the dpoissonthreshold probability
                      nthresh--;
 		  }
 
-                  thresholds_nmark[nbackground] = Math.max(Math.max((int) Math.ceil(dfoldthresh*dlambda),nthresh),1);
+                  thresholds_nmark[nbackground] = Math.max(Math.max(Math.max((int) Math.ceil(dfoldthresh*dlambda),nthresh),1),(int) Math.ceil(dcountthresh));
 
-		  if (ChromHMM.BVERBOSE)
+		  if (ChromHMM.BVERBOSE) //added comments for this
 		  {
-                     System.out.println("Modification\t"+nmark+"\t"+nbackground+"\t"+maxcontrol[nmark]+"\t"+thresholds_nmark[nbackground]+"\t"+dlambda);
+                     System.out.println("Modification\t"+nmark+"\t"+nbackground+"\t"+maxcontrol[nmark]+"\t"+thresholds_nmark[nbackground]+"\t"+dlambda+"\t"+dcountthresh);
 		  }
 	       }
 	   }
@@ -981,9 +1070,11 @@ public class Preprocessing
      * dfoldthresh - the fold threshold required for a present call
      * bcontainsthresh - if true poisson cut off should be highest that still contains dpoissonthresh probability
      * and if false requires strictly greater
+     * dcountthresh - absolute signal threshold for a present call
      **/
     public static double[] determineMarkThresholdsFromBinnedDataArray(int[][][] grid, boolean[] bpresent, 
-								      double dpoissonthresh,double dfoldthresh,boolean bcontainsthresh)
+								      double dpoissonthresh, double dfoldthresh,
+                                                                      boolean bcontainsthresh, double dcountthresh)
     {
        double dcumthreshold = 1-dpoissonthresh;
 
@@ -1041,8 +1132,8 @@ public class Preprocessing
              nthresh--;
 	  }
 
-	  //threshold set to greater of poisson based and fold threshold
-          thresholds[nj] = Math.max(Math.max((int) Math.ceil(dfoldthresh*dlambda),nthresh),1);
+	  //threshold set to greater of poisson based and fold threshold and dcountthresh
+          thresholds[nj] = Math.max(Math.max(Math.max((int) Math.ceil(dfoldthresh*dlambda),nthresh),1),(int) Math.ceil(dcountthresh));
 	  if (ChromHMM.BVERBOSE)
 	  {
              System.out.println("Threshold\t"+nj+"\t"+thresholds[nj]+"\t"+sumtags[nj]+"\t"+((int) Math.ceil(dfoldthresh*dlambda))+"\t"+ntotallocs);
@@ -1066,19 +1157,25 @@ public class Preprocessing
      * and if false requires strictly greater               
      * nflankwidthcontrol -  Specifies the number of bins used in both directions to estimate the background; only relevant if control is being used
      * npseudocountcontrol - an integer pseudocount that is uniformay added to every interval to smooth the control data
+     * dcountthesh - absolute signal threshold for a present call
      */
     public static void makeBinaryDataFromSignalAgainstControl(String szbinneddataDIR, String szcontrolDIR, String szoutputDIR,
-							      double dpoissonthresh,double dfoldthresh, boolean bcontainsthresh, int nflankwidthcontrol, 
-                                                              int npseudocountcontrol) throws IOException
+							      double dpoissonthresh, double dfoldthresh, boolean bcontainsthresh, int nflankwidthcontrol, 
+                                                              int npseudocountcontrol, double dcountthresh) throws IOException
     {
        int nummarks=-1;
        int nummarkscontrol=-1;
        File dir = new File(szbinneddataDIR);
+       if (!dir.exists())
+       {
+          throw new IllegalArgumentException(szbinneddataDIR+" was not found!");
+       }
+
        String[] allfiles = dir.list();
        int nfilecount = 0;
        for (int nfile = 0; nfile < allfiles.length; nfile++)
        {
-	   if (allfiles[nfile].contains("_signal"))
+	   if ((allfiles[nfile].contains("_signal"))&&(!(new File(allfiles[nfile])).isHidden()))
 	   {
 	       nfilecount++;
 	   }
@@ -1087,7 +1184,7 @@ public class Preprocessing
        int nfileindex = 0;
        for (int nfile = 0; nfile < allfiles.length; nfile++)
        {
-	   if (allfiles[nfile].contains("_signal"))
+	   if ((allfiles[nfile].contains("_signal"))&&(!(new File(allfiles[nfile])).isHidden()))
 	   {
 	       signalchromfiles[nfileindex] = allfiles[nfile];
 	       nfileindex++;
@@ -1098,10 +1195,15 @@ public class Preprocessing
        HashMap hmcontrol = new HashMap();
 
        File dircontrol = new File(szcontrolDIR);
+       if (!dircontrol.exists())
+       {
+          throw new IllegalArgumentException(szcontrolDIR+" was not found!");
+       }
+
        String[] allfilescontrol = dircontrol.list();
        for (int nfile = 0; nfile < allfilescontrol.length; nfile++)
        {
-	   if (allfilescontrol[nfile].contains("_controlsignal"))
+	   if ((allfilescontrol[nfile].contains("_controlsignal"))&&(!(new File(allfilescontrol[nfile])).isHidden()))
 	   {
 	       BufferedReader brcontrol = Util.getBufferedReader(szcontrolDIR+"/"+allfilescontrol[nfile]);
 	       String szheader = brcontrol.readLine();
@@ -1198,7 +1300,8 @@ public class Preprocessing
 		   throw new IllegalArgumentException("No control data found for "+szcell+"\t"+szchrom);
 	       }
 	       BufferedReader brcontrol = Util.getBufferedReader(szcontrolDIR+"/"+szcontrolfilename);
-	       String szHeaderLineControl1 = brcontrol.readLine();
+	       //String szHeaderLineControl1 = 
+	       brcontrol.readLine();
 	       String szHeaderLineControl2 = brcontrol.readLine();
 
 	       StringTokenizer st = new StringTokenizer(szHeaderLine2,"\t");
@@ -1303,7 +1406,7 @@ public class Preprocessing
 
            //determiming thresholds for each mark and background depth
            int[][] thresholds = determineMarkThresholdsFromBinnedDataArrayAgainstControl(grid,sumgridcontrol,
-											     bpresent,bpresentcontrol,dpoissonthresh,dfoldthresh,bcontainsthresh);
+											 bpresent,bpresentcontrol,dpoissonthresh,dfoldthresh,bcontainsthresh,dcountthresh);
 
 	   for (int nchrom = 0; nchrom < grid.length; nchrom++)
            {
@@ -1391,9 +1494,11 @@ public class Preprocessing
      * dfoldthresh - the fold threshold required for a present call
      * bcontainsthresh - if true poisson cut off should be highest that still contains dpoissonthresh probability
      * and if false requires strictly greater     
+     * dcountthresh - absolute signal threshold for a present call
      **/
     public static void makeBinaryDataFromSignalUniform(String szbinneddataDIR, String szoutputDIR,
-                                                       double dpoissonthresh,double dfoldthresh, boolean bcontainsthresh) throws IOException
+                                                       double dpoissonthresh, double dfoldthresh, 
+                                                       boolean bcontainsthresh, double dcountthresh) throws IOException
     {
 	//this computes the binarization without storing in main memory all the data
 
@@ -1403,12 +1508,18 @@ public class Preprocessing
 
        int nummarks=-1;
        File dir = new File(szbinneddataDIR);
+       if (!dir.exists())
+       {
+          throw new IllegalArgumentException(szbinneddataDIR+" was not found!");
+       }
+
+
 
        String[] allfiles = dir.list();
        int nfilecount = 0;
        for (int nfile = 0; nfile < allfiles.length; nfile++)
        {
-	   if (allfiles[nfile].contains("_signal"))
+	   if ((allfiles[nfile].contains("_signal"))&&(!(new File(allfiles[nfile])).isHidden()))
 	   {
 	       nfilecount++;
 	   }
@@ -1417,7 +1528,7 @@ public class Preprocessing
        int nfileindex = 0;
        for (int nfile = 0; nfile < allfiles.length; nfile++)
        {
-	   if (allfiles[nfile].contains("_signal"))
+	   if ((allfiles[nfile].contains("_signal"))&&(!(new File(allfiles[nfile])).isHidden()))
 	   {
 	       signalchromfiles[nfileindex] = allfiles[nfile];
 	       nfileindex++;
@@ -1525,7 +1636,7 @@ public class Preprocessing
                   nthresh--;
 	       }
 
-               thresholds[nj] = Math.max(Math.max((int) Math.ceil(dfoldthresh*dlambda),nthresh),1);
+               thresholds[nj] = Math.max(Math.max(Math.max((int) Math.ceil(dfoldthresh*dlambda),nthresh),1), (int) Math.ceil(dcountthresh));
 	       if (ChromHMM.BVERBOSE)
 	       {
                   System.out.println("Modification\t"+szcell+"\t"+nj+"\t"+thresholds[nj]+"\t"+sumtags[nj]+

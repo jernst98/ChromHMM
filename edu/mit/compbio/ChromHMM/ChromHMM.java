@@ -2,19 +2,18 @@
  * ChromHMM - automating chromatin state discovery and characterization 
  * Copyright (C) 2008-2012 Massachusetts Institute of Technology
  * 
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- * 
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ *  This program is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  **/
 package edu.mit.compbio.ChromHMM;
 
@@ -41,6 +40,7 @@ public class ChromHMM
      * True if should print out debug information
      */
     static boolean BVERBOSE = false;
+    static double EPSILONEMISSIONS = Math.pow(10,-300);
 
     static String SZSEGMENTEXTENSION = "_segments.bed";
     static String SZPOSTERIOREXTENSION = "_posterior.txt";
@@ -662,15 +662,23 @@ public class ChromHMM
 	this.szoutputdir = szoutputdir;
 	this.szstateorderingfile = szstateorderingfile;
 	this.szoutfileID = szoutfileID;
-	this.nstateorder = nstateorder;
-	this.chorder = ChromHMM.ORDERCHARS[nstateorder];
-	this.szorder = ChromHMM.ORDERSTRINGS[nstateorder];
+
 	this.bordercols = bordercols;
 	this.theColor = theColor;
         hmlabelExtend = new HashMap();
 	makeLabelMapping(szlabelmapping);
 
 	loadModel();
+
+	//moved after loadModel in v1.11 since was getting overwritten if having user defined ordering 
+	if (nstateorder != ChromHMM.STATEORDER_FIXED)
+	{
+	   this.nstateorder = nstateorder;
+	}
+
+	this.chorder = ChromHMM.ORDERCHARS[this.nstateorder];
+	this.szorder = ChromHMM.ORDERSTRINGS[this.nstateorder];
+
 	stateordering = new int[numstates];
 	colordering = new int[numdatasets];
 	for (int ni = 0; ni < stateordering.length; ni++)
@@ -731,7 +739,7 @@ public class ChromHMM
 	this.szinputdir = szinputdir;
 	this.szsegmentdir = szsegmentdir;
 	this.szinputfilelist = szinputfilelist;
-	this.szchromlengthfile = szchromlengthfile;
+	//this.szchromlengthfile = szchromlengthfile; //removed since not doing anything
 	this.breadposterior = breadposterior;
 	this.breadsegment = breadsegment;
 	this.breadstatebyline = breadstatebyline;
@@ -1353,7 +1361,11 @@ public class ChromHMM
 	    StringTokenizer st = new StringTokenizer(szLoadHeader);
 	    pw.print(st.nextToken()+"\t"+st.nextToken()+"\t"+chorder);
 	    st.nextToken(); //might be changing the order type
-	    pw.println("\t"+st.nextToken()+"\t"+st.nextToken());
+	    if (st.hasMoreTokens())
+	    {
+		//added this check in version 1.11 since elim models won't have these two tokens for loglikelihood and iteration
+	       pw.println("\t"+st.nextToken()+"\t"+st.nextToken());
+	    }
 	}
 	else
 	{
@@ -1626,7 +1638,8 @@ public class ChromHMM
 
 	    if (nbestsplit == -1)
 	    {
-		throw new IllegalArgumentException("On this data the INFORMATION initialization strategy can only support "+niteration+" states "+
+		throw new IllegalArgumentException("On this data the INFORMATION initialization strategy can only support "+niteration+" states. "+
+                                                   "Check if the binarization was done correctly, and if so "+
 						   "use the RANDOM or LOAD options for more states");
 	    }
 
@@ -1894,6 +1907,7 @@ public class ChromHMM
 	         break;
 	      }
 	   }
+
 	   if (nstateorder == -1)
 	   {
 	      throw new IllegalArgumentException(chorder+" is an invalid order type");
@@ -2181,7 +2195,14 @@ public class ChromHMM
 	     //creates the posterior file
 	     String szposteriorinfilename = szsegmentdir+"/POSTERIOR/"+szprefix+"_"+chromSeq[nordered_nseq]+ChromHMM.SZPOSTERIOREXTENSION;
 
-	     brprobs = new BufferedReader(new FileReader(szposteriorinfilename));
+	     //updated in v.1.11 to check for  gz extensions
+	     File f = new File (szposteriorinfilename);
+	     File fgz = new File (szposteriorinfilename+".gz");
+	     if ((!f.exists())&&(fgz.exists()))
+	     {
+		 szposteriorinfilename = szposteriorinfilename + ".gz";
+	     }
+	     brprobs = Util.getBufferedReader(szposteriorinfilename);// new BufferedReader(new FileReader(szposteriorinfilename));
 
 	     //skips the header lines
 	     brprobs.readLine();
@@ -2206,7 +2227,14 @@ public class ChromHMM
 	      //reads a file which has the state with the maximum posterior probability
 	      String szmaxinfilename = szsegmentdir+"/STATEBYLINE/"+szprefix+"_"+szcurrchrom+ChromHMM.SZSTATEBYLINEEXTENSION;
 
- 	      BufferedReader brmax = new BufferedReader(new FileReader(szmaxinfilename));
+	      //updated in v.1.11 to check for  gz extensions
+	      File f = new File (szmaxinfilename);
+	      File fgz = new File (szmaxinfilename+".gz");
+	      if ((!f.exists())&&(fgz.exists()))
+	      {
+	         szmaxinfilename = szmaxinfilename + ".gz";
+	      }
+ 	      BufferedReader brmax = Util.getBufferedReader(szmaxinfilename);// new BufferedReader(new FileReader(szmaxinfilename));
 	      //skip the header lines
 	      brmax.readLine();
 	      brmax.readLine();
@@ -2229,7 +2257,15 @@ public class ChromHMM
 
 	     String szsegmentinfilename = szsegmentdir+"/" + szprefix+ChromHMM.SZSEGMENTEXTENSION;
 
-	     brbed = new BufferedReader(new FileReader(szsegmentinfilename));
+	     //updated in v.1.11 to check for  gz extensions
+	     File f = new File (szsegmentinfilename);
+	     File fgz = new File (szsegmentinfilename+".gz");
+	     if ((!f.exists())&&(fgz.exists()))
+	     {
+                szsegmentinfilename = szsegmentinfilename + ".gz";
+             }
+
+	     brbed = Util.getBufferedReader(szsegmentinfilename); // new BufferedReader(new FileReader(szsegmentinfilename));
 		 
 	     String szLineMax;
 	     while ((szLineMax = brbed.readLine())!=null)
@@ -2261,7 +2297,9 @@ public class ChromHMM
 	        //updating its emission probabilities
 	        double[] emissionproducts_ni = emissionproducts[ni];
 	        boolean[] traindataObservedValues_ni = traindataObservedValues[ni];
-	        boolean[] traindataNotMissing_ni = traindataNotMissing[ni];		  
+	        boolean[] traindataNotMissing_ni = traindataNotMissing[ni];	
+		boolean ballzero = true;
+	  
 	        for (int ns = 0; ns < numstates; ns++)
 	        {
 	           double dproduct = 1;
@@ -2285,6 +2323,19 @@ public class ChromHMM
 		      // otherwise treated as missing omitting from product
 		   }
 	           emissionproducts_ni[ns] = dproduct;
+
+		   if (dproduct >= EPSILONEMISSIONS)
+		   {
+		      ballzero = false;
+		   }
+		}
+
+		if (ballzero)
+	        {
+	      	   for (int ns = 0; ns < numstates; ns++)
+	           {
+		      emissionproducts_ni[ns] = EPSILONEMISSIONS;
+		   }
 		}
 	     }
 	  }
@@ -2763,10 +2814,10 @@ public class ChromHMM
 	  PrintWriter pwmax = null;
 	  if (bprintstatebyline)
 	  {
-	      //creates a file which has the state with the maximum posterior probability
-	      String szmaxoutfilename = szoutputdir+"/STATEBYLINE/"+szprefix+"_"+chromSeq[nordered_nseq]+ChromHMM.SZSTATEBYLINEEXTENSION;
+	     //creates a file which has the state with the maximum posterior probability
+	     String szmaxoutfilename = szoutputdir+"/STATEBYLINE/"+szprefix+"_"+chromSeq[nordered_nseq]+ChromHMM.SZSTATEBYLINEEXTENSION;
 
-	      System.out.println("Writing to file "+szmaxoutfilename);
+	     System.out.println("Writing to file "+szmaxoutfilename);
 	     pwmax = new PrintWriter(szmaxoutfilename);
 	     pwmax.println(cellSeq[nordered_nseq]+"\t"+chromSeq[nordered_nseq]);
 	     pwmax.println("MaxState "+chorder);
@@ -2802,6 +2853,9 @@ public class ChromHMM
 	        double[] emissionproducts_ni = emissionproducts[ni];
 	        boolean[] traindataObservedValues_ni = traindataObservedValues[ni];
 	        boolean[] traindataNotMissing_ni = traindataNotMissing[ni];		  
+
+		boolean ballzero = true;
+
 	        for (int ns = 0; ns < numstates; ns++)
 	        {
 	           double dproduct = 1;
@@ -2825,7 +2879,21 @@ public class ChromHMM
 		      // otherwise treated as missing omitting from product
 		   }
 	           emissionproducts_ni[ns] = dproduct;
+
+		   if (dproduct >= EPSILONEMISSIONS)
+		   {
+		      ballzero = false;
+	           }
 		}
+
+		if (ballzero)
+	        {
+	      	   for (int ns = 0; ns < numstates; ns++)
+	           {
+	       	      emissionproducts_ni[ns] = EPSILONEMISSIONS;
+		   }
+		}
+
 	     }
 	  }
 
@@ -3302,6 +3370,9 @@ public class ChromHMM
 		   double[] emissionproducts_ni = emissionproducts[ni];
 		   boolean[] traindataObservedValues_ni = traindataObservedValues[ni];
 		   boolean[] traindataNotMissing_ni = traindataNotMissing[ni];		  
+
+		   boolean ballzero = true;
+
 	           for (int ns = 0; ns < numstates; ns++)
 	           {
 		      double dproduct = 1;
@@ -3327,6 +3398,19 @@ public class ChromHMM
 		      }
 		      //System.out.println(ns+"\t"+dproduct);
 		      emissionproducts_ni[ns] = dproduct;
+
+		      if (dproduct >= EPSILONEMISSIONS)
+		      {
+		         ballzero = false;
+		      }
+		   }
+
+		   if (ballzero)
+		   {
+		      for (int ns = 0; ns < numstates; ns++)
+		      {
+			  emissionproducts_ni[ns] = EPSILONEMISSIONS;
+		      }
 		   }
 		}
 	     }
@@ -3413,7 +3497,8 @@ public class ChromHMM
 	        for (int ns = 0; ns < numstates; ns++)
 	        {
                    alpha_nt[ns] /= dscale;
-                }
+		}
+
       	        dloglike += Math.log(dscale);
 	     }
 	    
@@ -3466,6 +3551,7 @@ public class ChromHMM
 		//double dscaleinv = 1.0/scale[nt];
 		double dscale_nt = scale[nt];
                 //scale_t(s)=P(o_0,...,o_t|lambda) summed over all states
+
 	        for (int ni = 0; ni < numstates; ni++)
 		{
 	           double dtempsum = 0;
@@ -3495,7 +3581,7 @@ public class ChromHMM
 		      }
 		   }
 		   beta_nt[ni] = dtempsum/dscale_nt;
-		}
+		}		
 		
                 ddenom = 0;
 		
@@ -3817,13 +3903,13 @@ public class ChromHMM
 
 	  if (niteration == 1)
 	  {
-	      System.out.format("%10s %25s %10s %20s\n","Iteration","Estimated Log Likelihood", "Change","Total Time (secs)");
-	      System.out.format("%10s %25s %10s %20s\n",""+niteration,""+nf3.format(dloglike),"-",""+nf1.format(dtimechange));
+	      System.out.format("%10s %25s %10s %20s%n","Iteration","Estimated Log Likelihood", "Change","Total Time (secs)");
+	      System.out.format("%10s %25s %10s %20s%n",""+niteration,""+nf3.format(dloglike),"-",""+nf1.format(dtimechange));
 	  }
 	  else
 	  {
 	      //System.out.format(niteration+"            "+nf3.format(dloglike)+"           "+nf3.format(ddiff)+"       "+nf1.format(dtimechange));
-	      System.out.format("%10s %25s %10s %20s\n",""+niteration,""+nf3.format(dloglike),""+nf3.format(ddiff),""+nf1.format(dtimechange));
+	      System.out.format("%10s %25s %10s %20s%n",""+niteration,""+nf3.format(dloglike),""+nf3.format(ddiff),""+nf1.format(dtimechange));
 	  }
 	  niteration++;
        }
@@ -4431,6 +4517,9 @@ public class ChromHMM
              double[] emissionproducts_ni = emissionproducts[ni];
 	     boolean[] traindataObservedValues_ni = traindataObservedValues[ni];
 	     boolean[] traindataNotMissing_ni = traindataNotMissing[ni];		  
+
+	     boolean ballzero = true;
+
              for (int ns = 0; ns < numstates; ns++)
 	     {
                 double dproduct = 1;
@@ -4456,6 +4545,19 @@ public class ChromHMM
 		}
 	        //System.out.println(ns+"\t"+dproduct);
 	        emissionproducts_ni[ns] = dproduct;
+
+		if (dproduct >= EPSILONEMISSIONS)
+		{
+	      	   ballzero = false;
+	        }
+	     }
+
+	     if (ballzero)
+	     {
+	        for (int ns = 0; ns < numstates; ns++)
+	        {
+	       	   emissionproducts_ni[ns] = EPSILONEMISSIONS;
+	        }
 	     }
 	  }
 
@@ -4707,13 +4809,13 @@ public class ChromHMM
 
 	  if (niteration == 1)
 	  {
-	      System.out.format("%10s %25s %10s %20s\n","Iteration","Estimated Log Likelihood", "Change","Total Time (secs)");
-	      System.out.format("%10s %25s %10s %20s\n",""+niteration,""+nf3.format(dloglike),"-",""+nf1.format(dtimechange));
+	      System.out.format("%10s %25s %10s %20s%n","Iteration","Estimated Log Likelihood", "Change","Total Time (secs)");
+	      System.out.format("%10s %25s %10s %20s%n",""+niteration,""+nf3.format(dloglike),"-",""+nf1.format(dtimechange));
 	  }
 	  else
 	  {
 	      //System.out.format(niteration+"            "+nf3.format(dloglike)+"           "+nf3.format(ddiff)+"       "+nf1.format(dtimechange));
-	      System.out.format("%10s %25s %10s %20s\n",""+niteration,""+nf3.format(dloglike),""+nf3.format(ddiff),""+nf1.format(dtimechange));
+	      System.out.format("%10s %25s %10s %20s%n",""+niteration,""+nf3.format(dloglike),""+nf3.format(ddiff),""+nf1.format(dtimechange));
 	  }
 	  niteration++;
        }
@@ -4744,15 +4846,16 @@ public class ChromHMM
 	   ArrayList alfiles = new ArrayList();
 	   for (int nfile = 0; nfile < chromfilesall.length; nfile++)
 	   {
-	       if (chromfilesall[nfile].contains("_binary"))
+	       if ((chromfilesall[nfile].contains("_binary"))&&(!(new File(chromfilesall[nfile])).isHidden()))
 	       {
-		   alfiles.add(chromfilesall[nfile]);
+	           //added hidden check in v.1.11
+	          alfiles.add(chromfilesall[nfile]);
 	       }
 	   }
 
 	   if (alfiles.size() == 0)
 	   {
-	       throw new IllegalArgumentException("No files found in "+szinputdir+" containing '_binary'");
+	       throw new IllegalArgumentException("No files found in "+szinputdir+" containing '_binary' that are not Hidden");
 	   }
 
  	   //stores them in chromfiles
@@ -4839,6 +4942,11 @@ public class ChromHMM
 		throw new IllegalArgumentException(szinputdir+"/"+chromfiles[nfile]+" is empty!");
 	    }
 	    StringTokenizer st = new StringTokenizer(szLine,"\t");
+            if (!st.hasMoreTokens())
+	    {
+	       throw new IllegalArgumentException("First line must contain cell type and chromosome. No entries found.");
+	    }
+
 	    cellSeq[nfile] = st.nextToken();
 	    if (!st.hasMoreTokens())
 	    {
@@ -4901,6 +5009,11 @@ public class ChromHMM
 		
 		for (int ncol = 0; ncol < numdatasets; ncol++)
 		{
+
+		    if (!st.hasMoreTokens())
+		    {
+			throw new IllegalArgumentException("Found line without "+numdatasets+" values in file "+chromfiles[nfile]);
+		    }
 
 		    String sztoken = st.nextToken();
 		    
@@ -5050,9 +5163,9 @@ public class ChromHMM
 
 	if (szcommand.equalsIgnoreCase("Version"))
 	{
-	    System.out.println("This is Version 1.10 of ChromHMM (c) Copyright 2008-2012 Massachusetts Institute of Technology");
+	    System.out.println("This is Version 1.11 of ChromHMM (c) Copyright 2008-2012 Massachusetts Institute of Technology");
 	}
-        else if (szcommand.equalsIgnoreCase("BinarizeBed"))
+        else if ((szcommand.equals("BinarizeBam"))||(szcommand.equalsIgnoreCase("BinarizeBed")))
 	{
 	    String szcontroldir=null;
 	    int nflankwidthcontrol = 5;
@@ -5062,6 +5175,7 @@ public class ChromHMM
 	    int noffsetright = 1;
 	    double dpoissonthresh = 0.0001;
 	    double dfoldthresh = 0;
+	    double dcountthresh = 0;
 	    boolean bcontainsthresh = true;
 	    int npseudocount = 1;
 	    int nbinsize = ChromHMM.DEFAULT_BINSIZEBASEPAIRS;
@@ -5090,7 +5204,7 @@ public class ChromHMM
 		     {
 		        szcontroldir = args[++nargindex];
 		     }
-		     else if (args[nargindex].equals("-colfields"))
+		     else if ((args[nargindex].equals("-colfields"))&&(szcommand.equalsIgnoreCase("BinarizeBed")))
 		     {
 		        szcolfields = args[++nargindex];
 		     }
@@ -5101,6 +5215,10 @@ public class ChromHMM
 		     else if (args[nargindex].equals("-f"))
 		     {
 		        dfoldthresh = Double.parseDouble(args[++nargindex]);
+		     }
+                     else if (args[nargindex].equals("-g"))
+		     {
+		        dcountthresh = Double.parseDouble(args[++nargindex]);
 		     }
 		     else if (args[nargindex].equals("-n"))
 		     {
@@ -5197,7 +5315,8 @@ public class ChromHMM
 						nshift,bcenterinterval, noffsetleft,noffsetright,szoutputsignaldir,
 						szoutputbinarydir,szoutputcontroldir,
 					        dpoissonthresh,dfoldthresh,bcontainsthresh,
-						   npseudocountcontrol,nbinsize,szcolfields,bpeaks);	      
+						   npseudocountcontrol,nbinsize,szcolfields,bpeaks, dcountthresh,szcommand.equalsIgnoreCase("BinarizeBam"));	   
+	          
 	    }
 	    else
             {
@@ -5207,16 +5326,27 @@ public class ChromHMM
 	
 	    if (!bok)
 	    {
-               System.out.println("usage BinarizeBed [-b binsize][-c controldir][-center][-colfields chromosome,start,end[,strand]][-e offsetend][-f foldthresh]"+
-                                  "[-n shift][-o outputcontroldir][-p poissonthresh][-peaks][-s offsetstart][-strictthresh][-t outputsignaldir]"+
+	       if (szcommand.equalsIgnoreCase("BinarizeBed"))
+	       {
+                  System.out.println("usage BinarizeBed [-b binsize][-c controldir][-center][-colfields chromosome,start,end[,strand]][-e offsetend][-f foldthresh]"+
+                                  "[-g signalthresh][-n shift][-o outputcontroldir][-p poissonthresh][-peaks][-s offsetstart][-strictthresh][-t outputsignaldir]"+
                                   "[-u pseudocountcontrol][-w flankwidthcontrol] "+
                                   "chromosomelengthfile inputbeddir cellmarkfiletable outputbinarydir");
+	       }
+	       else
+	       {
+		   System.out.println("usage BinarizeBam [-b binsize][-c controldir][-center][-e offsetend][-f foldthresh]"+
+                                  "[-g signalthresh][-n shift][-o outputcontroldir][-p poissonthresh][-peaks][-s offsetstart][-strictthresh][-t outputsignaldir]"+
+                                  "[-u pseudocountcontrol][-w flankwidthcontrol] "+
+				      "chromosomelengthfile inputbamdir cellmarkfiletable outputbinarydir");
+	       }
 	    }
 	}
 	else if (szcommand.equalsIgnoreCase("BinarizeSignal"))
 	{
 	    boolean bcontainsthresh = true;
 	    double dfoldthresh = 0;
+	    double dcountthresh = 0;
 	    double dpoissonthresh = 0.0001;
 	    int nflankwidthcontrol = 5;
 	    int npseudocountcontrol = 1;
@@ -5243,6 +5373,10 @@ public class ChromHMM
 		     else if (args[nargindex].equals("-f"))
 		     {
 		        dfoldthresh = Double.parseDouble(args[++nargindex]);
+		     }
+                     else if (args[nargindex].equals("-g"))
+		     {
+		        dcountthresh = Double.parseDouble(args[++nargindex]);
 		     }
 		     else if (args[nargindex].equals("-p"))
 		     {
@@ -5290,11 +5424,11 @@ public class ChromHMM
 	          if (szcontroldir!=null)
 	          {
                      Preprocessing.makeBinaryDataFromSignalAgainstControl(szsignaldir,szcontroldir, szoutputdir,
-									  dpoissonthresh, dfoldthresh,bcontainsthresh, nflankwidthcontrol,npseudocountcontrol);
+									  dpoissonthresh, dfoldthresh,bcontainsthresh, nflankwidthcontrol,npseudocountcontrol, dcountthresh);
 	          }
 	          else
 	          {
-	             Preprocessing.makeBinaryDataFromSignalUniform(szsignaldir, szoutputdir, dpoissonthresh, dfoldthresh, bcontainsthresh);
+		      Preprocessing.makeBinaryDataFromSignalUniform(szsignaldir, szoutputdir, dpoissonthresh, dfoldthresh, bcontainsthresh,dcountthresh);
 	          }
 	       }
 	       else
@@ -5305,7 +5439,7 @@ public class ChromHMM
 
 	    if (!bok)
             {
-               System.out.println("usage BinarizeSignal [-c controldir][-f foldthresh][-p poissonthresh][-strictthresh][-u pseudocountcontrol][-w flankwidth] signaldir outputdir");
+               System.out.println("usage BinarizeSignal [-c controldir][-f foldthresh][-g signalthresh][-p poissonthresh][-strictthresh][-u pseudocountcontrol][-w flankwidth] signaldir outputdir");
             }	       
 	    
 	}
@@ -6243,7 +6377,6 @@ public class ChromHMM
 
 		  if (szchromlengthfile == null)
 		  {
-
 		      File flength = new File(szprefixpath+"/"+CHROMSIZESDIR+"/"+szassembly+".txt");
 		      if (flength.exists())
 		      {
@@ -6256,7 +6389,18 @@ public class ChromHMM
 						 nbinsize,szoutfileID,nstateorder,bordercols,nzerotransitionpower,theColor,bnormalEM, nmaxprocessors);
 	          theHMM.buildModel();
 
-		  String szwebpage = szoutputdir+"/webpage_"+numstates+".html";
+
+		  String szunderscoreoutfileID;
+		  if (szoutfileID.equals(""))
+		  {
+		      szunderscoreoutfileID = "";
+		  }
+		  else
+		  {
+                      szunderscoreoutfileID = "_"+szoutfileID;
+		  }
+
+		  String szwebpage = szoutputdir+"/webpage_"+numstates+szunderscoreoutfileID+".html";
 		  PrintWriter pwweb = new PrintWriter(new FileWriter(szwebpage));
 
 
@@ -6272,14 +6416,16 @@ public class ChromHMM
 		  }
 		  pwweb.println(args[args.length-1]+"");
 
+
+
 		  pwweb.println("<h1>Model Parameters</h1>");
-		  pwweb.println("<img src=\"emissions_"+numstates+".png\"><br>");
-		  pwweb.println("<li><a href=\"emissions_"+numstates+".svg\">Emission Parameter SVG File</a><br>");
-		  pwweb.println("<li><a href=\"emissions_"+numstates+".txt\">Emission Parameter Tab-Delimited Text File</a><br>");
-		  pwweb.println("<img src=\"transitions_"+numstates+".png\"><br>");
-		  pwweb.println("<li><a href=\"transitions_"+numstates+".svg\">Transition Parameter SVG File</a><br>");
-		  pwweb.println("<li><a href=\"transitions_"+numstates+".txt\">Transition Parameter Tab-Delimited Text File</a><br><br>");
-		  pwweb.println("<li><a href=\"model_"+numstates+".txt\">All Model Parameters Tab-Delimited Text File</a> <br>");
+		  pwweb.println("<img src=\"emissions_"+numstates+szunderscoreoutfileID+".png\"><br>");
+		  pwweb.println("<li><a href=\"emissions_"+numstates+szunderscoreoutfileID+".svg\">Emission Parameter SVG File</a><br>");
+		  pwweb.println("<li><a href=\"emissions_"+numstates+szunderscoreoutfileID+".txt\">Emission Parameter Tab-Delimited Text File</a><br>");
+		  pwweb.println("<img src=\"transitions_"+numstates+szunderscoreoutfileID+".png\"><br>");
+		  pwweb.println("<li><a href=\"transitions_"+numstates+szunderscoreoutfileID+".svg\">Transition Parameter SVG File</a><br>");
+		  pwweb.println("<li><a href=\"transitions_"+numstates+szunderscoreoutfileID+".txt\">Transition Parameter Tab-Delimited Text File</a><br><br>");
+		  pwweb.println("<li><a href=\"model_"+numstates+szunderscoreoutfileID+".txt\">All Model Parameters Tab-Delimited Text File</a> <br>");
 		  pwweb.println("<h1>Genome Segmentation Files</h1>");
 
 	          if (bprintsegments||bprintposterior||bprintstatebyline) 
@@ -6375,6 +6521,13 @@ public class ChromHMM
                                   String[] dir = fanchorassembly.list();
 			          for (int nfile = 0; nfile < dir.length; nfile++)
 			          {
+				     File fhidden = new File(dir[nfile]);
+				     if (fhidden.isHidden())
+				     {
+					 //added in v1.11
+				        continue;
+				     }
+
 				     int nperiodindex = dir[nfile].indexOf(".");
 				     String szanchorname;
 				     if (nperiodindex == -1)
@@ -6558,7 +6711,7 @@ public class ChromHMM
 	}
 	else
 	{
-	    System.out.println("Need to specify the mode BinarizeBed|BinarizeSignal|CompareModels|EvalSubset|LearnModel|MakeBrowserFiles"+
+	    System.out.println("Need to specify the mode BinarizeBam|BinarizeBed|BinarizeSignal|CompareModels|EvalSubset|LearnModel|MakeBrowserFiles"+
                                "|MakeSegmentation|NeighborhoodEnrichment|StatePruning|OverlapEnrichment|Reorder|Version");
 
 	}

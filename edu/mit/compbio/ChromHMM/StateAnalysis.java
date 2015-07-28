@@ -3,19 +3,18 @@
  * ChromHMM - automating chromatin state discovery and characterization
  * Copyright (C) 2008-2012 Massachusetts Institute of Technology
  * 
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- * 
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ *  This program is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  **/
 package edu.mit.compbio.ChromHMM;
 
@@ -207,6 +206,11 @@ public class StateAnalysis
 	}
 
 	File posteriordir = new File(szposteriordir);
+        if (!posteriordir.exists())
+	{
+	   throw new IllegalArgumentException(szposteriordir+" was not found!");
+        }
+
 	String[] posteriorfiles = posteriordir.list();
 
 	int numposteriorstates = 0;
@@ -223,7 +227,30 @@ public class StateAnalysis
 
 	   if (dir.isDirectory())
 	   {
-              files = dir.list();
+	      //files = dir.list();
+
+	       //added in v1.11 to skip hidden
+	      String[] filesWithHidden = dir.list();
+	      int nnonhiddencount = 0;
+	      for (int nfile = 0; nfile < filesWithHidden.length; nfile++)
+	      {
+	         if (!(new File(filesWithHidden[nfile])).isHidden())
+	         {
+	            nnonhiddencount++;
+	         }
+	      }	   
+
+	      int nactualindex = 0;
+	      files = new String[nnonhiddencount];// dir.list(); 
+              for (int nfile = 0; nfile < filesWithHidden.length; nfile++)
+	      {
+	         if (!(new File(filesWithHidden[nfile])).isHidden())
+	         {
+	            files[nactualindex] = filesWithHidden[nfile];
+	            nactualindex++;
+	         }
+	      }
+
               Arrays.sort(files);
 	      szinputcoorddir += "/";
 	   }
@@ -266,7 +293,7 @@ public class StateAnalysis
 	    String szposteriorfiles_nfile = posteriorfiles[nfile];
 
 	    //going through the posterior files
-	    if (szposteriorfiles_nfile.contains("_posterior"))
+	    if ((szposteriorfiles_nfile.contains("_posterior"))&&(!(new File(szposteriorfiles_nfile)).isHidden()))
 	    {
 		
 		BufferedReader brposterior = Util.getBufferedReader(szposteriordir+"/"+szposteriorfiles_nfile);
@@ -728,8 +755,27 @@ public class StateAnalysis
 	    if (dir.isDirectory())	  
 	    {
 		//throw new IllegalArgumentException(szinputcoorddir+" is not a directory!");
-	   
-	       files = dir.list(); 
+		//added in v1.11 to skip hidden files
+	       String[] filesWithHidden = dir.list();
+	       int nnonhiddencount = 0;
+	       for (int nfile = 0; nfile < filesWithHidden.length; nfile++)
+	       {
+		   if (!(new File(filesWithHidden[nfile])).isHidden())
+		   {
+		       nnonhiddencount++;
+		   }
+	       }	   
+
+	       int nactualindex = 0;
+	       files = new String[nnonhiddencount];// dir.list(); 
+               for (int nfile = 0; nfile < filesWithHidden.length; nfile++)
+	       {
+	          if (!(new File(filesWithHidden[nfile])).isHidden())
+	          {
+		      files[nactualindex] = filesWithHidden[nfile];
+		      nactualindex++;
+	          }
+	       }
 	       Arrays.sort(files);
 	       szinputcoorddir += "/";
 	    }
@@ -1144,7 +1190,7 @@ public class StateAnalysis
 	pw.println();
 	pw.close();
 
-	String[] rowlabels = new String[tallyoverlaplabel[0].length];
+	String[] rowlabels;// = new String[tallyoverlaplabel[0].length];
 	if (numelim > 0)
 	{
 	   double[][] heatmapreduce = new double[heatmapfold.length-numelim][heatmapfold[0].length];
@@ -1310,7 +1356,7 @@ public class StateAnalysis
 	      npositionindex = Integer.parseInt(stcolfields.nextToken());
 	      nsignalindex = Integer.parseInt(stcolfields.nextToken());
 	   }
-	   else if (szcolfields == null)
+	   else //if (szcolfields == null)
            {
 	       nsignalindex = 2;
 	   }
@@ -1607,7 +1653,7 @@ public class StateAnalysis
 	    String szposteriorfiles_nfile = posteriorfiles[nfile];
 
 	    //going through all posterior files
-	    if (szposteriorfiles_nfile.contains("_signal"))
+	    if ((szposteriorfiles_nfile.contains("_signal"))&&(!(new File(szposteriorfiles_nfile)).isHidden()))
 	    {		
 		BufferedReader brposterior = Util.getBufferedReader(szposteriordir+"/"+szposteriorfiles_nfile);
 		szLine = brposterior.readLine();
@@ -1835,7 +1881,7 @@ public class StateAnalysis
 	    String szposteriorfiles_nfile = posteriorfiles[nfile];
 
 	    //going through all posterior files
-	    if (szposteriorfiles_nfile.contains("_posterior"))
+	    if ((szposteriorfiles_nfile.contains("_posterior"))&&(!(new File(szposteriorfiles_nfile)).isHidden()))
 	    {		
 		BufferedReader brposterior = Util.getBufferedReader(szposteriordir+"/"+szposteriorfiles_nfile);
 		szLine = brposterior.readLine();
@@ -2077,7 +2123,7 @@ public class StateAnalysis
 	pw.close();
 
 	StringTokenizer stheader = new StringTokenizer(szmarknames,"\t");
-	String[] rowlabels = new String[tallyoverlaplabel[0].length];
+	String[] rowlabels;// = new String[tallyoverlaplabel[0].length];
 	if (numelim > 0)
 	{
 	    //we need to collapse the heatmap
@@ -2209,7 +2255,7 @@ public class StateAnalysis
 	pw.close();
 
 
-	String[] rowlabels = new String[tallyoverlaplabel[0].length];
+	String[] rowlabels;// = new String[tallyoverlaplabel[0].length];
 	if (numelim > 0)
 	{
 	    //we need to collapse the heatmap
@@ -2272,9 +2318,9 @@ public class StateAnalysis
 	nf5.setMinimumFractionDigits(5);
 
 	File filemain = new File(szmainmodelfile);
-	if ((!filemain.getName().startsWith("emissions_"))||(!szmainmodelfile.endsWith(".txt")))
+	if ((!filemain.getName().startsWith("emissions_"))||((!szmainmodelfile.endsWith(".txt"))&&(!szmainmodelfile.endsWith(".txt.gz"))))
         {
-	    throw new IllegalArgumentException("Reference set of emission parameters must start with emissions_ and end with .txt");
+	    throw new IllegalArgumentException("Reference set of emission parameters must start with emissions_ and end with .txt or .txt.gz");
 	}
 		
 	BufferedReader bremissions = Util.getBufferedReader(szmainmodelfile);
@@ -2339,9 +2385,10 @@ public class StateAnalysis
 
 	for (int nfile = 0; nfile < comparefiles.length; nfile++)
 	{
-	    //compares to any file in the szcomparedir with the prefix "emissions_" and the suffixt ".txt"
+	    //compares to any file in the szcomparedir with the prefix "emissions_" and the suffix ".txt" or .txt.gz
 	    RecEmissionFile theRecEmissionFile = new RecEmissionFile();
-	    if ((comparefiles[nfile].startsWith("emissions_"))&&(comparefiles[nfile].endsWith(".txt")))
+	    if ((comparefiles[nfile].startsWith("emissions_"))&&((comparefiles[nfile].endsWith(".txt"))||(comparefiles[nfile].endsWith(".txt.gz")))&&
+		(!(new File(comparefiles[nfile])).isHidden()))
 	    {
 		//first figures out the number of states
 		bremissions = Util.getBufferedReader(szcomparedir+"/"+comparefiles[nfile]);
