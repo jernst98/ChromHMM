@@ -28,7 +28,7 @@ import java.net.*;
 import java.util.zip.*;
 import org.tc33.jheatchart.HeatChart;
 
-
+ 
 /**
  * The main class of ChromHMM implements command line parsing and core algorithms
  * The ChromHMM code was written by Jason Ernst 
@@ -670,7 +670,7 @@ public class ChromHMM
 
 	loadModel();
 
-	//moved after loadModel in v1.11 since was getting overwritten if having user defined ordering 
+	//moved after loadModel in v1.12 since was getting overwritten if having user defined ordering 
 	if (nstateorder != ChromHMM.STATEORDER_FIXED)
 	{
 	   this.nstateorder = nstateorder;
@@ -1094,7 +1094,9 @@ public class ChromHMM
 	{
 	    statelabels[ni] = ""+(ni+1);
 	    String szsuffix;
-	    if ((szsuffix = (String) hmlabelExtend.get(""+chorder+(stateordering[ni]+1)))!=null)
+	    //changing in v1.12 to be state labels for new state to match char ordering
+	    //if ((szsuffix = (String) hmlabelExtend.get(""+chorder+(stateordering[ni]+1)))!=null)
+	    if ((szsuffix = (String) hmlabelExtend.get(""+chorder+(ni+1)))!=null)
 	    {
 	       statelabels[ni]+= "_"+szsuffix;
 	    }
@@ -1172,7 +1174,9 @@ public class ChromHMM
 	{
 	    rowlabels[ni] = ""+(ni+1);
 	    String szsuffix;
-	    if ((szsuffix = (String) hmlabelExtend.get(""+chorder+(stateordering[ni]+1)))!=null)
+	    //changing in v1.12 to be state labels for new state to match char ordering
+	    //if ((szsuffix = (String) hmlabelExtend.get(""+chorder+(stateordering[ni]+1)))!=null)
+	    if ((szsuffix = (String) hmlabelExtend.get(""+chorder+(ni+1)))!=null)
 	    {
 	       rowlabels[ni]+= "_"+szsuffix;
 	    }
@@ -1257,7 +1261,9 @@ public class ChromHMM
 	{
 	   pw.print((ni+1));
            String szsuffix;
-           if ((szsuffix = (String) hmlabelExtend.get(""+chorder+(stateordering[ni]+1)))!=null)
+	    //changing in v1.12 to be state labels for new state to match char ordering
+           //if ((szsuffix = (String) hmlabelExtend.get(""+chorder+(stateordering[ni]+1)))!=null)
+           if ((szsuffix = (String) hmlabelExtend.get(""+chorder+(ni+1)))!=null)
 	   {
 	       pw.print("_"+szsuffix);
 	   }
@@ -1301,7 +1307,9 @@ public class ChromHMM
 	{
 	    pw.print("\t"+(ni+1));
 	    String szsuffix;
-	    if ((szsuffix = (String) hmlabelExtend.get(""+chorder+(stateordering[ni]+1)))!=null)
+	    //changing in v1.12 to be state labels for new state to match char ordering
+	    //if ((szsuffix = (String) hmlabelExtend.get(""+chorder+(stateordering[ni]+1)))!=null)
+	    if ((szsuffix = (String) hmlabelExtend.get(""+chorder+(ni+1)))!=null)
 	    {
 	       pw.print("_"+szsuffix);
 	    }
@@ -1313,7 +1321,9 @@ public class ChromHMM
 	{
 	    pw.print(""+(ni+1));
 	    String szsuffix;
-	    if ((szsuffix = (String) hmlabelExtend.get(""+chorder+(stateordering[ni]+1)))!=null)
+	    //changing in v1.12 to be state labels for new state to match char ordering
+	    //if ((szsuffix = (String) hmlabelExtend.get(""+chorder+(stateordering[ni]+1)))!=null)
+	    if ((szsuffix = (String) hmlabelExtend.get(""+chorder+(ni+1)))!=null)
 	    {
 	       pw.print("_"+szsuffix);
 	    }
@@ -2652,7 +2662,10 @@ public class ChromHMM
         {
 	    rowlabels[ni] = ""+(ni+1);
 	    String szsuffix;
-	    if ((szsuffix = (String) hmlabelExtend.get(""+chorder+(stateordering[ni]+1)))!=null)
+
+	    //changing in v1.12 to be state labels for new state to match char ordering
+	    //if ((szsuffix = (String) hmlabelExtend.get(""+chorder+(stateordering[ni]+1)))!=null)
+	    if ((szsuffix = (String) hmlabelExtend.get(""+chorder+(ni+1)))!=null)
 	    {
 		rowlabels[ni]+= "_"+szsuffix;
 	    }
@@ -3858,9 +3871,14 @@ public class ChromHMM
 		         dgammadenom += emissionprobs_ns_nmark[nbucket];
 		      }
 
-		      for (int nbucket = 0; nbucket < numbuckets; nbucket++)
+
+                      //added to avoid NA values
+                      if (dgammadenom > 0)
 		      {
-		         emissionprobs_ns_nmark[nbucket] /= dgammadenom;
+		         for (int nbucket = 0; nbucket < numbuckets; nbucket++)
+		         {
+			    emissionprobs_ns_nmark[nbucket] /= dgammadenom;
+			 }
 		      }
 		   }
 		}
@@ -4757,10 +4775,14 @@ public class ChromHMM
 		      dgammadenom += emissionprobs_ns_nmark[nbucket];
 		  }
 
-	          for (int nbucket = 0; nbucket < numbuckets; nbucket++)
-	          {
-	             emissionprobs_ns_nmark[nbucket] /= dgammadenom;
-	          }
+		  //added to avoid NA values
+		  if (dgammadenom > 0)
+                  {
+	             for (int nbucket = 0; nbucket < numbuckets; nbucket++)
+	             {
+	                emissionprobs_ns_nmark[nbucket] /= dgammadenom;
+		     }
+		  }
 	      }
 	  }
        
@@ -5163,7 +5185,7 @@ public class ChromHMM
 
 	if (szcommand.equalsIgnoreCase("Version"))
 	{
-	    System.out.println("This is Version 1.11 of ChromHMM (c) Copyright 2008-2012 Massachusetts Institute of Technology");
+	    System.out.println("This is Version 1.12 of ChromHMM (c) Copyright 2008-2012 Massachusetts Institute of Technology");
 	}
         else if ((szcommand.equals("BinarizeBam"))||(szcommand.equalsIgnoreCase("BinarizeBed")))
 	{
