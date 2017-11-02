@@ -526,6 +526,7 @@ public class Preprocessing
 	HashMap hmfiles = new HashMap(); //contains a mapping from (cell type, mark) to the regular data file
 	HashMap hmfilescontrol = new HashMap(); //contains a mapping from (cell type, mark) to control file
 	HashMap hmfilescellcontrol = new HashMap();//contains a mapping from cell type to a hash set with all its control files
+	HashSet hscellnocontrol = new HashSet();//cell types with at least one file without control
 
 	boolean bcontrol = false; //whether there is control data at all
 	String szcontrolfile;
@@ -569,6 +570,10 @@ public class Preprocessing
 		}		
 		
 	        hscellcontrol.add(szcontrolfile);		
+	    }
+	    else
+	    {
+		hscellnocontrol.add(szcell);
 	    }
 	    hscells.add(szcell);
 	    hsmarks.add(szmark);
@@ -627,6 +632,7 @@ public class Preprocessing
 	    //going through each declared cell type
 	    String szcell = (String) itrcells.next();
 	    HashSet hscellcontrol = (HashSet) hmfilescellcontrol.get(szcell);
+	    boolean bmissing = hscellnocontrol.contains(szcell);
 
 	    boolean bcontrolfile;
             if (hscellcontrol == null)
@@ -637,8 +643,9 @@ public class Preprocessing
 	    else
 	    {
 		bcontrolfile = true;
-		if (hscellcontrol.size()==1)
+		if ((hscellcontrol.size()==1) && (!bmissing))
 		{
+		    //update in v1.14
 		    //we have one control for all marks
 		    numcontrolmarks = 1;
 		}
@@ -1021,8 +1028,9 @@ public class Preprocessing
 	   thresholds_nmark[0] = Math.max((int) Math.ceil(dcountthresh),1);
 	   
 	   //going through each background value
-           for (int nbackground = 1; nbackground < maxcontrol[nmark]; nbackground++)
+           for (int nbackground = 1; nbackground <= maxcontrol[nmark]; nbackground++)
            {
+	       //bug fixed in 1.14 that changes less than to less than equal
 	       if(hscontrol[nmark].contains(Integer.valueOf(nbackground)))
 	       {
 		   //only compute the background threshold for values we observed

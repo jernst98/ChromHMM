@@ -195,7 +195,7 @@ public class StateAnalysis
       public static void enrichmentPosterior(String szposteriordir,String szcell,String szinputcoorddir, String szinputcoordlist,
 					    int noffsetleft, int noffsetright, int nbinsize,
 					    boolean bcenter,boolean bunique, boolean busesignal,String szcolfields,boolean bbaseres, 
-					     String szoutfile,boolean bcolscaleheat, Color theColor,String sztitle,String szlabelmapping) throws IOException
+					     String szoutfile,boolean bcolscaleheat, Color theColor,String sztitle,String szlabelmapping, boolean bprintimage) throws IOException
     {
 
 	String szLine;
@@ -618,7 +618,7 @@ public class StateAnalysis
 
 
 	outputenrichment(szoutfile, files,tallyoverlaplabel, tallylabel, dsumoverlaplabel,theColor,bcolscaleheat,ChromHMM.convertCharOrderToStringOrder(chorder),
-			 sztitle,1,szlabelmapping,chorder); 
+			 sztitle,1,szlabelmapping,chorder, bprintimage); 
 
     }
 
@@ -644,7 +644,7 @@ public class StateAnalysis
      public static void enrichmentMax(String szinputsegment,String szinputcoorddir,String szinputcoordlist,
 				     int noffsetleft, int noffsetright,
                                      int nbinsize, boolean bcenter,boolean bunique, boolean busesignal,String szcolfields,
-				      boolean bbaseres, String szoutfile,boolean bcolscaleheat,Color theColor,String sztitle, String szlabelmapping) throws IOException
+				      boolean bbaseres, String szoutfile,boolean bcolscaleheat,Color theColor,String sztitle, String szlabelmapping, boolean bprintimage) throws IOException
     {
 	//usual high memory
 	ArrayList alsegments = new ArrayList(); //stores all the segments
@@ -1067,7 +1067,7 @@ public class StateAnalysis
 	}
 
 	outputenrichment(szoutfile, files,tallyoverlaplabel, tallylabel, dsumoverlaplabel,theColor,
-			 bcolscaleheat,ChromHMM.convertCharOrderToStringOrder(szlabel.charAt(0)),sztitle,0,szlabelmapping,szlabel.charAt(0));
+			 bcolscaleheat,ChromHMM.convertCharOrderToStringOrder(szlabel.charAt(0)),sztitle,0,szlabelmapping,szlabel.charAt(0), bprintimage);
     }
 
 
@@ -1096,7 +1096,8 @@ public class StateAnalysis
      public static void enrichmentMaxLowMem(String szinputsegment,String szinputcoorddir,String szinputcoordlist,
 				     int noffsetleft, int noffsetright,
                                      int nbinsize, boolean bcenter,boolean bunique, boolean busesignal,String szcolfields,
-				      boolean bbaseres, String szoutfile,boolean bcolscaleheat,Color theColor,String sztitle, String szlabelmapping) throws IOException
+				      boolean bbaseres, String szoutfile,boolean bcolscaleheat,Color theColor,String sztitle, 
+				      String szlabelmapping, boolean bprintimage) throws IOException
     {
 
 
@@ -1559,7 +1560,7 @@ public class StateAnalysis
 	}
 
 	outputenrichment(szoutfile, files,tallyoverlaplabel, tallylabel, dsumoverlaplabel,theColor,
-			 bcolscaleheat,ChromHMM.convertCharOrderToStringOrder(szlabel.charAt(0)),sztitle,0,szlabelmapping,szlabel.charAt(0));
+			 bcolscaleheat,ChromHMM.convertCharOrderToStringOrder(szlabel.charAt(0)),sztitle,0,szlabelmapping,szlabel.charAt(0), bprintimage);
     }
 
 
@@ -1599,7 +1600,8 @@ public class StateAnalysis
      */
     private static void outputenrichment(String szoutfile,String[] files,double[][] tallyoverlaplabel, 
                                          double[] tallylabel, double[] dsumoverlaplabel,Color theColor,
-                                         boolean bcolscaleheat,String szstateorder,String sztitle, int noffset,String szlabelmapping,char chorder) throws IOException
+                                         boolean bcolscaleheat,String szstateorder,String sztitle, int noffset,
+                                         String szlabelmapping,char chorder, boolean bprintimage) throws IOException
      {
 
 	HashMap hmlabelExtend = makeLabelMapping(szlabelmapping);
@@ -1789,8 +1791,11 @@ public class StateAnalysis
 	}
 
 
-	makeEnrichmentHeatMap(heatmapfold, collabels, rowlabels,szoutfile,theColor,sztitle,
-			      "Category","State ("+szstateorder+" order)");
+	if (bprintimage)
+	{
+	   makeEnrichmentHeatMap(heatmapfold, collabels, rowlabels,szoutfile,theColor,sztitle,
+				 "Category","State ("+szstateorder+" order)");
+	}
     }
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1902,7 +1907,7 @@ public class StateAnalysis
                                        int nbinsize, int numleft, int numright, int nspacing, 
 					boolean busestrand, boolean busesignal, String szcolfields,
 					int noffsetanchor, String szoutfile,Color theColor, 
-					String sztitle,String szlabelmapping) throws IOException
+					      String sztitle,String szlabelmapping, boolean bprintimage) throws IOException
     {
 
 
@@ -2138,7 +2143,7 @@ public class StateAnalysis
 	}
 
 	outputneighborhood(tallyoverlaplabel,tallylabel,dsumoverlaplabel,szoutfile,nspacing,numright,
-                           numleft,theColor,ChromHMM.convertCharOrderToStringOrder(szlabel.charAt(0)),sztitle,0,szlabelmapping,szlabel.charAt(0));
+                           numleft,theColor,ChromHMM.convertCharOrderToStringOrder(szlabel.charAt(0)),sztitle,0,szlabelmapping,szlabel.charAt(0), bprintimage);
     }
     
 
@@ -2168,7 +2173,7 @@ public class StateAnalysis
                                        int nbinsize, int numleft, int numright, int nspacing, 
 					boolean busestrand, boolean busesignal, String szcolfields,
 					int noffsetanchor, String szoutfile,Color theColor, 
-					String sztitle,String szlabelmapping) throws IOException
+					String sztitle,String szlabelmapping, boolean bprintimage) throws IOException
     {
 	//highmem
 	//stores all the segments in the data
@@ -2365,7 +2370,7 @@ public class StateAnalysis
         brcoords.close(); 	    
 
 	outputneighborhood(tallyoverlaplabel,tallylabel,dsumoverlaplabel,szoutfile,nspacing,numright,
-                           numleft,theColor,ChromHMM.convertCharOrderToStringOrder(szlabel.charAt(0)),sztitle,0,szlabelmapping,szlabel.charAt(0));
+                           numleft,theColor,ChromHMM.convertCharOrderToStringOrder(szlabel.charAt(0)),sztitle,0,szlabelmapping,szlabel.charAt(0),bprintimage);
     }
 
 
@@ -2394,7 +2399,7 @@ public class StateAnalysis
      */
      public static void neighborhoodSignal(String szposteriordir,String szcell,String szanchorpositions, int nbinsize, int numleft, int numright, int nspacing,
 					     boolean busestrand, boolean busesignal,String szcolfields, int noffsetanchor,
-					   String szoutfile,Color theColor,String sztitle,String szlabelmapping) throws IOException
+					   String szoutfile,Color theColor,String sztitle,String szlabelmapping, boolean bprintimage) throws IOException
     {
 	//posterior here is really signal just using equivalent variable names
 	//list of possible posterior files
@@ -2594,7 +2599,7 @@ public class StateAnalysis
 	}   
  
 	outputneighborhoodsignal(tallyoverlaplabel,tallylabel,dsumoverlaplabel,numlocs,szoutfile,nspacing,numright,
-				 numleft,theColor,ChromHMM.convertCharOrderToStringOrder(chorder),sztitle,szmarknames,szlabelmapping,chorder);
+				 numleft,theColor,ChromHMM.convertCharOrderToStringOrder(chorder),sztitle,szmarknames,szlabelmapping,chorder,bprintimage);
     }
 
 
@@ -2623,7 +2628,7 @@ public class StateAnalysis
      */
      public static void neighborhoodPosterior(String szposteriordir,String szcell,String szanchorpositions, int nbinsize, int numleft, int numright, int nspacing,
 					     boolean busestrand, boolean busesignal,String szcolfields, int noffsetanchor,
-					      String szoutfile,Color theColor,String sztitle,String szlabelmapping) throws IOException
+					      String szoutfile,Color theColor,String sztitle,String szlabelmapping, boolean bprintimage) throws IOException
     {
 
 	//list of possible posterior files
@@ -2820,7 +2825,7 @@ public class StateAnalysis
 	}   
  
 	outputneighborhood(tallyoverlaplabel,tallylabel,dsumoverlaplabel,szoutfile,nspacing,numright,
-                           numleft,theColor,ChromHMM.convertCharOrderToStringOrder(chorder),sztitle,1,szlabelmapping,chorder);
+                           numleft,theColor,ChromHMM.convertCharOrderToStringOrder(chorder),sztitle,1,szlabelmapping,chorder,bprintimage);
     }
 
     /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -2829,7 +2834,7 @@ public class StateAnalysis
      */
      private static void outputneighborhoodsignal(double[][] tallyoverlaplabel, double[] tallylabel, double[] dsumoverlaplabel, double dsumlabel, String szoutfile,
 						  int nspacing, int numright, int numleft, Color theColor, String szstateorder,String sztitle,String szmarknames,
-						  String szlabelmapping, char chorder) throws IOException
+						  String szlabelmapping, char chorder, boolean bprintimage) throws IOException
     {
         NumberFormat nf5 = NumberFormat.getInstance();
         nf5.setMaximumFractionDigits(5);
@@ -2935,7 +2940,10 @@ public class StateAnalysis
            }
         }
 
-	makeEnrichmentHeatMap(heatmapfold, collabels, rowlabels,szoutfile,theColor,sztitle,"Position","State ("+szstateorder+" order)");
+	if (bprintimage)
+	{
+	   makeEnrichmentHeatMap(heatmapfold, collabels, rowlabels,szoutfile,theColor,sztitle,"Position","State ("+szstateorder+" order)");
+	}
     }
 
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -2945,7 +2953,7 @@ public class StateAnalysis
      */
     private static void outputneighborhood(double[][] tallyoverlaplabel, double[] tallylabel, double[] dsumoverlaplabel, String szoutfile,
 					   int nspacing, int numright, int numleft, Color theColor, String szstateorder,String sztitle,
-                                           int noffset, String szlabelmapping, char chorder) throws IOException
+                                           int noffset, String szlabelmapping, char chorder, boolean bprintimage) throws IOException
     {
         NumberFormat nf5 = NumberFormat.getInstance();
         nf5.setMaximumFractionDigits(5);
@@ -3065,7 +3073,10 @@ public class StateAnalysis
            }
         }
 
-	makeEnrichmentHeatMap(heatmapfold, collabels, rowlabels,szoutfile,theColor,sztitle,"Position","State ("+szstateorder+" order)");
+	if (bprintimage)
+	{
+	   makeEnrichmentHeatMap(heatmapfold, collabels, rowlabels,szoutfile,theColor,sztitle,"Position","State ("+szstateorder+" order)");
+	}
     }
 
 
@@ -3077,7 +3088,8 @@ public class StateAnalysis
      * szoutputdir is the directory where the parametercorrelation .txt and .png output files will go
      * theColor is a Color object indicating the color of the heatmap
      */
-    public static void makeModelEmissionCompare(String szmainmodelfile, String szcomparedir, String szoutputprefix,Color theColor) throws IOException
+    public static void makeModelEmissionCompare(String szmainmodelfile, String szcomparedir, 
+                                                String szoutputprefix, Color theColor, boolean bprintimage) throws IOException
     {
 	ArrayList alrecs = new ArrayList();
 
@@ -3294,22 +3306,25 @@ public class StateAnalysis
 	pwcompare.close();
 
 
-        HeatChart map = new HeatChart(bestcorrelation);
+	if (bprintimage)
+	{
+           HeatChart map = new HeatChart(bestcorrelation);
 
-        map.setTitle("Best Emission Parameter Correlation");
-        map.setXAxisLabel("Number of States in Model");
-	map.setAxisValuesFont(new Font("SansSerif",0,20));
-	map.setAxisLabelsFont(new Font("SansSerif",0,22));
-	map.setTitleFont(new Font("SansSerif",0,24));
-        map.setYAxisLabel(szaxis);
-        map.setXValues(collabels);
-        map.setYValues(rowlabels);
-        map.setHighValueColour(theColor);
-        map.saveToFile(new File(szoutputprefix+".png"));
-        Util.printImageToSVG(map, szoutputprefix+".svg");
-	System.out.println("Writing to file "+szoutputprefix+".png");
-	System.out.println("Writing to file "+szoutputprefix+".svg");
+           map.setTitle("Best Emission Parameter Correlation");
+           map.setXAxisLabel("Number of States in Model");
+   	   map.setAxisValuesFont(new Font("SansSerif",0,20));
+	   map.setAxisLabelsFont(new Font("SansSerif",0,22));
+	   map.setTitleFont(new Font("SansSerif",0,24));
+           map.setYAxisLabel(szaxis);
+           map.setXValues(collabels);
+           map.setYValues(rowlabels);
+           map.setHighValueColour(theColor);
 
+           map.saveToFile(new File(szoutputprefix+".png"));
+           Util.printImageToSVG(map, szoutputprefix+".svg");
+	   System.out.println("Writing to file "+szoutputprefix+".png");
+	   System.out.println("Writing to file "+szoutputprefix+".svg");
+	}
 
     }
 }
