@@ -51,6 +51,7 @@ public class StateAnalysis
 	    this.nend = nend;
 	    this.slabel = slabel;
 	}
+
     }
 
     ////////////////////////////////////////////////////////////////////////////////
@@ -622,6 +623,7 @@ public class StateAnalysis
     }
 
     /////////////////////////////////////////////////////////////////////////////////////////////////////////
+
      /**
       * Computes an enrichment based on a hard segmentation
       * szinputsegment - the file with the segmentation
@@ -644,7 +646,7 @@ public class StateAnalysis
                                      int nbinsize, boolean bcenter,boolean bunique, boolean busesignal,String szcolfields,
 				      boolean bbaseres, String szoutfile,boolean bcolscaleheat,Color theColor,String sztitle, String szlabelmapping) throws IOException
     {
-	
+	//usual high memory
 	ArrayList alsegments = new ArrayList(); //stores all the segments
 	ArrayList alchromindex = new ArrayList();  //stores the index of the chromosome
 	
@@ -1068,6 +1070,502 @@ public class StateAnalysis
 			 bcolscaleheat,ChromHMM.convertCharOrderToStringOrder(szlabel.charAt(0)),sztitle,0,szlabelmapping,szlabel.charAt(0));
     }
 
+
+    //////////////////////////////////////////////////////////////////////////////////////
+
+
+
+     /**
+      * Computes an enrichment based on a hard segmentation
+      * szinputsegment - the file with the segmentation
+      * szinputcoorddir - the directory containing the coordinates for enrichment
+      * szinputcoordlist - if non-null only computes enrichments for file names in the specified
+      * noffsetleft - the amount that should be subtracted from the left coordinate so it is 0-based inclusive
+      * noffsetright - the amount that should be subtracted from the right coordinate so it is 0-based inclusive
+      * nbinsize -  the binsize used in the segmentation
+      * bcenter - if true only uses the center of the interval for determining enrichments
+      * bunique - only counts a bin once, this is not applicable if bbaseres is true or busesignal is true
+      * busesignal - if true then uses signal information about the interval if available
+      * szcolfields - comma delimited list of the 0-based columns of chromosme,start,end, and if busesignal is true the signal column
+      * bbaseres - if true gives enrichment at the base resolution opposed to the bin resolution
+      * szoutfile - the file to which to output the 
+      * bcolscaleheat - if true scales the heatmap individual for each column otherwise uses the same for all columns
+      * theColor - theColor to use for the heatmap
+      */
+    //this is lowmem
+     public static void enrichmentMaxLowMem(String szinputsegment,String szinputcoorddir,String szinputcoordlist,
+				     int noffsetleft, int noffsetright,
+                                     int nbinsize, boolean bcenter,boolean bunique, boolean busesignal,String szcolfields,
+				      boolean bbaseres, String szoutfile,boolean bcolscaleheat,Color theColor,String sztitle, String szlabelmapping) throws IOException
+    {
+
+
+	//for each enrichment category and state label gives a count of how often
+	//overlapped by a segment optionally with signal
+
+	String szLine;
+  	    String[] files;
+
+	   if (szinputcoordlist == null)
+           {
+	      File dir = new File(szinputcoorddir);
+	      //we don't have a specific list of files to include
+	      //will use all files in the directory
+	      if (dir.isDirectory())	  
+	      {
+	         //throw new IllegalArgumentException(szinputcoorddir+" is not a directory!");
+		 //added in v1.11 to skip hidden files
+	         String[] filesWithHidden = dir.list();
+	         int nnonhiddencount = 0;
+	         for (int nfile = 0; nfile < filesWithHidden.length; nfile++)
+	         {
+		    if (!(new File(filesWithHidden[nfile])).isHidden())
+		    {
+		       nnonhiddencount++;
+		    }
+		 }	   
+
+	         int nactualindex = 0;
+	         files = new String[nnonhiddencount];// dir.list(); 
+                 for (int nfile = 0; nfile < filesWithHidden.length; nfile++)
+	         {
+	            if (!(new File(filesWithHidden[nfile])).isHidden())
+	            {
+		       files[nactualindex] = filesWithHidden[nfile];
+		       nactualindex++;
+	            }
+	         }
+	         Arrays.sort(files);
+	         szinputcoorddir += "/";
+	      }
+	      else
+	      {
+		 files = new String[1];
+		 files[0] = szinputcoorddir;
+		 szinputcoorddir = "";
+	      }
+	   }
+	   else
+	   {
+	      szinputcoorddir += "/";
+	      //store in files all file names given in szinputcoordlist
+	      BufferedReader brfiles = Util.getBufferedReader(szinputcoordlist);
+	      ArrayList alfiles = new ArrayList();
+	      while ((szLine = brfiles.readLine())!=null)
+	      {
+		 alfiles.add(szLine);
+	      }
+	      brfiles.close(); 
+	      files = new String[alfiles.size()];
+	      for (int nfile = 0; nfile < files.length; nfile++)
+	      {
+		 files[nfile] = (String) alfiles.get(nfile);
+	      }
+	   }
+
+
+	
+
+	ArrayList alchromindex = new ArrayList();  //stores the index of the chromosome
+	
+	if (busesignal)
+	{
+	    bunique = false;
+	}
+
+
+	HashMap hmchromMax = new HashMap(); //maps chromosome to the maximum index
+	HashMap hmchromToIndex = new HashMap(); //maps chromosome to an index
+	int nmaxlabel=0; // the maximum label found
+	String szlabel="";
+	//reads in the segmentation recording maximum position for each chromosome and
+	//maximum label
+	BufferedReader brinputsegment = Util.getBufferedReader(szinputsegment);
+	while ((szLine = brinputsegment.readLine())!=null)
+	{
+	    StringTokenizer st = new StringTokenizer(szLine,"\t ");
+	    String szchrom = st.nextToken();
+	    int nbegincoord = Integer.parseInt(st.nextToken());
+	    int nendcoord = Integer.parseInt(st.nextToken());
+	    if (nbegincoord % nbinsize != 0)
+	    {
+		throw new IllegalArgumentException("Binsize of "+nbinsize+" does not agree with input segment "+szLine);
+	    }
+	    //int nbegin = nbegincoord/nbinsize;
+	    int nend = (nendcoord-1)/nbinsize;
+	    szlabel = st.nextToken();
+	    short slabel;
+            try
+	    {
+	       slabel  = (short) (Short.parseShort(szlabel));
+	    }
+	    catch (NumberFormatException ex)
+	    {
+               slabel  = (short) (Short.parseShort(szlabel.substring(1)));
+	    }
+
+	    //alsegments.add(new SegmentRec(szchrom,nbegin,nend,slabel));
+	    if (slabel > nmaxlabel)
+	    {
+		nmaxlabel = slabel;
+	    }
+
+	    Integer objMax = (Integer) hmchromMax.get(szchrom);
+	    if (objMax == null)
+	    {
+		//System.out.println("on chrom "+szchrom);
+		hmchromMax.put(szchrom,Integer.valueOf(nend));
+		hmchromToIndex.put(szchrom, Integer.valueOf(hmchromToIndex.size()));
+		alchromindex.add(szchrom);
+	    }
+	    else
+	    {
+		int ncurrmax = objMax.intValue();
+		if (ncurrmax < nend)
+		{
+		    hmchromMax.put(szchrom, Integer.valueOf(nend));		    
+		}
+	    }
+	}
+	brinputsegment.close();
+
+	double[][] tallyoverlaplabel = new double[files.length][nmaxlabel+1]; 
+	double[] dsumoverlaplabel = new double[files.length];
+	double[] tallylabel = new double[nmaxlabel+1];
+
+
+
+	int numchroms = alchromindex.size();
+
+	for (int nchrom = 0; nchrom < numchroms; nchrom++)
+	{
+	    //ArrayList alsegments = new ArrayList(); //stores all the segments
+	    String szchromwant = (String) alchromindex.get(nchrom);
+	    //System.out.println("processing "+szchromwant);
+	    int nsize = ((Integer) hmchromMax.get(szchromwant)).intValue()+1;
+	    short[] labels = new short[nsize]; //stores the hard label assignments
+
+	    //sets to -1 so missing segments not counted as label 0
+	    for (int npos = 0; npos < nsize; npos++)
+	    {
+		labels[npos] = -1;
+	    }	       
+
+	    brinputsegment = Util.getBufferedReader(szinputsegment);
+	    while ((szLine = brinputsegment.readLine())!=null)
+	    {
+	       StringTokenizer st = new StringTokenizer(szLine,"\t ");
+	       String szchrom = st.nextToken();
+	       if (!szchrom.equals(szchromwant)) 
+		   continue;
+	       int nbegincoord = Integer.parseInt(st.nextToken());
+	       int nendcoord = Integer.parseInt(st.nextToken());
+	       //if (nbegincoord % nbinsize != 0)
+	       // {
+	       //	  throw new IllegalArgumentException("Binsize of "+nbinsize+" does not agree with input segment "+szLine);
+	       //}
+	       int nbegin = nbegincoord/nbinsize;
+	       int nend = (nendcoord-1)/nbinsize;
+	       szlabel = st.nextToken();
+	       short slabel;
+               try
+	       {
+	          slabel  = (short) (Short.parseShort(szlabel));
+	       }
+	       catch (NumberFormatException ex)
+	       {
+                  slabel  = (short) (Short.parseShort(szlabel.substring(1)));
+	       }
+
+
+	       //SegmentRec theSegmentRec = (SegmentRec) alsegments.get(nindex);
+	       //int nbegin = theSegmentRec.nbegin;
+	       //int nend = theSegmentRec.nend;
+	       //short slabel = theSegmentRec.slabel;
+	       //int nchrom = ((Integer) hmchromToIndex.get(theSegmentRec.szchrom)).intValue();
+	       //short[] labels_nchrom = labels[nchrom];
+	       //stores each label position in the genome
+	       for (int npos = nbegin; npos <= nend; npos++)
+	       {
+		  labels[npos] = slabel;
+		  //tallylabel[slabel]++; 
+	       }
+	       tallylabel[slabel] += (nend-nbegin)+1;
+	    }
+
+
+
+
+	   for (int nfile = 0; nfile < files.length; nfile++)
+	   {
+	      double[] tallyoverlaplabel_nfile = tallyoverlaplabel[nfile];
+
+ 	      int nchromindex = 0;
+	      int nstartindex = 1;
+	      int nendindex = 2;
+	      int nsignalindex = 3;
+
+	      if (szcolfields  != null)
+	      {
+	         StringTokenizer stcolfields = new StringTokenizer(szcolfields,",");
+	         nchromindex = Integer.parseInt(stcolfields.nextToken());
+	         nstartindex = Integer.parseInt(stcolfields.nextToken());
+	         nendindex = Integer.parseInt(stcolfields.nextToken());
+
+	         if (busesignal)
+	         {
+		    nsignalindex = Integer.parseInt(stcolfields.nextToken());
+	         }
+	      }
+
+
+  	      if (bunique)
+	      {
+		  //Iterator itrChroms = hmchromToIndex.entrySet().iterator();
+		  //while (itrChroms.hasNext())
+	         {
+		     //Map.Entry pairs = (Map.Entry) itrChroms.next();
+		     //String szchrom =(String) pairs.getKey();
+		    //int nchrom = ((Integer) pairs.getValue()).intValue();
+	            //short[] labels_nchrom = labels[nchrom];
+
+	            //reading in the coordinates to overlap with
+                    BufferedReader brcoords = Util.getBufferedReader(szinputcoorddir +files[nfile]);
+		    ArrayList alrecs = new ArrayList();
+	            while ((szLine = brcoords.readLine())!=null)
+	            {
+	               if (szLine.trim().equals("")) continue;
+	               String[] szLineA = szLine.split("\\s+");
+		       if (nstartindex >= szLineA.length)
+		       {
+			  throw new IllegalArgumentException(nstartindex+" is an invalid index for "+szLine+" in "+szinputcoorddir+files[nfile]);
+		       }
+
+
+                       if (nendindex >= szLineA.length)
+		       {
+			  throw new IllegalArgumentException(nendindex+" is an invalid index for "+szLine+" in "+szinputcoorddir+files[nfile]);
+		       }
+
+	               String szcurrchrom = szLineA[nchromindex];
+	  	       if (szchromwant.equals(szcurrchrom))
+		       {
+		          int nbeginactual =Integer.parseInt(szLineA[nstartindex])-noffsetleft;
+		          int nendactual =Integer.parseInt(szLineA[nendindex])-noffsetright;
+			  if (bcenter)
+			  {
+			     nbeginactual = (nbeginactual+nendactual)/2;
+			     nendactual = nbeginactual;
+			  }
+			  alrecs.add(new Interval(nbeginactual,nendactual));
+		       }
+		    }
+		    brcoords.close();
+
+		    Object[] alrecA = alrecs.toArray();
+		    Arrays.sort(alrecA,new IntervalCompare());
+
+		    boolean bclosed = true;
+		    int nintervalstart = -1;
+		    int nintervalend = -1;
+		    boolean bdone = false;
+
+		    for (int nindex = 0; (nindex <= alrecA.length&&(alrecA.length>0)); nindex++)
+		    {
+		       int ncurrstart=-1;
+		       int ncurrend=-1;
+
+		       if (nindex == alrecA.length)
+		       {
+		  	  bdone = true;
+		       }
+		       else 
+		       {
+		          ncurrstart = ((Interval) alrecA[nindex]).nstart;
+		          ncurrend = ((Interval) alrecA[nindex]).nend;
+                          if (nindex == 0)
+		          {
+			     nintervalstart = ncurrstart;
+			     nintervalend = ncurrend;
+		          }
+		          else if (ncurrstart <= nintervalend)
+		          {
+			      //this read is still in the active interval
+			      //extending the current active interval 
+		             if (ncurrend > nintervalend)
+		             {
+		                nintervalend = ncurrend;
+		             }
+			  }		     
+		          else 
+		          {
+		             //just finished the current active interval
+			     bdone = true;
+			  }
+		       }
+
+		       if (bdone)
+		       {		      						
+		          int nbegin = nintervalstart/nbinsize;
+		          int nend = nintervalend/nbinsize;
+			  if (nend >= labels.length)
+			  {
+			     nend = labels.length - 1;
+			  }
+
+	                  for (int nbin = nbegin; nbin <= nend; nbin++)
+	                  {
+			     if (labels[nbin]>=0)
+			     {
+			        tallyoverlaplabel_nfile[labels[nbin]]++;
+			     }
+			  }
+
+		          if (bbaseres)
+		          { 
+		             //dbeginfrac represents the fraction of bases the nbegin interval
+		             //which came after the actual nbeginactual
+	                     double dbeginfrac = (nintervalstart - nbegin*nbinsize)/(double) nbinsize;
+			   
+			     //dendfrac represents the fraction of bases after the end position in the interval
+	                     double dendfrac = ((nend+1)*nbinsize-nintervalend-1)/(double) nbinsize;
+			   
+			     if ((nbegin < labels.length)&&(labels[nbegin]>=0)&&(dbeginfrac>0))
+		             { 
+			      
+		                //only counted the bases if nbegin was less than labels.length  
+		                tallyoverlaplabel_nfile[labels[nbegin]]-=dbeginfrac;
+			     }
+
+                             if ((nend < labels.length)&&(labels[nend]>=0)&&(dendfrac>0))
+		             {
+		                //only counted the bases if nend was less than labels.length  
+		                tallyoverlaplabel_nfile[labels[nend]]-=dendfrac;
+			     }
+			  }			   
+
+		          nintervalstart = ncurrstart; 
+		          nintervalend = ncurrend;
+		  	  bdone = false;
+		       }	  
+		    }
+		 }
+	      }
+	      else
+	      {
+	         BufferedReader brcoords = Util.getBufferedReader(szinputcoorddir +files[nfile]);
+	         while ((szLine = brcoords.readLine())!=null)
+	         {
+	            if (szLine.trim().equals("")) continue;
+	            String[] szLineA = szLine.split("\\s+");
+
+	            String szchrom = szLineA[nchromindex];
+		    if (!szchromwant.equals(szchrom))
+			continue;
+
+	            int nbeginactual =Integer.parseInt(szLineA[nstartindex])-noffsetleft;
+	            int nbegin = nbeginactual/nbinsize;
+
+		    int nendactual =Integer.parseInt(szLineA[nendindex])-noffsetright;
+		    int nend = nendactual/nbinsize;
+
+		    double damount;
+	            if ((busesignal)&&(nsignalindex < szLineA.length))
+	            {
+	      	       damount = Double.parseDouble(szLineA[nsignalindex]);
+		    }
+	            else
+	            {
+	               damount = 1;
+		    }
+
+	            //Integer objChrom = (Integer) hmchromToIndex.get(szchrom);
+	            //if (objChrom != null)
+	            {
+		       //we have the chromosome corresponding to this read
+	               //int nchrom = objChrom.intValue();
+		       //short[] labels_nchrom = labels[nchrom];
+
+		       if (bcenter)
+	               {
+		          //using the center position of the interval only
+		          int ncenter = (nbeginactual+nendactual)/(2*nbinsize);
+		          if ((ncenter < labels.length)&&(labels[ncenter]>=0))
+		          {
+		             tallyoverlaplabel_nfile[labels[ncenter]]+=damount;			   
+			  }
+		       }
+	               else
+	               {
+		          //using the full interval range
+		    	  //no requirement on uniqueness
+		          if (nend >= labels.length)
+		 	  {
+			     nend = labels.length - 1;
+			  }
+			
+	                  for (int nindex = nbegin; nindex <= nend; nindex++)
+	                  {
+			     if (labels[nindex]>=0)
+			     {
+			        //increment overlap tally not checking for uniqueness
+ 	                        tallyoverlaplabel_nfile[labels[nindex]]+=damount;
+			     }
+			  }	       
+
+			  if (bbaseres)
+			  {   
+			     //dbeginfrac represents the fraction of bases the nbegin interval
+			     //which came after the actual nbeginactual
+	                     double dbeginfrac = (nbeginactual - nbegin*nbinsize)/(double) nbinsize;
+			   
+			     //dendfrac represents the fraction of bases after the end position in the interval
+	                     double dendfrac = ((nend+1)*nbinsize-nendactual-1)/(double) nbinsize;
+
+			     if ((nbegin < labels.length)&&(labels[nbegin]>=0)&&(dbeginfrac>0))
+			     { 
+			        //only counted the bases if nbegin was less than labels.length  
+			        tallyoverlaplabel_nfile[labels[nbegin]]-=damount*dbeginfrac;
+			     }
+
+                             if ((nend < labels.length)&&(labels[nend]>=0)&&(dendfrac>0))
+		             {
+			        //only counted the bases if nend was less than labels.length  
+			        tallyoverlaplabel_nfile[labels[nend]]-=damount*dendfrac;
+			     }			   
+			  }
+		       }
+		    }
+		 }
+		 brcoords.close();
+	      }
+	   }
+	}
+
+
+	for (int nfile = 0; nfile < files.length; nfile++)
+	{
+	    double[] tallyoverlaplabel_nfile = tallyoverlaplabel[nfile];
+
+	   for (int nindex = 0; nindex < tallyoverlaplabel_nfile.length; nindex++)
+           {
+              dsumoverlaplabel[nfile] += tallyoverlaplabel_nfile[nindex];
+           }
+		
+           if (dsumoverlaplabel[nfile] < 0.00000001)
+           {
+	      throw new IllegalArgumentException("Coordinates in "+files[nfile]+" not assigned to any state");
+	   }
+	}
+
+	outputenrichment(szoutfile, files,tallyoverlaplabel, tallylabel, dsumoverlaplabel,theColor,
+			 bcolscaleheat,ChromHMM.convertCharOrderToStringOrder(szlabel.charAt(0)),sztitle,0,szlabelmapping,szlabel.charAt(0));
+    }
+
+
+
+
+
     /////////////////////////////////////////////////////////////////
     /**
      * Loads contents of szlabelmapping into a HashMap
@@ -1375,7 +1873,277 @@ public class StateAnalysis
     }
 
 
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+
+    /**
+     * Outputs a neighborhood enrichment based on a given hard segmentation
+     * szinputsegmentation - is the input segmentation ; assumes segments are non-negative integers
+     * szanchorpositions - is a file with the coordinates of the anchor positions
+     * nbinsize - the binsize used in the segmentation, this ensures any position at this bin size 
+     * numleft -  the number of intervals to the left of the anchor position to display the heatmap for
+     * numright - the number of intervals to the right of the anchor position to display the heatmap for
+     * nspacing - the frequency at which to display enrichments
+     * noffsetanchor - the amount that should be substract so the anchor coordinates are 0 based
+     * busestrand - true if strand orientation associated with the position is given
+     * busesignal - true if signal associated with the data file should be used
+     * szcolfields - a comma list of the 0-based index of 
+     * if (busestrand and busesignal)     chromosome,pos,strand,signal default is 0,1,2,3
+     * if (busestrand and not busesignal) chromosome,pos,strand default is 0,1,2
+     * if (not busestrand and busesignal) chromosome,pos,signal default is 0,1,2
+     * if (not busestrand not busesignal) chromosome,pos default is 0,1
+     * szoutfile - the name of the text file for which the enrichments should be displayed
+     * heatmaps are written to the same place with the extensions '.png' and '.svg'
+     * theColor - theColor to use for the heatmap program
+     */ 
+    //low mem    
+     public static void neighborhoodMaxLowMem(String szinputsegmentation,String szanchorpositions,
+                                       int nbinsize, int numleft, int numright, int nspacing, 
+					boolean busestrand, boolean busesignal, String szcolfields,
+					int noffsetanchor, String szoutfile,Color theColor, 
+					String sztitle,String szlabelmapping) throws IOException
+    {
+
+
+	//an array of chromosome names
+	ArrayList alchromindex = new ArrayList();
+
+	String szLine;
+
+	//stores the largest index value for each chromosome
+	HashMap hmchromMax = new HashMap();
+
+	//maps chromosome names to index values
+	HashMap hmchromToIndex = new HashMap();
+
+	//stores the maximum integer label value
+	int nmaxlabel=0;
+	String szlabel ="";
+	BufferedReader brinputsegment = Util.getBufferedReader(szinputsegmentation);
+
+
+        //the number of additional intervals to the left and right to include
+  
+   	//the center anchor position
+	int numintervals = 1+numleft+numright;
+
+
+	//this loops reads in the segmentation 
+	while ((szLine = brinputsegment.readLine())!=null)
+	{
+	    StringTokenizer st = new StringTokenizer(szLine,"\t ");
+	    String szchrom = st.nextToken();
+            //assumes segments are in standard bed format which to get to 
+	    //0-based inclusive requires substract 1 from the end
+	    int nbegin = Integer.parseInt(st.nextToken())/nbinsize;
+	    int nend = (Integer.parseInt(st.nextToken())-1)/nbinsize; 
+	    szlabel = st.nextToken();
+	    short slabel;
+            try
+	    {
+		slabel  = (short) (Short.parseShort(szlabel));
+	    }
+	    catch (NumberFormatException ex)
+	    {
+               slabel  = (short) (Short.parseShort(szlabel.substring(1)));
+	    }
+
+	    //alsegments.add(new SegmentRec(szchrom,nbegin,nend,slabel));
+
+	    if (slabel > nmaxlabel)
+	    {
+		nmaxlabel = slabel;
+	    }
+
+	    Integer objMax = (Integer) hmchromMax.get(szchrom);
+	    if (objMax == null)
+	    {
+		//System.out.println("on chrom "+szchrom);
+		hmchromMax.put(szchrom,Integer.valueOf(nend));
+		hmchromToIndex.put(szchrom, Integer.valueOf(hmchromToIndex.size()));
+		alchromindex.add(szchrom);
+	    }
+	    else
+	    {
+		int ncurrmax = objMax.intValue();
+		if (ncurrmax < nend)
+		{
+		    hmchromMax.put(szchrom, Integer.valueOf(nend));		    
+		}
+	    }
+	}
+	brinputsegment.close();
+
+	//stores a tally for each position relative to an anchor how frequently the label was observed
+	double[][] tallyoverlaplabel = new double[numintervals][nmaxlabel+1]; 
+
+	//stores a tally for the total signal associated with each anchor position
+	double[] dsumoverlaplabel = new double[numintervals];
+
+        //a tally on how frequently each label occurs
+        double[] tallylabel = new double[nmaxlabel+1];
+
+
+	int numchroms = alchromindex.size();
+
+        //short[][] labels = new short[numchroms][];
+
+	//allocates space store all the segment labels for each chromosome
+	for (int nchrom = 0; nchrom < numchroms; nchrom++)
+	{
+ 	   //stores all the segments in the data
+	   ArrayList alsegments = new ArrayList();
+	   brinputsegment = Util.getBufferedReader(szinputsegmentation);
+	   String szchromwant = (String) alchromindex.get(nchrom);
+	   //System.out.println("processing "+szchromwant);
+	   int nsize = ((Integer) hmchromMax.get(alchromindex.get(nchrom))).intValue()+1;
+	   short[] labels = new short[nsize];
+	   //this loops reads in the segmentation 
+
+
+	   //short[] labels_nchrom = labels[nchrom];
+	   for (int npos = 0; npos < nsize; npos++)
+           {
+              labels[npos] = -1;
+           }
+		
+	   while ((szLine = brinputsegment.readLine())!=null)
+	   {
+	      //int numlines = alsegments.size();
+
+	      StringTokenizer st = new StringTokenizer(szLine,"\t ");
+	      String szchrom = st.nextToken();
+	      if (!szchromwant.equals(szchrom))
+		  continue;
+              //assumes segments are in standard bed format which to get to 
+	      //0-based inclusive requires substract 1 from the end
+	      int nbegin = Integer.parseInt(st.nextToken())/nbinsize;
+	      int nend = (Integer.parseInt(st.nextToken())-1)/nbinsize; 
+	      szlabel = st.nextToken();
+	      short slabel;
+              try
+	      {
+		 slabel  = (short) (Short.parseShort(szlabel));
+	      }
+	      catch (NumberFormatException ex)
+	      {
+                 slabel  = (short) (Short.parseShort(szlabel.substring(1)));
+	      }
+
+	      //this loop stores into labels the full segmentation
+	      //and a count of how often each label occurs
+	      //for (int nindex = 0; nindex < numlines; nindex++)
+	      //{
+	      //SegmentRec theSegmentRec = (SegmentRec) alsegments.get(nindex);
+	      //int nchrom = ((Integer) hmchromToIndex.get(theSegmentRec.szchrom)).intValue();
+	      //short[] labels_nchrom = labels[nchrom];
+	      //int nbegin = theSegmentRec.nbegin;
+	      //int nend  = theSegmentRec.nend;
+	      //short slabel = theSegmentRec.slabel;
+	      for (int npos = nbegin; npos <= nend; npos++)
+	      {
+	         labels[npos] = slabel;
+	      }
+
+	      if (slabel >= 0)
+	      {
+	         tallylabel[slabel]+=(nend-nbegin)+1; 
+	      }	      
+	   }
+	   brinputsegment.close();
+
+
+	   RecAnchorIndex theAnchorIndex = getAnchorIndex(szcolfields, busestrand, busesignal);
+
+ 	   //reads in the anchor position 
+           BufferedReader brcoords = Util.getBufferedReader(szanchorpositions);
+	   while ((szLine = brcoords.readLine())!=null)
+           {
+	      if (szLine.trim().equals("")) continue;
+	      String[] szLineA = szLine.split("\\s+");
+
+              String szchrom = szLineA[theAnchorIndex.nchromindex];        
+	      if (!szchrom.equals(szchromwant)) 
+                 continue;
+
+	      int nanchor = (Integer.parseInt(szLineA[theAnchorIndex.npositionindex])-noffsetanchor);
+	      boolean bposstrand = true;
+	      if (busestrand)
+	      {
+	         String szstrand = szLineA[theAnchorIndex.nstrandindex];	    
+	         if (szstrand.equals("+"))
+	         {
+	            bposstrand = true;
+	         }
+                 else if (szstrand.equals("-"))
+                 {
+      	            bposstrand = false;
+	         }
+	         else
+	         {
+      	            throw new IllegalArgumentException(szstrand +" is an invalid strand. Strand should be '+' or '-'");
+		 }	      
+	      }
+
+	      double damount;
+
+	      if ((busesignal)&&(theAnchorIndex.nsignalindex< szLineA.length))
+	      {
+	         damount = Double.parseDouble(szLineA[theAnchorIndex.nsignalindex]);
+	      }
+	      else
+              {
+	         damount = 1;
+	      }
+
+	      //updates the tallys for the given anchor position
+	      //Integer objChrom = (Integer) hmchromToIndex.get(szchrom);
+              //if (objChrom != null)
+	      //{
+	      // int nchrom = objChrom.intValue();
+		 //short[] labels_nchrom = labels[nchrom];
+
+	         if (bposstrand)
+	         {
+	            int ntallyindex = 0;
+	            for(int noffset= -numleft; noffset <= numright; noffset++)
+	            {
+		       int nposindex = (nanchor + nspacing*noffset)/nbinsize;
+
+		       if ((nposindex >=0)&&(nposindex < labels.length)&&(labels[nposindex]>=0))
+		       {
+	                  tallyoverlaplabel[ntallyindex][labels[nposindex]] += damount;		      
+		       }
+		       ntallyindex++;
+		    }
+		 }
+	         else
+	         {
+	            int ntallyindex = 0;
+	            for(int noffset= numright; noffset >= -numleft; noffset--)
+	            {
+		       int nposindex = (nanchor + nspacing*noffset)/nbinsize;
+
+		       if ((nposindex >=0)&&(nposindex < labels.length)&&(labels[nposindex]>=0))
+		       {
+	                  tallyoverlaplabel[ntallyindex][labels[nposindex]]+=damount;		      
+		       }
+		       ntallyindex++;
+		    }
+		    //}
+		 }
+	   }
+           brcoords.close(); 	    
+	}
+
+	outputneighborhood(tallyoverlaplabel,tallylabel,dsumoverlaplabel,szoutfile,nspacing,numright,
+                           numleft,theColor,ChromHMM.convertCharOrderToStringOrder(szlabel.charAt(0)),sztitle,0,szlabelmapping,szlabel.charAt(0));
+    }
+    
+
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
     /**
      * Outputs a neighborhood enrichment based on a given hard segmentation
      * szinputsegmentation - is the input segmentation ; assumes segments are non-negative integers
@@ -1402,6 +2170,7 @@ public class StateAnalysis
 					int noffsetanchor, String szoutfile,Color theColor, 
 					String sztitle,String szlabelmapping) throws IOException
     {
+	//highmem
 	//stores all the segments in the data
 	ArrayList alsegments = new ArrayList();
 

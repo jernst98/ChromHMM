@@ -473,7 +473,20 @@ public class ChromHMM
      */
     int nmaxprocessors;
 
+    /**
+     * stores length of each chromosome
+     */
+    int[] numtime;
 
+    /**
+     * whether to use low memory
+     */
+    boolean blowmem;
+
+    /**
+     * number of sequences to include in sampling
+     */
+    int numincludeseq;
 
     ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
     /**
@@ -578,7 +591,7 @@ public class ChromHMM
                     String szInitFile, double dloadsmoothemission,double dloadsmoothtransition,double dinformationsmooth,
 		     int nmaxiterations,double dcovergediff,int nmaxseconds,boolean bprintposterior,
 		    boolean bprintsegment,boolean bprintstatebyline, int nbinsize,String szoutfileID,int nstateorder,boolean bordercols,int nzerotransitionpower,
-		     Color theColor, boolean bnormalEM, int nmaxprocessors) throws IOException
+		     Color theColor, boolean bnormalEM, int nmaxprocessors, boolean blowmem, int numincludeseq) throws IOException
     {
 	this.szinputdir = szinputdir;
         this.szoutputdir = szoutputdir;
@@ -606,9 +619,22 @@ public class ChromHMM
 	this.theColor = theColor;
 	this.bnormalEM = bnormalEM;
 	this.nmaxprocessors = nmaxprocessors;
+	this.numincludeseq = numincludeseq;
+	this.blowmem = blowmem;
+
         hmlabelExtend = new HashMap();
         theRandom = new Random(nseed);
-	loadData(); 
+
+	if (blowmem)
+	{
+	    loadDataFileStubs();
+	}
+	else
+	{
+	    loadData();
+	}
+	//loadData(); 
+	//loadDataFileStubs();
 
 	stateordering = new int[numstates];
 	colordering = new int[numdatasets];
@@ -697,7 +723,7 @@ public class ChromHMM
      * Constructor initializes the variable and loads the data used for making segmentation from a model
      */
     public ChromHMM(String szinputdir, String szinputfilelist, String szchromlengthfile, String szoutputdir, String szInitFile, String szoutfileID,
-                    int nbinsize, boolean bprintposterior, boolean bprintsegment,boolean bprintstatebyline) throws IOException
+                    int nbinsize, boolean bprintposterior, boolean bprintsegment,boolean bprintstatebyline, boolean blowmem) throws IOException
     {
 	this.szinputdir = szinputdir;
 	this.szinputfilelist = szinputfilelist;
@@ -709,8 +735,18 @@ public class ChromHMM
         this.szoutputdir = szoutputdir;
 	this.szInitFile = szInitFile;
 	this.nbinsize = nbinsize;
+	this.blowmem = blowmem;
         hmlabelExtend = new HashMap();
-	loadData();
+
+	if (blowmem)
+	{
+	   loadDataFileStubs();
+	}
+	else
+        {
+	   loadData();
+	}
+
 	loadModel();
 
 	stateordering = new int[numstates];
@@ -801,7 +837,14 @@ public class ChromHMM
        }
        else if (ninitmethod == ChromHMM.INITMETHOD_INFORMATION)
        {
-	   informationInitializeNested();
+	   if (blowmem)
+	   {
+	       informationInitializeNestedWithLoad();
+	   }
+	   else
+	   {
+	      informationInitializeNested();
+	   }
        }
        else if (ninitmethod == ChromHMM.INITMETHOD_RANDOM)
        {
@@ -813,11 +856,25 @@ public class ChromHMM
        //trainParametersNormalEM();
        if (bnormalEM)
        {
-          trainParametersParallel();
+	  if (blowmem)
+	  {
+             trainParametersParallelWithLoad();
+	  }
+	  else
+	  {
+	     trainParametersParallel();
+	  }
        }
        else
        {
-	   trainParameters();
+	   if (blowmem)
+	   {
+	      trainParametersWithLoad();
+	   }
+	   else
+	   {
+	      trainParameters();
+	   }
        }
     }
 
@@ -1413,6 +1470,591 @@ public class ChromHMM
 
     ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+
+
+    public void informationInitializeNestedWithLoad() throws IOException
+    {
+	//inital probability vector
+        probinit = new double[numstates];
+
+	//creates the emission probability matrix
+	emissionprobs = new double[numstates][numdatasets][numbuckets];
+
+	//set to true if a transition has been eliminated
+	elim = new boolean[numstates][numstates];
+
+	//initalize the transition matrix
+	transitionprobs = new double[numstates][numstates];
+
+	//initialize index of the next non-zero transition
+	transitionprobsindex = new int[numstates][numstates];
+
+	//initalize number of non-zero transitions
+	transitionprobsnum = new int[numstates];
+
+	//initalize column-wise index of non-zero transitions
+        transitionprobsindexCol = new int[numstates][numstates];
+ 
+	//number of non-zero column transitions
+        transitionprobsnumCol = new int[numstates];
+
+	int nmaxtime = 0;
+	for (int nseq = 0; nseq < numtime.length; nseq++)
+	{
+	   //numtime[nseq] = traindataObservedIndex[nseq].length;
+	   if (numtime[nseq] > nmaxtime)
+	   {
+	      nmaxtime = numtime[nseq];
+	   }
+	}
+
+
+
+	int[][] traindataObservedIndexPair = new int[chromfiles.length][];
+
+	//stores the indicies of the data
+	int[] traindataObservedIndex = new int[nmaxtime];
+
+	//saving the mapping of signatures and chromsome observed on
+	//stores whether there is a present call at each location
+	boolean[][] traindataObservedValues = new boolean[nmaxtime][numdatasets];
+
+	//stores whether the mark is not considered missing
+	boolean[][] traindataNotMissing = new boolean[nmaxtime][numdatasets]; //usually nobserved
+	
+
+	ArrayList alobservedpairflags = new ArrayList(); //is an index from the element combination to the associated flags
+
+	HashMap hmObserved= new HashMap(); //is an index from the associated flags to the element index
+
+	int nobserved= 0; //index on the unique observation combination we are observing
+
+        int[] samples= null;
+
+        int ncurrnumincludeseq;
+        if (numincludeseq >= 1)
+        {
+	   ncurrnumincludeseq = Math.min(numincludeseq, chromfiles.length);
+	   samples = new int[ncurrnumincludeseq];
+        }
+        else
+        {
+	   ncurrnumincludeseq = chromfiles.length;
+        }
+
+        boolean[] bincludeseq = new boolean[chromfiles.length];
+        for (int nk = 0; nk < bincludeseq.length; nk++)
+        {
+	   bincludeseq[nk] = true;
+        }
+
+        if (numincludeseq >=1)
+        {
+	   for (int ni = 0; ni < samples.length; ni++)
+	   {
+              samples[ni] = ni;
+	   }
+
+	   //Random theRandom2 = new Random(412);//433
+
+	   //sampling without replacement data locations wanted
+	   for (int ni = ncurrnumincludeseq; ni < chromfiles.length; ni++)
+           {
+	      if (theRandom.nextDouble() < ncurrnumincludeseq/((double) ni +1))
+	      {
+      	         samples[theRandom.nextInt(ncurrnumincludeseq)] = ni;
+      	      }
+	   }
+
+           for (int nk = 0; nk < bincludeseq.length; nk++)
+           {
+              bincludeseq[nk] = false;
+	   }
+
+           for (int nk = 0; nk < samples.length; nk++)
+	   {
+	      bincludeseq[samples[nk]] = true;
+	      //System.out.println("including\t"+samples[nk]+"\t"+bincludeseq[samples[nk]]);
+           }
+	}
+
+	//generates all vectors of combinations of consecutive of '1' calls
+	for (int nseq = 0; nseq < chromfiles.length; nseq++)
+	{
+	    if (bincludeseq[nseq])
+	    {
+	       //going through each sequence
+
+	       //int[] traindataObservedIndex_nseq = traindataObservedIndex[nseq];
+	       //int traindataObservedIndex_nseq_m1 = traindataObservedIndex_nseq.length -1;
+	       int numtime_nseq_m1 = numtime[nseq] - 1;
+
+	       HashMap hmObservedLoad = new HashMap(); //maps an observation string to an index and set of flags
+ 
+    	       int nobservedload = 0;
+
+	       if (ChromHMM.BVERBOSE)
+	       {
+                  System.out.println("reading\t"+szinputdir+" "+chromfiles[nseq]);
+	       }
+	      
+               BufferedReader br = Util.getBufferedReader(szinputdir+"/"+chromfiles[nseq]);
+               String szLine = br.readLine(); //first line tells cell type and chromosome
+	       br.readLine();//flush mark header
+	       ArrayList aldata = new ArrayList();
+	       while ((szLine = br.readLine())!=null)
+	       {
+	          StringTokenizer st = new StringTokenizer(szLine,"\t");
+      	          StringBuffer sb = new StringBuffer();
+		
+	          for (int ncol = 0; ncol < numdatasets; ncol++)
+      	          {
+	             if (!st.hasMoreTokens())
+	             {
+	                throw new IllegalArgumentException("Found line without "+numdatasets+" values in file "+chromfiles[nseq]);
+		     }
+
+		     String sztoken = st.nextToken();
+		    
+		     if (sztoken.equals("0"))
+	             {
+	                sb.append("0");
+		     }
+	             else if (sztoken.equals("1"))
+	             {
+	                sb.append("1");
+		     }
+	             else if (sztoken.equals("2"))
+		     {
+	                //this means missing
+	                sb.append("2");
+		     }
+	             else
+	             {
+                        throw new IllegalArgumentException("Unrecognized value "+sztoken+" found in "+szinputdir+"/"+chromfiles[nseq]);
+		     }
+		  }
+	          aldata.add(sb.toString());
+	       }
+	       br.close();
+	 
+	       int nsize = aldata.size();
+
+	      //traindataObservedIndex[nfile] = new int[nsize];
+	      //int[] traindataObservedIndex_nfile = traindataObservedIndex[nfile];
+
+	       for (int nrow = 0; nrow < nsize; nrow++)
+	       {
+	          BigInteger theBigInteger = new BigInteger((String) aldata.get(nrow),3);
+		  Integer theObservedInt  = (Integer) hmObservedLoad.get(theBigInteger);
+	          //boolean[] flagA;
+
+	          if (theObservedInt == null)
+       	          {
+		    //System.out.println(szmappingbyte.length());
+		    //storing a mapping from observed byte string to an integer index in alFlags and alObserved
+		     hmObservedLoad.put(theBigInteger, new Integer(nobservedload));
+
+		     //saving this observed index
+		     traindataObservedIndex[nrow] = nobservedload;
+
+		     //increments the number of observed combinations of marks
+		     nobservedload++;
+		  }
+		  else
+		  {
+		     //storing the index of the flags associated with this row 
+		     traindataObservedIndex[nrow] = ((Integer) theObservedInt).intValue();
+		  }
+	       }	 
+	    
+	       Iterator hmObservedIterator = hmObservedLoad.entrySet().iterator();
+	       while (hmObservedIterator.hasNext())
+	       {
+	          Map.Entry pairs = (Map.Entry) hmObservedIterator.next();
+	          BigInteger theBigInteger = (BigInteger) pairs.getKey();
+	          String szmapping = theBigInteger.toString(3);  //getting back the mapping string
+
+	          //ObservedRec theObservedRec = (ObservedRec) pairs.getValue();
+	          int ncurrindex = ((Integer) pairs.getValue()).intValue();// theObservedRec.nobserved;//this is an index on which obervation combination it is
+
+	          boolean[] traindataObservedValues_ncurrindex = traindataObservedValues[ncurrindex];
+	          boolean[] traindataNotMissing_ncurrindex = traindataNotMissing[ncurrindex]; 
+	    
+	          //if the mapping string is less than the number of data sets then 
+	          //there are leading 0's will set for leading 0's not missing and absent
+	          int numch = szmapping.length();
+	          int numleading0 = numdatasets - numch;
+	          for (int nj = 0; nj < numleading0; nj++)
+	          {
+		     traindataObservedValues_ncurrindex[nj] = false;
+		     traindataNotMissing_ncurrindex[nj] = true;
+		  }
+
+	          int nmappedindex = numleading0; //starting from the leading 0 position
+	          for (int nj = 0; nj < numch; nj++)
+	          {
+	             char ch = szmapping.charAt(nj);
+
+	             if (ch == '0')
+	             {
+		        traindataObservedValues_ncurrindex[nmappedindex] = false;
+		        traindataNotMissing_ncurrindex[nmappedindex] = true;
+		     }
+	             else if (ch=='1')
+	             {
+		        traindataObservedValues_ncurrindex[nmappedindex] = true;
+		        traindataNotMissing_ncurrindex[nmappedindex] = true;
+		     }
+	             else
+	             {
+		        //missing data
+		        traindataObservedValues_ncurrindex[nmappedindex] = false;
+		        traindataNotMissing_ncurrindex[nmappedindex] = false;
+		     }
+	             nmappedindex++;
+		  }
+	       }      
+
+	       traindataObservedIndexPair[nseq] = new int[numtime_nseq_m1];
+	       int[] traindataObservedIndexPair_nseq = traindataObservedIndexPair[nseq];
+	       boolean[] currvals = traindataObservedValues[traindataObservedIndex[0]];
+
+	       for (int nindex = 0; nindex < numtime_nseq_m1; nindex++)//traindataObservedIndex_nseq_m1
+	       {
+	          boolean[] nextvals = traindataObservedValues[traindataObservedIndex[nindex+1]];
+	          StringBuffer sb = new StringBuffer();
+	          for (int nmark = 0; nmark < numdatasets;nmark++)
+	          {
+	             if (currvals[nmark]&&nextvals[nmark])
+		     {
+		        sb.append("1");
+		     }
+	             else
+	             {
+		        sb.append("0");
+		     }
+		  }
+
+	          BigInteger theBigInteger = new BigInteger(sb.toString(),2);
+	          Object obj = hmObserved.get(theBigInteger);
+	          int ncurrobserved;
+	          if (obj == null)
+	          {
+		     //first time we saw the combination storing index
+		     hmObserved.put(theBigInteger,Integer.valueOf(nobserved));
+	             ncurrobserved = nobserved;
+	             nobserved++;
+
+	             boolean[] pairflags = new boolean[numdatasets];
+	             for (int nmark = 0; nmark < numdatasets;nmark++)
+	             {
+		        pairflags[nmark] = (currvals[nmark]&&nextvals[nmark]);
+		     }
+	             alobservedpairflags.add(pairflags);
+		  }
+	          else
+	          {
+		     //we already have seen this
+		     ncurrobserved= ((Integer) hmObserved.get(theBigInteger)).intValue();
+		  }
+	          //storing which element pair the observation corresponds to
+	          traindataObservedIndexPair_nseq[nindex] = ncurrobserved;
+	          currvals = nextvals;
+	       }
+	    }//include
+	}
+
+	int numels = alobservedpairflags.size();
+
+	//computes a tally for each flag combination observed of how frequently observed
+	int[] tallys = new int[numels];
+
+	//stores the total number of flag combinations observed
+        int ntotaltally = 0;
+
+	for (int nseq = 0; nseq < traindataObservedIndexPair.length; nseq++)
+	{
+	    if (bincludeseq[nseq])
+	    {
+               int[] traindataObservedIndexPair_nseq = traindataObservedIndexPair[nseq];
+	       //updating element counts
+	       for (int nindex = 0; nindex < traindataObservedIndexPair_nseq.length; nindex++)
+	       {
+	          tallys[traindataObservedIndexPair_nseq[nindex]]++;
+	       }
+	       //updates the total element counts
+	       ntotaltally += traindataObservedIndexPair_nseq.length;
+	    }
+	}
+       
+	//first state always smoothed zero
+	for (int nj = 0; nj < numdatasets; nj++)
+        {
+	   emissionprobs[0][nj][1] = dinformationsmooth*1.0/numbuckets;
+           emissionprobs[0][nj][0] = 1- emissionprobs[0][nj][1];
+	}
+	
+
+	//stores how many elements are currently assigned to the split node
+	int[] partitionTally = new int[numstates];
+
+	//initally everything gets assigned to split node 0
+	partitionTally[0] = ntotaltally;
+
+	//stores the partition assignment of each split node
+	// initially everything is assigned to split node 0
+	int[] initStateAssign = new int[numels];
+
+	//stores back pointers to the parent split nodes
+	int[] backptr = new int[numstates];
+
+	//stores for all prior splits how many elements would be split off
+	//if partitioning on that mark
+	int[][] nextpartitionTally = new int[numstates-1][numdatasets];
+
+	for (int niteration = 1; niteration < numstates; niteration++)
+	{	
+	    //need to the same number of assignments as we have states
+ 
+	   for (int ni = 0; ni < niteration-1; ni++)
+	   {
+	       //initializes the nextpartitionTally to 0
+
+	       int[] nextpartitionTally_ni = nextpartitionTally[ni];
+	       for (int nmark = 0; nmark < numdatasets; nmark++)
+	       {
+	          nextpartitionTally_ni[nmark] = 0;
+	       }
+	   }
+
+	   for (int nel = 0; nel < tallys.length; nel++)
+	   {
+	       //considering each mark to partition on
+
+	      boolean[] pairflags = (boolean[]) alobservedpairflags.get(nel);
+	      //gets the current assignment of the element type
+	      int initStateAssign_nel = initStateAssign[nel];
+
+	      //counting how many from current partition would be split
+	      for (int nsplitmark = 0; nsplitmark <numdatasets; nsplitmark++)
+	      {
+	         if (pairflags[nsplitmark])
+		 {
+		     //if element is positive for the mark then increments the count
+		    nextpartitionTally[initStateAssign_nel][nsplitmark] += tallys[nel];
+		 }
+	      }
+	   }
+
+	   //finding the split that results in the greatest information change
+	   double dbestinformationchange = 0;
+	   //stores the best split
+	   int nbestsplit = -1;
+	   //stores the best split mark
+	   int nbestsplitmark = -1;
+
+           for (int nsplit = 0; nsplit < niteration; nsplit++)
+           {
+	       //considering all previous splits to split again
+
+	       //fraction of total weighted elements in this node about to be split
+	       int partitionTally_nsplit = partitionTally[nsplit];
+	       double dprobfull = partitionTally_nsplit/(double) ntotaltally;
+	       double dprobfullterm;
+	       if (dprobfull> 0)
+	       {
+		   //the information term for this node about to be split
+                  dprobfullterm = dprobfull*Math.log(dprobfull);
+	       }
+	       else
+	       {
+		   dprobfullterm = 0;
+	       }
+
+	       int[] nextpartitionTally_nsplit = nextpartitionTally[nsplit];
+
+	       for (int nsplitmark = 0; nsplitmark < numdatasets; nsplitmark++)
+	       {
+		   //considering each mark to split on
+
+		   //numerator is how many weighted elements would remain in the partition after splitting on the mark
+	          double dprob1 = (partitionTally_nsplit-nextpartitionTally_nsplit[nsplitmark])/(double) ntotaltally;
+
+		  //numerator is how many weighted elements would go to the new partition
+	          double dprob2 = nextpartitionTally_nsplit[nsplitmark]/(double) ntotaltally;
+	          double dinformationchange = dprobfullterm;
+		  if (dprob1 > 0)
+		  {
+		      dinformationchange -= dprob1*Math.log(dprob1); 
+		  }
+
+		  if (dprob2 > 0)
+		  {
+		      dinformationchange -= dprob2*Math.log(dprob2); 
+		  }
+		  //-p_1*log(p_1)-p_2*log(p_2)- -(p1+p2)*log(p1+p2)
+
+		  if (dinformationchange > dbestinformationchange)
+		  {
+	             dbestinformationchange = dinformationchange;
+	             nbestsplit = nsplit;
+	             nbestsplitmark = nsplitmark;
+	          }
+	       }
+	   }
+
+	    if (ChromHMM.BVERBOSE)
+	    {
+	       System.out.println("====>\t"+nbestsplit+"\t"+nbestsplitmark+"\t"+datasets[nbestsplitmark]+"\t"+dbestinformationchange+"\t"+
+                                 nextpartitionTally[nbestsplit][nbestsplitmark]+"\t"+partitionTally[nbestsplit]);
+	    }
+
+	    if (nbestsplit == -1)
+	    {
+		throw new IllegalArgumentException("On this data the INFORMATION initialization strategy can only support "+niteration+" states. "+
+                                                   "Check if the binarization was done correctly, and if so "+
+						   "use the RANDOM or LOAD options for more states");
+	    }
+
+	    //the number of elements in the new split
+	    int numnewsplit =nextpartitionTally[nbestsplit][nbestsplitmark];
+	    partitionTally[niteration] = numnewsplit;
+
+	    //removes from the node we splitting from those we just split;
+	    partitionTally[nbestsplit] -= numnewsplit;
+
+	    //stores a back pointer to the node split to generate this one
+	    backptr[niteration] = nbestsplit;
+
+	    for (int nel = 0; nel < tallys.length; nel++)
+	    {
+		//goes through all elements and if recorded as being part of this split and positive for the split mark
+		//then updates its initial state
+	       boolean[] pairflags = (boolean[]) alobservedpairflags.get(nel);
+	       if ((initStateAssign[nel]==nbestsplit)&& (pairflags[nbestsplitmark]))
+	       {
+		   initStateAssign[nel]= niteration;
+	       }
+	    }
+	}
+
+       int[][] postally = new int[numstates][numdatasets];
+
+       for (int nel = 0; nel < tallys.length; nel++)
+       {
+          boolean[] pairflags = (boolean[]) alobservedpairflags.get(nel);
+
+	  for (int nmark = 0; nmark < numdatasets; nmark++)
+	  {
+	     if(pairflags[nmark])		
+	     {
+		 //this have a positive assignment for this flag
+		 //walking to all ancestors and incrementing tally for this mark
+	        int ncurrstate = initStateAssign[nel];
+                do
+	        {
+		   postally[ncurrstate][nmark] += tallys[nel];		  
+		   ncurrstate = backptr[ncurrstate];
+		}
+	        while (ncurrstate != 0);
+	     }
+	  }
+       }
+
+       int[] partitionTallySum = new int[partitionTally.length];
+       for (int nstate = 1; nstate < numstates; nstate++)
+       {
+	   //figures out how many descendants there are of each split
+          int ncurrstate = nstate;
+          int ntotsum = 0;
+          int ncurrval = partitionTally[ncurrstate];
+          do
+          {
+	      //incrementing counts for the parents
+	     partitionTallySum[ncurrstate] += ncurrval;
+      	     ncurrstate = backptr[ncurrstate];	    
+	  }
+       	  while (ncurrstate != 0);
+       }
+
+       for (int nstate = 1; nstate < numstates; nstate++)
+       {
+          for (int nj = 0; nj < numdatasets; nj++)
+	  {
+	     emissionprobs[nstate][nj][1] = dinformationsmooth*1.0/numbuckets
+                                          +(1-dinformationsmooth)*(postally[nstate][nj]/(double) partitionTallySum[nstate]);
+	     emissionprobs[nstate][nj][0] = 1- emissionprobs[nstate][nj][1];
+	  }
+       }
+
+       //initialize the inital probability based on the partition of the first vector
+
+       int[] numstarts = new int[numstates];
+       for (int nseq = 0; nseq < traindataObservedIndexPair.length; nseq++)
+       {
+	  if (bincludeseq[nseq])
+	  {
+             numstarts[initStateAssign[traindataObservedIndexPair[nseq][0]]]++;
+	  }
+       }
+       
+       for (int ni = 0; ni < probinit.length; ni++)
+       {
+	   //weighted probability of uniform and the fraction of starts from that partition
+          probinit[ni] = dinformationsmooth*1.0/numstates+(1-dinformationsmooth)*numstarts[ni]/(double)traindataObservedIndexPair.length;	 
+       }
+
+
+       //determining initial settings for the transition probability
+       int[][] transitiontally = new int[numstates][numstates];
+       int nnextstate;
+       for (int nseq = 0; nseq < traindataObservedIndexPair.length; nseq++)
+       {
+	  if (bincludeseq[nseq])
+	  {
+	      //going through each sequence
+             int[] traindataObservedIndexPair_nseq = traindataObservedIndexPair[nseq];
+	     int nprevstate = initStateAssign[traindataObservedIndexPair_nseq[0]];
+             for (int nindex = 1; nindex < traindataObservedIndexPair_nseq.length; nindex++)
+             {
+	        //going through all the elements of the sequence computing a tallly of each bigram
+	        nnextstate = initStateAssign[traindataObservedIndexPair_nseq[nindex]];
+	        transitiontally[nprevstate][nnextstate]++;
+	        nprevstate = nnextstate;
+	     }
+	  }
+       }
+
+       for (int ni = 0; ni < numstates; ni++)
+       {
+          double[] transitionprobs_ni = transitionprobs[ni];
+	  double dnumfromi = 0;
+	  int[] transitiontally_ni = transitiontally[ni];
+
+	  for (int nj = 0; nj < numstates; nj++)
+	  {
+	      dnumfromi += transitiontally_ni[nj];
+	  }
+          for (int nj = 0; nj < numstates; nj++)
+          {
+	     elim[ni][nj] = false;
+	     //computes a weighted average of a uniform transition probability and the empirical frequency
+	     transitionprobs_ni[nj] = dinformationsmooth*1.0/numstates
+		                       +(1-dinformationsmooth)*(transitiontally_ni[nj]/(double) dnumfromi);
+	     transitionprobsindex[ni][nj] = nj;
+	     transitionprobsindexCol[ni][nj] = nj;
+	  }
+	  transitionprobsnum[ni] = numstates;
+          transitionprobsnumCol[ni] = numstates;
+       }
+    }
+
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
     public void informationInitializeNested() 
     {
 	//inital probability vector
@@ -1448,80 +2090,134 @@ public class ChromHMM
 
 	int nobserved= 0; //index on the unique observation combination we are observing
 
-	//generates all vectors of combinations of consecutive of '1' calls
-	for (int nseq = 0; nseq <traindataObservedIndex.length; nseq++)
-	{
-	    //going through each sequence
+       int[] samples= null;
 
-	   int[] traindataObservedIndex_nseq = traindataObservedIndex[nseq];
-	   int traindataObservedIndex_nseq_m1 = traindataObservedIndex_nseq.length -1;
-	   traindataObservedIndexPair[nseq] = new int[traindataObservedIndex_nseq_m1];
-	   int[] traindataObservedIndexPair_nseq = traindataObservedIndexPair[nseq];
-	   boolean[] currvals = traindataObservedValues[traindataObservedIndex_nseq[0]];
+       int ncurrnumincludeseq;
+       if (numincludeseq >= 1)
+       {
+	   ncurrnumincludeseq = Math.min(numincludeseq, chromfiles.length);
+	   samples = new int[ncurrnumincludeseq];
+       }
+       else
+       {
+	   ncurrnumincludeseq = chromfiles.length;
+       }
 
-	   for (int nindex = 0; nindex <  traindataObservedIndex_nseq_m1; nindex++)
-	   {
-	      boolean[] nextvals = traindataObservedValues[traindataObservedIndex_nseq[nindex+1]];
-	      StringBuffer sb = new StringBuffer();
-	      for (int nmark = 0; nmark < numdatasets;nmark++)
-	      {
-	         if (currvals[nmark]&&nextvals[nmark])
-		 {
-		    sb.append("1");
-		 }
-	         else
-	         {
-		    sb.append("0");
-		 }
-	      }
+       boolean[] bincludeseq = new boolean[chromfiles.length];
+       for (int nk = 0; nk < bincludeseq.length; nk++)
+       {
+	   bincludeseq[nk] = true;
+       }
 
-	      BigInteger theBigInteger = new BigInteger(sb.toString(),2);
-	      Object obj = hmObserved.get(theBigInteger);
-	      int ncurrobserved;
-	      if (obj == null)
-	      {
-		  //first time we saw the combination storing index
-		 hmObserved.put(theBigInteger,Integer.valueOf(nobserved));
-	         ncurrobserved = nobserved;
-	         nobserved++;
+       if (numincludeseq >=1)
+       {
+          for (int ni = 0; ni < samples.length; ni++)
+	  {
+	     samples[ni] = ni;
+	  }
+	  //Random theRandom2 = new Random(412);//433
 
-	         boolean[] pairflags = new boolean[numdatasets];
-	         for (int nmark = 0; nmark < numdatasets;nmark++)
-	         {
-		    pairflags[nmark] = (currvals[nmark]&&nextvals[nmark]);
-		 }
-	         alobservedpairflags.add(pairflags);
-	     }
-	     else
+	  //sampling without replacement data locations wanted
+	  for (int ni = ncurrnumincludeseq; ni < chromfiles.length; ni++)
+          {
+	     if (theRandom.nextDouble() < ncurrnumincludeseq/((double) ni +1))
 	     {
-		 //we already have seen this
-		 ncurrobserved= ((Integer) hmObserved.get(theBigInteger)).intValue();
+      	        samples[theRandom.nextInt(ncurrnumincludeseq)] = ni;
+      	     }
+	  }
+
+          for (int nk = 0; nk < bincludeseq.length; nk++)
+          {
+             bincludeseq[nk] = false;
+	  }
+
+          for (int nk = 0; nk < samples.length; nk++)
+	  {
+             bincludeseq[samples[nk]] = true;
+		   //System.out.println("including\t"+samples[nk]+"\t"+bincludeseq[samples[nk]]);
+          }
+       }
+
+       //generates all vectors of combinations of consecutive of '1' calls
+       for (int nseq = 0; nseq <traindataObservedIndex.length; nseq++)
+       {
+          if (bincludeseq[nseq])
+	  {
+	     //going through each sequence
+
+	     int[] traindataObservedIndex_nseq = traindataObservedIndex[nseq];
+	     int traindataObservedIndex_nseq_m1 = traindataObservedIndex_nseq.length -1;
+	     traindataObservedIndexPair[nseq] = new int[traindataObservedIndex_nseq_m1];
+	     int[] traindataObservedIndexPair_nseq = traindataObservedIndexPair[nseq];
+	     boolean[] currvals = traindataObservedValues[traindataObservedIndex_nseq[0]];
+
+	     for (int nindex = 0; nindex <  traindataObservedIndex_nseq_m1; nindex++)
+	     {
+	        boolean[] nextvals = traindataObservedValues[traindataObservedIndex_nseq[nindex+1]];
+	        StringBuffer sb = new StringBuffer();
+	        for (int nmark = 0; nmark < numdatasets;nmark++)
+	        {
+	           if (currvals[nmark]&&nextvals[nmark])
+		   {
+		      sb.append("1");
+		   }
+	           else
+	           {
+		      sb.append("0");
+		   }
+	        }
+
+	        BigInteger theBigInteger = new BigInteger(sb.toString(),2);
+	        Object obj = hmObserved.get(theBigInteger);
+	        int ncurrobserved;
+	        if (obj == null)
+	        {
+		  //first time we saw the combination storing index
+		   hmObserved.put(theBigInteger,Integer.valueOf(nobserved));
+	           ncurrobserved = nobserved;
+	           nobserved++;
+
+	           boolean[] pairflags = new boolean[numdatasets];
+	           for (int nmark = 0; nmark < numdatasets;nmark++)
+	           {
+		      pairflags[nmark] = (currvals[nmark]&&nextvals[nmark]);
+		   }
+	           alobservedpairflags.add(pairflags);
+	        }
+	        else
+	        {
+		   //we already have seen this
+		   ncurrobserved= ((Integer) hmObserved.get(theBigInteger)).intValue();
+	        }
+
+	        //storing which element pair the observation corresponds to
+	        traindataObservedIndexPair_nseq[nindex] = ncurrobserved;
+	        currvals = nextvals;
 	     }
+	  }
+       }
 
-	      //storing which element pair the observation corresponds to
-	     traindataObservedIndexPair_nseq[nindex] = ncurrobserved;
-	     currvals = nextvals;
-	   }
-	}
+       int numels = alobservedpairflags.size();
 
-	int numels = alobservedpairflags.size();
+       //computes a tally for each flag combination observed of how frequently observed
+       int[] tallys = new int[numels];
 
-	//computes a tally for each flag combination observed of how frequently observed
-	int[] tallys = new int[numels];
+       //stores the total number of flag combinations observed
+       int ntotaltally = 0;
 
-	//stores the total number of flag combinations observed
-        int ntotaltally = 0;
-
-	for (int nseq = 0; nseq < traindataObservedIndexPair.length; nseq++)
-	{
-            int[] traindataObservedIndexPair_nseq = traindataObservedIndexPair[nseq];
-	    //updating element counts
-	    for (int nindex = 0; nindex < traindataObservedIndexPair_nseq.length; nindex++)
+       for (int nseq = 0; nseq < traindataObservedIndexPair.length; nseq++)
+       {
+	    if (bincludeseq[nseq])
 	    {
-	        tallys[traindataObservedIndexPair_nseq[nindex]]++;
+               int[] traindataObservedIndexPair_nseq = traindataObservedIndexPair[nseq];
+	       //updating element counts
+	       for (int nindex = 0; nindex < traindataObservedIndexPair_nseq.length; nindex++)
+	       {
+	          tallys[traindataObservedIndexPair_nseq[nindex]]++;
+	       }
+	       //updates the total element counts
+	       ntotaltally += traindataObservedIndexPair_nseq.length;
 	    }
-	    //updates the total element counts
-	    ntotaltally += traindataObservedIndexPair_nseq.length;
 	}
        
 	//first state always smoothed zero
@@ -1729,7 +2425,10 @@ public class ChromHMM
        int[] numstarts = new int[numstates];
        for (int nseq = 0; nseq < traindataObservedIndexPair.length; nseq++)
        {
-          numstarts[initStateAssign[traindataObservedIndexPair[nseq][0]]]++;
+	  if (bincludeseq[nseq])
+	  {
+             numstarts[initStateAssign[traindataObservedIndexPair[nseq][0]]]++;
+	  }
        }
        
        for (int ni = 0; ni < probinit.length; ni++)
@@ -1744,16 +2443,19 @@ public class ChromHMM
        int nnextstate;
        for (int nseq = 0; nseq < traindataObservedIndexPair.length; nseq++)
        {
-	   //going through each sequence
-          int[] traindataObservedIndexPair_nseq = traindataObservedIndexPair[nseq];
-	  int nprevstate = initStateAssign[traindataObservedIndexPair_nseq[0]];
-          for (int nindex = 1; nindex < traindataObservedIndexPair_nseq.length; nindex++)
-          {
-	      //going through all the elements of the sequence computing a tallly of each bigram
-	     nnextstate = initStateAssign[traindataObservedIndexPair_nseq[nindex]];
-	     transitiontally[nprevstate][nnextstate]++;
-	     nprevstate = nnextstate;
-	  }
+	   if (bincludeseq[nseq])
+	   {
+	      //going through each sequence
+             int[] traindataObservedIndexPair_nseq = traindataObservedIndexPair[nseq];
+	     int nprevstate = initStateAssign[traindataObservedIndexPair_nseq[0]];
+             for (int nindex = 1; nindex < traindataObservedIndexPair_nseq.length; nindex++)
+             {
+	         //going through all the elements of the sequence computing a tallly of each bigram
+	        nnextstate = initStateAssign[traindataObservedIndexPair_nseq[nindex]];
+	        transitiontally[nprevstate][nnextstate]++;
+	        nprevstate = nnextstate;
+	     }
+	   }
        }
 
        for (int ni = 0; ni < numstates; ni++)
@@ -2699,6 +3401,682 @@ public class ChromHMM
     }
 
 
+    //////////////////////////////////////////////////////////////////////////////////////////
+
+    /**
+     * Takes an existing model and outputs information about the segmentation depending on the values of
+     * bprintsegment, bprintstatebyline, bprintposterior
+     */
+    public void makeSegmentationWithLoad() throws IOException
+    {
+        NumberFormat nf = NumberFormat.getInstance();
+        nf.setMaximumFractionDigits(4);
+
+       //number of non-zero transition required to be less than this at the more stringent cutoff 
+       //for trying to exploit sparsity in the transition matrix for efficiency gains
+       int nsparsecutoff = (int) (numstates * ChromHMM.SPARSECUTOFFRATIO);
+
+       //int[] numtime = new int[traindataObservedIndex.length];
+
+       //stores the maximum number of locations in any sequence and in each sequence
+       int nmaxtime = 0;
+       for (int nseq = 0; nseq < numtime.length; nseq++)
+       {
+	   //numtime[nseq] = traindataObservedIndex[nseq].length;
+          if (numtime[nseq] > nmaxtime)
+	  {
+      	     nmaxtime = numtime[nseq];
+	  }
+       }
+
+
+       HashMap hmMaxCoord = null;
+       if (szchromlengthfile != null)
+       {
+	   hmMaxCoord = new HashMap();
+	   BufferedReader brchromlengthfile =  Util.getBufferedReader(szchromlengthfile);
+	   String szLine;
+	   while ((szLine = brchromlengthfile.readLine())!=null)
+	   {
+	       StringTokenizer st = new StringTokenizer(szLine,"\t ");
+	       hmMaxCoord.put(st.nextToken(),Integer.valueOf(st.nextToken()));
+	   }
+	   brchromlengthfile.close();
+       }
+
+       if (ChromHMM.BVERBOSE)
+       {
+          System.out.println("Maximum number of locations\t"+nmaxtime);
+       }
+
+       //stores the emission probability for the i^th combination of marks in the j^th state
+       double[][] emissionproducts = new double[nmaxtime][numstates]; //previously traindataObservedValues.length
+
+       //stores temporary product terms
+       double[] tempproductbetaemiss = new double[numstates];
+
+       //This stores the alpha values at each time point and number of states
+       double[][] alpha = new double[nmaxtime][numstates];
+
+       //Temporary storage of the gamma's for each state
+       double[][] gamma = new double[nmaxtime][numstates];
+
+       //Temporary storage of the beta values for each state
+       double[] beta_nt = new double[numstates];
+
+       //Temporary storage of the beta values for each state at the next time point
+       double[] beta_ntp1 = new double[numstates];
+
+       //stores the scaling value for each time point
+       double[] scale = new double[nmaxtime];
+
+       //stores the transition probabilities for each column
+       double[][] coltransitionprobs = new double[numstates][numstates];
+       
+       //stores the indicies of the data
+       int[] traindataObservedIndex = new int[nmaxtime];
+
+       //saving the mapping of signatures and chromsome observed on
+       //stores whether there is a present call at each location
+       boolean[][] traindataObservedValues = new boolean[nmaxtime][numdatasets];
+
+       //stores whether the mark is not considered missing
+       boolean[][] traindataNotMissing = new boolean[nmaxtime][numdatasets]; //usually nobserved
+
+
+       //maps cell ID to printwriter objects
+       HashMap hmcellToFourColPW = null;
+       if (bprintsegment)
+       {
+          hmcellToFourColPW = new HashMap();
+       }
+
+       RecIntString[] ordered = new RecIntString[chromfiles.length];
+       for (int nindex = 0; nindex < ordered.length; nindex++)
+       {
+	   ordered[nindex] = new RecIntString(nindex,chromfiles[nindex]);
+       }
+       Arrays.sort(ordered,new RecIntStringCompare());
+
+       hsprefix = new HashSet();
+
+       for (int nseq = 0; nseq < chromfiles.length; nseq++)
+       {
+	   int nordered_nseq = ordered[nseq].nindex;
+	   //goes through each sequence
+
+	   ///////////////////////////////////////////////////////////////////////////////
+	   //load data here
+
+	   HashMap hmObserved = new HashMap(); //maps an observation string to an index and set of flags
+ 
+    	   int nobserved = 0;
+
+	   if (ChromHMM.BVERBOSE)
+	   {
+              System.out.println("reading\t"+szinputdir+" "+chromfiles[nordered_nseq]);
+	   }
+	   BufferedReader br = Util.getBufferedReader(szinputdir+"/"+chromfiles[nordered_nseq]); //fixed bug was chromfiles[nseq]
+           String szLine = br.readLine(); //first line tells cell type and chromosome
+	   br.readLine();//flush mark header
+	   ArrayList aldata = new ArrayList();
+	   while ((szLine = br.readLine())!=null)
+	   {
+	      StringTokenizer st = new StringTokenizer(szLine,"\t");
+      	      StringBuffer sb = new StringBuffer();
+		
+	      for (int ncol = 0; ncol < numdatasets; ncol++)
+	      {
+	         if (!st.hasMoreTokens())
+		 {
+	            throw new IllegalArgumentException("Found line without "+numdatasets+" values in file "+chromfiles[nordered_nseq]);
+		 }
+
+		 String sztoken = st.nextToken();
+		    
+		 if (sztoken.equals("0"))
+	         {
+	            sb.append("0");
+	         }
+		 else if (sztoken.equals("1"))
+	         {
+	            sb.append("1");
+		 }
+	         else if (sztoken.equals("2"))
+		 {
+	            //this means missing
+	            sb.append("2");
+		 }
+		 else
+	         {
+	            throw new IllegalArgumentException("Unrecognized value "+sztoken+" found in "+szinputdir+"/"+chromfiles[nordered_nseq]);
+	         }
+	      }
+	      aldata.add(sb.toString());
+	   }
+	   br.close();
+	      
+	   int nsize = aldata.size();
+	   //traindataObservedIndex[nfile] = new int[nsize];
+	   //int[] traindataObservedIndex_nfile = traindataObservedIndex[nfile];
+
+	   for (int nrow = 0; nrow < nsize; nrow++)
+	   {
+	       BigInteger theBigInteger = new BigInteger((String) aldata.get(nrow),3);
+	       Integer theObservedInt  = (Integer) hmObserved.get(theBigInteger);
+	       //boolean[] flagA;
+
+	       if (theObservedInt == null)
+       	       {
+	          //System.out.println(szmappingbyte.length());
+	          //storing a mapping from observed byte string to an integer index in alFlags and alObserved
+		  hmObserved.put(theBigInteger, new Integer(nobserved));
+
+		  //saving this observed index
+		  traindataObservedIndex[nrow] = nobserved;
+
+		  //increments the number of observed combinations of marks
+		  nobserved++;
+	       }
+	       else
+	       {
+	          //storing the index of the flags associated with this row 
+      	          traindataObservedIndex[nrow] = ((Integer) theObservedInt).intValue();
+	       }
+	   }  	 
+	   
+	   Iterator hmObservedIterator = hmObserved.entrySet().iterator();
+	   while (hmObservedIterator.hasNext())
+	   {
+	      Map.Entry pairs = (Map.Entry) hmObservedIterator.next();
+	      BigInteger theBigInteger = (BigInteger) pairs.getKey();
+	      String szmapping = theBigInteger.toString(3);  //getting back the mapping string
+
+	      //ObservedRec theObservedRec = (ObservedRec) pairs.getValue();
+	      int ncurrindex = ((Integer) pairs.getValue()).intValue();// theObservedRec.nobserved;//this is an index on which obervation combination it is
+
+	      boolean[] traindataObservedValues_ncurrindex = traindataObservedValues[ncurrindex];
+	      boolean[] traindataNotMissing_ncurrindex = traindataNotMissing[ncurrindex]; 
+	   
+	      //if the mapping string is less than the number of data sets then 
+	      //there are leading 0's will set for leading 0's not missing and absent
+	      int numch = szmapping.length();
+	      int numleading0 = numdatasets - numch;
+	      for (int nj = 0; nj < numleading0; nj++)
+	      {
+	         traindataObservedValues_ncurrindex[nj] = false;
+	         traindataNotMissing_ncurrindex[nj] = true;
+	      }
+
+	      int nmappedindex = numleading0; //starting from the leading 0 position
+	      for (int nj = 0; nj < numch; nj++)
+	      {
+	         char ch = szmapping.charAt(nj);
+
+	         if (ch == '0')
+	         {
+		    traindataObservedValues_ncurrindex[nmappedindex] = false;
+		    traindataNotMissing_ncurrindex[nmappedindex] = true;
+		 }
+	         else if (ch=='1')
+	         {
+		     traindataObservedValues_ncurrindex[nmappedindex] = true;
+		     traindataNotMissing_ncurrindex[nmappedindex] = true;
+		 }
+	         else
+	         {
+		      //missing data
+		      traindataObservedValues_ncurrindex[nmappedindex] = false;
+		      traindataNotMissing_ncurrindex[nmappedindex] = false;
+		  }
+	          nmappedindex++;
+	      }
+	   }
+       
+
+
+
+	   //////////////////////////////////////////////////////////////////////////////
+
+	   //int[] traindataObservedIndex_nseq = traindataObservedIndex[nordered_nseq];
+          //boolean[] traindataObservedSeqFlags_nseq = traindataObservedSeqFlags[nordered_nseq];
+
+	  String szprefix = "";
+	  if (!cellSeq[nordered_nseq].equals(""))
+	  {
+	     szprefix += cellSeq[nordered_nseq]+"_";
+	  }
+	  szprefix += numstates;
+	  if (!szoutfileID.equals(""))
+	  {
+	     szprefix += "_"+szoutfileID;
+          }
+	  hsprefix.add(szprefix);
+
+	  PrintWriter pwprobs = null;
+	  if (bprintposterior)
+	  {
+	      //creates the posterior file
+ 
+	      String szposterioroutfilename = szoutputdir+"/POSTERIOR/"+szprefix+"_"+chromSeq[nordered_nseq]+ChromHMM.SZPOSTERIOREXTENSION;
+
+             System.out.println("Writing to file "+szposterioroutfilename);
+	     pwprobs = new PrintWriter(szposterioroutfilename);
+	     pwprobs.println(cellSeq[nordered_nseq]+"\t"+chromSeq[nordered_nseq]);
+	     for (int ni = 0; ni < numstates-1; ni++)
+	     {
+		 pwprobs.print(""+chorder+(ni+1)+"\t");
+	     } 
+	     pwprobs.println(""+chorder+(numstates));
+	  }
+
+	  PrintWriter pwmax = null;
+	  if (bprintstatebyline)
+	  {
+	     //creates a file which has the state with the maximum posterior probability
+	     String szmaxoutfilename = szoutputdir+"/STATEBYLINE/"+szprefix+"_"+chromSeq[nordered_nseq]+ChromHMM.SZSTATEBYLINEEXTENSION;
+
+	     System.out.println("Writing to file "+szmaxoutfilename);
+	     pwmax = new PrintWriter(szmaxoutfilename);
+	     pwmax.println(cellSeq[nordered_nseq]+"\t"+chromSeq[nordered_nseq]);
+	     pwmax.println("MaxState "+chorder);
+	  }
+
+	  PrintWriter pwbed = null;
+	  if (bprintsegment)
+	  {
+	      //creates a file which has the maximum segmentation
+	      //we only have one file per cell type here
+	     pwbed = (PrintWriter) hmcellToFourColPW.get(cellSeq[nordered_nseq]);
+
+	     if (pwbed == null)
+	     {
+		 //haven't seen this cell type
+	         String szsegmentoutfilename = szoutputdir+"/" + szprefix+SZSEGMENTEXTENSION;
+
+	         pwbed = new PrintWriter(szsegmentoutfilename);
+		 System.out.println("Writing to file "+szsegmentoutfilename);
+
+	         hmcellToFourColPW.put(cellSeq[nordered_nseq],pwbed);    
+	     }
+	  }
+
+
+	  for (int ni = 0; ni < nobserved; ni++)
+          {
+	     //going through each combination of marks
+	     //if (traindataObservedSeqFlags_nseq[ni])
+	     //{
+	        //this signature of marks is observed on the current chromosome so
+	        //updating its emission probabilities
+	      double[] emissionproducts_ni = emissionproducts[ni];
+	      boolean[] traindataObservedValues_ni = traindataObservedValues[ni];
+	      boolean[] traindataNotMissing_ni = traindataNotMissing[ni];		  
+
+	      boolean ballzero = true;
+
+	      for (int ns = 0; ns < numstates; ns++)
+	      {
+	         double dproduct = 1;
+	         double[][] emissionprobs_ni = emissionprobs[ns];
+
+		 //going through all marks
+	         for (int nmod = 0; nmod < numdatasets; nmod++)
+	         {
+		    if (traindataNotMissing_ni[nmod])
+		    {
+		       //we have observed the mark
+		       if (traindataObservedValues_ni[nmod])
+		       {
+		          dproduct *= emissionprobs_ni[nmod][1];
+		       }
+		       else 
+	               {
+		          dproduct *= emissionprobs_ni[nmod][0];
+		       }
+		    }
+		      // otherwise treated as missing omitting from product
+		 }
+	         emissionproducts_ni[ns] = dproduct;
+
+		 if (dproduct >= EPSILONEMISSIONS)
+		 {
+	             ballzero = false;
+		 }
+	      }
+
+	      if (ballzero)
+	      {
+	         for (int ns = 0; ns < numstates; ns++)
+	         {
+	       	    emissionproducts_ni[ns] = EPSILONEMISSIONS;
+		 }
+	      }
+
+	  }
+	  
+
+	  //initial probability in state s is initial probability times emission probability at first position
+          double[] alpha_nt = alpha[0];
+	  double dscale = 0;
+	  double[] emissionproducts_nobserveindex =emissionproducts[traindataObservedIndex[0]];
+ 	  for (int ns = 0; ns < numstates; ns++)
+          {
+	      alpha_nt[ns] = probinit[ns] * emissionproducts_nobserveindex[ns];
+	      dscale += alpha_nt[ns];
+	  }
+	  scale[0] = dscale;
+
+	  //alpha_t(s)=P(o_0,...,o_t,x_t=s|lambda)
+          //converts the alpha terms to probabilities
+	  for (int ni = 0; ni < numstates; ni++)
+          {
+             alpha_nt[ni] /= dscale;
+	  }
+	
+          //stores in coltransitionprobs the transpose of transitionprobs
+          for (int ni = 0; ni < numstates; ni++)
+          {
+             double[] coltransitionprobs_ni = coltransitionprobs[ni];
+             for (int nj = 0; nj < numstates; nj++)
+	     {
+	        coltransitionprobs_ni[nj] = transitionprobs[nj][ni];
+	     }
+	  }
+
+          //forward step
+          int numtime_nseq = numtime[nordered_nseq];
+          for (int nt = 1; nt < numtime_nseq; nt++)
+          {
+             //the actual observed combination at position t	        
+	     double[] alpha_ntm1 = alpha[nt-1];
+	     alpha_nt = alpha[nt];
+	      
+	     dscale = 0;
+	     emissionproducts_nobserveindex = emissionproducts[traindataObservedIndex[nt]];
+	     for (int ns = 0; ns < numstates; ns++)
+	     {
+	        //going through each state		   
+
+	        int transitionprobsnumCol_ns = transitionprobsnumCol[ns];
+	        int[] transitionprobsindexCol_ns = transitionprobsindexCol[ns];
+	        double[] coltransitionprobs_ns = coltransitionprobs[ns];
+
+	        double dtempsum = 0;
+                if (transitionprobsnumCol_ns < nsparsecutoff)
+	        {
+		    //if it is sparse enough then it is worth the extra array indirection here
+	           for (int nj = 0; nj < transitionprobsnumCol_ns; nj++)
+	           {
+	               //for each next state computing inner sum of all previous alpha and the transition probability
+	               //for all non-zero transitions into the state
+			int nmappedindex = transitionprobsindexCol_ns[nj];
+			dtempsum += coltransitionprobs_ns[nmappedindex]*alpha_ntm1[nmappedindex];
+		   }
+		}
+	        else
+	        {
+                   for (int nj = 0; nj < numstates; nj++)
+	           {
+	              //for each next state computing inner sum of all previous alpha and the transition probability
+	              //for all transitions into the state
+		      dtempsum += coltransitionprobs_ns[nj]*alpha_ntm1[nj];
+		   }
+		}
+
+                //multiply the transition sum by the emission probability
+	        double dalphaval = dtempsum*emissionproducts_nobserveindex[ns];
+                alpha_nt[ns] = dalphaval;
+	        dscale += dalphaval;
+	     }
+
+	      //rescaling alpha
+              scale[nt] = dscale;
+              //scale_t(s)=P(o_0,...,o_t|lambda) summed over all states
+
+	      for (int ns = 0; ns < numstates; ns++)
+              {
+		  alpha_nt[ns] /= dscale;
+	      }      	       
+	  }
+	    
+          //backward step
+          //beta_t(s)=P(o_t+1,...,o_T|x_t=s,lambda)
+          int nlastindex = numtime_nseq-1;
+          double dinitval = 1.0/scale[nlastindex];
+          for (int ns = 0; ns < numstates; ns++)
+          {
+              beta_ntp1[ns] = dinitval;
+	  }
+	
+	  int nmappedindexouter;
+ 
+	  double ddenom = 0;	      
+
+          //gamma_nt - P(x=S| o_0,...,o_t)
+          //P(o_t+1,...,o_T|x_t=s,lambda) * P(o_0,...,o_t,x_t=s|lambda)
+	  double[] gamma_nt = gamma[nlastindex]; 
+          for (int ns = 0; ns < gamma_nt.length; ns++)
+          {
+	      double dval = alpha[nlastindex][ns]*beta_ntp1[ns];
+	      ddenom += dval;
+	      gamma_nt[ns] = dval;
+	  }
+
+          for (int ns = 0; ns < gamma_nt.length; ns++)
+          {
+	     gamma_nt[ns] /= ddenom;
+	  }
+
+
+          for (int nt = nlastindex - 1; nt >= 0; nt--)
+          {
+	      gamma_nt = gamma[nt];
+	      int ntp1 = (nt+1);
+		   
+	      double[] emissionproducts_ncombo_ntp1 = emissionproducts[traindataObservedIndex[ntp1]];		
+	      double dscale_nt = scale[nt];
+
+	      for (int ns = 0; ns < numstates; ns++)
+              {
+		  tempproductbetaemiss[ns] = beta_ntp1[ns]*emissionproducts_ncombo_ntp1[ns];
+	      }
+
+	      //double dscaleinv = 1.0/scale[nt];
+              //scale_t(s)=P(o_0,...,o_t|lambda) summed over all states
+	      for (int ni = 0; ni < numstates; ni++)
+	      {
+		  double dtempsum = 0;
+		  int[] transitionprobsindex_ni =  transitionprobsindex[ni];
+		  double[] transitionprobs_ni = transitionprobs[ni];
+		  int transitionprobsnum_ni = transitionprobsnum[ni];
+
+                  if (transitionprobsnum_ni < nsparsecutoff)
+	          {
+		    //if it is sparse enough then it is worth the extra array indirection here
+	             for (int nj = 0; nj < transitionprobsnum_ni; nj++)
+	             {
+	                //for each state summing over transition probability to state j, emission probablity in j at next step
+	                //and probability of observing the remaining sequence
+		        nmappedindexouter = transitionprobsindex_ni[nj];
+		        dtempsum += transitionprobs_ni[nmappedindexouter]*tempproductbetaemiss[nmappedindexouter];			
+		     }
+		  }
+	          else
+	          {
+                     for (int nj = 0; nj < numstates; nj++)
+	             {
+	                //for each state summing over transition probability to state j, emission probablity in j at next step
+	                //and probability of observing the remaining sequence
+		        dtempsum += transitionprobs_ni[nj]*tempproductbetaemiss[nj];
+		     }
+		  }
+
+		  beta_nt[ni] = dtempsum/dscale_nt;
+	      }
+
+	      ddenom = 0;		
+	      alpha_nt = alpha[nt];
+
+	       //gamma_nt - P(x=S| o_0,...,o_t)
+               //P(o_t+1,...,o_T|x_t=s,lambda) * P(o_0,...,o_t,xt=s|lambda)
+
+	       for (int ns = 0; ns < gamma_nt.length; ns++)
+               {
+		   double dval = alpha_nt[ns]*beta_nt[ns];
+
+		   ddenom += dval;
+		   gamma_nt[ns] = dval;
+	       }
+
+	       for (int ns = 0; ns < gamma_nt.length; ns++)
+               {
+		   gamma_nt[ns]/=ddenom;       		   
+	       }
+	       beta_ntp1 = beta_nt;		
+	  }
+
+	  int nstart = 0; //the start index of the current active interval
+          gamma_nt = gamma[0];
+
+	  double dmaxval = 0;
+          int nmaxstate = 0;
+
+	  //handling the first line
+          for (int ns = 0; ns < gamma_nt.length; ns++)
+          {	   	
+	      int nmappedstate = stateordering[ns]; //maps new state to old
+	      double dprob = gamma_nt[nmappedstate];
+	      if (bprintposterior)
+	      {
+	         if (ns > 0)
+	         {
+		     //print with tab if not the first
+                    pwprobs.print("\t"+nf.format(dprob));
+	         }
+                 else
+                 {
+                    pwprobs.print(nf.format(dprob));
+		 }
+	      }
+
+	      if (dprob > dmaxval)
+	      {
+		  //best one found so far 
+	         dmaxval = dprob;
+	         nmaxstate = ns;
+	      }
+	  }
+
+	  if (bprintposterior)
+	  {
+	     pwprobs.println();
+	  }
+
+	  if (bprintstatebyline)
+	  {
+	      pwmax.println(""+(nmaxstate+1));
+	  }
+
+	  //this contains the best state of the previous interval
+	  int nmaxstateprev = nmaxstate;  	
+
+          for (int nt = 1; nt < numtime_nseq; nt++)
+          {
+             gamma_nt = gamma[nt];
+
+	     dmaxval = 0;
+	     nmaxstate = 0;
+             for (int ns = 0; ns < gamma_nt.length; ns++)
+             {	   	
+		 int nmappedstate = stateordering[ns]; //maps new state to old
+		double dprob = gamma_nt[nmappedstate];
+ 	        if (bprintposterior)
+	        {
+	           if (ns > 0)
+	           {
+		       //print with tab the first time
+                      pwprobs.print("\t"+nf.format(dprob));
+		   }
+	           else
+	           {
+                      pwprobs.print(nf.format(dprob));
+		   }
+		}
+
+	        if (dprob > dmaxval)
+	        {
+	           dmaxval = dprob;
+	           nmaxstate = ns;
+		}
+	     }
+
+	     if (bprintposterior)
+	     {
+	        pwprobs.println();
+	     }
+
+             if (bprintstatebyline)
+	     {
+		 pwmax.println(""+(nmaxstate+1));  	
+	     }	     
+	     
+	     if (bprintsegment&&(nmaxstateprev != nmaxstate))
+	     {
+		 //print out last segment we are done with
+		 pwbed.println(chromSeq[nordered_nseq]+"\t"+(nstart*nbinsize)+"\t"+(nt*nbinsize)+"\t"+chorder+(nmaxstateprev+1));		 
+		 //start a new segment now
+		 nstart = nt;
+		 nmaxstateprev = nmaxstate;
+	     } 
+	  }
+
+	  if (bprintsegment)
+	  {
+	      int nlastcoordinate;
+	      Integer objMaxCoord = null;
+	      if (hmMaxCoord != null)
+	      {
+		  objMaxCoord = ((Integer) hmMaxCoord.get(chromSeq[nordered_nseq]));
+	      }
+
+	      if (objMaxCoord != null)
+	      {
+		  nlastcoordinate = Math.min(numtime_nseq*nbinsize,((Integer) objMaxCoord).intValue());
+	      }
+	      else
+	      {
+		  nlastcoordinate = numtime_nseq*nbinsize;
+	      }
+	      pwbed.println(chromSeq[nordered_nseq]+"\t"+(nstart*nbinsize)+"\t"+nlastcoordinate+"\t"+chorder+(nmaxstateprev+1));
+	  }
+
+	  //close out the max state file if that was requested
+	  if (bprintstatebyline)
+	  {
+	     pwmax.close();
+	  }
+	  //close out the posterior state file if that was requested
+	  if (bprintposterior)
+	  {
+	     pwprobs.close();    
+	  }
+       }
+
+       //if segment print was requested then we are going to go close those printwriters
+       if (bprintsegment)
+       {
+          Iterator itr =  hmcellToFourColPW.values().iterator();
+          while (itr.hasNext())
+          {
+	     PrintWriter pw = (PrintWriter) itr.next();
+	     pw.close();
+	  }
+       }
+    }
+
+
+
     ///////////////////////////////////////////////////////////////////////////////////////////
 
     /**
@@ -3227,13 +4605,860 @@ public class ChromHMM
 	     pw.close();
 	  }
        }
-
-
-
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////
+    /**
+     * This is the core procedure for learning the parameters of the model
+     */
+    public void trainParametersWithLoad() throws IOException
+    {
 
+        NumberFormat nf3 = NumberFormat.getInstance();
+        nf3.setMaximumFractionDigits(3);
+	nf3.setGroupingUsed(false);
+	nf3.setMinimumFractionDigits(3);
+
+        NumberFormat nf1 = NumberFormat.getInstance();
+	nf1.setMaximumFractionDigits(1);
+	nf1.setMinimumFractionDigits(1);
+	nf1.setGroupingUsed(false);
+
+       int niteration = 1;
+
+       boolean bconverged = false;
+
+       double dzerotransitioncutoff = Math.pow(10,-nzerotransitionpower);
+
+       //number of non-zero transition for the 
+       int nsparsecutoff = (int) (numstates * ChromHMM.SPARSECUTOFFRATIO);
+
+       //number of non-zero transition that need to be less than this at the looser cut-off
+       int nsparsecutofflooser = (int) (numstates * ChromHMM.SPARSECUTOFFLOOSERRATIO);
+
+       double dprevloglike;
+
+       //stores the maximum number of locations in any sequence and in each sequence
+       //int[] numtime = new int[traindataObservedIndex.length];
+       int nmaxtime = 0;
+       for (int nseq = 0; nseq < numtime.length; nseq++)
+       {
+	   //numtime[nseq] = traindataObservedIndex[nseq].length;
+          if (numtime[nseq] > nmaxtime)
+	  {
+      	     nmaxtime = numtime[nseq];
+	  }
+       }
+
+       if (ChromHMM.BVERBOSE)
+       {
+          System.out.println("Maximum number of locations\t"+nmaxtime);
+       }
+
+       //stores the emission probability for the i^th combination of marks in the j^th state
+       double[][] emissionproducts = new double[nmaxtime][numstates]; //changed to maxtime here
+
+       //stores temporary product terms
+       double[] tempproductbetaemiss = new double[numstates];
+
+       //This stores the alpha values at each time point and number of states
+       double[][] alpha = new double[nmaxtime][numstates];
+
+       //Temporary storage of the gamma's for each state
+       double[] gamma_nt = new double[numstates];
+
+       //Temporary storage of the beta values for each state
+       double[] beta_nt = new double[numstates];
+
+       //Temporary storage of the beta values for each state at the next time point
+       double[] beta_ntp1 = new double[numstates];
+
+       //stores the scaling value for each time point
+       double[] scale = new double[nmaxtime];
+
+       //stores the transition probabilities for each column
+       double[][] coltransitionprobs = new double[numstates][numstates];
+
+       //stores the sufficient statistic for the initital probability in each state for the last visit
+       double[][] gammainitstore = new double[chromfiles.length][numstates];//changed from traindataObservedIndex.length
+
+       //stores the sufficient statistics for computing the transition probabilities cumulated for each iteration
+       double[][][] sxistore = new double[chromfiles.length][numstates][numstates];
+
+       //stores the sufficient statistic for computing the emission probabilities
+       double[][][][] gammaksumstore = 
+                 new double[chromfiles.length][numstates][numdatasets][numbuckets];
+
+       //temporary storage in computation of sxi
+       double[][] sumforsxi = new double[numstates][numstates];
+
+       //stores the sum of the gamma values associated with each combination in each state
+       double[][] gammaObservedSum = new double[nmaxtime][numstates];//changed from traindataObservedValues.length
+
+       //stores the indicies of the data
+       int[] traindataObservedIndex = new int[nmaxtime];
+
+      //saving the mapping of signatures and chromsome observed on
+      //stores whether there is a present call at each location
+      boolean[][] traindataObservedValues = new boolean[nmaxtime][numdatasets];
+
+      //stores whether the mark is not considered missing
+      boolean[][] traindataNotMissing = new boolean[nmaxtime][numdatasets]; //usually nobserved
+
+       int nelim = 0;
+       long ltimeitr= System.currentTimeMillis();
+       dprevloglike = Double.NEGATIVE_INFINITY;
+
+       do
+       {
+          dloglike = 0;	  
+
+          //for (int nseq = 0; nseq < traindataObservedIndex.length; nseq++)
+	  for (int nseq = 0; nseq < chromfiles.length; nseq++)
+          {
+	      //going through each sequence
+
+
+	      ///////////////////////////////////////////////////////////
+	      //loading the data just for the current chromosome 
+
+	      HashMap hmObserved = new HashMap(); //maps an observation string to an index and set of flags
+ 
+    	      int nobserved = 0;
+
+	      if (ChromHMM.BVERBOSE)
+	      {
+                 System.out.println("reading\t"+szinputdir+" "+chromfiles[nseq]);
+	      }
+	      BufferedReader br = Util.getBufferedReader(szinputdir+"/"+chromfiles[nseq]);
+              String szLine = br.readLine(); //first line tells cell type and chromosome
+	      br.readLine();//flush mark header
+	      ArrayList aldata = new ArrayList();
+	      while ((szLine = br.readLine())!=null)
+	      {
+	         StringTokenizer st = new StringTokenizer(szLine,"\t");
+		 StringBuffer sb = new StringBuffer();
+		
+		 for (int ncol = 0; ncol < numdatasets; ncol++)
+		 {
+		    if (!st.hasMoreTokens())
+		    {
+	      	       throw new IllegalArgumentException("Found line without "+numdatasets+" values in file "+chromfiles[nseq]);
+		    }
+
+		    String sztoken = st.nextToken();
+		    
+		    if (sztoken.equals("0"))
+		    {
+		       sb.append("0");
+		    }
+		    else if (sztoken.equals("1"))
+		    {
+		       sb.append("1");
+		    }
+		    else if (sztoken.equals("2"))
+		    {
+		       //this means missing
+	               sb.append("2");
+		    }
+		    else
+	            {
+	               throw new IllegalArgumentException("Unrecognized value "+sztoken+" found in "+szinputdir+"/"+chromfiles[nseq]);
+	            }
+		 }
+		 aldata.add(sb.toString());
+	      }
+	      br.close();
+	      
+	      int nsize = aldata.size();
+	      //traindataObservedIndex[nfile] = new int[nsize];
+	      //int[] traindataObservedIndex_nfile = traindataObservedIndex[nfile];
+
+	      for (int nrow = 0; nrow < nsize; nrow++)
+	      {
+	         BigInteger theBigInteger = new BigInteger((String) aldata.get(nrow),3);
+		 Integer theObservedInt  = (Integer) hmObserved.get(theBigInteger);
+	         //boolean[] flagA;
+
+	         if (theObservedInt == null)
+       	         {
+		    //System.out.println(szmappingbyte.length());
+		    //storing a mapping from observed byte string to an integer index in alFlags and alObserved
+		     hmObserved.put(theBigInteger, new Integer(nobserved));
+
+		    //saving this observed index
+		    traindataObservedIndex[nrow] = nobserved;
+
+		    //increments the number of observed combinations of marks
+		    nobserved++;
+		 }
+		 else
+		 {
+		    //storing the index of the flags associated with this row 
+		     traindataObservedIndex[nrow] = ((Integer) theObservedInt).intValue();
+		 }
+	      }	  	 
+	    
+
+
+
+
+	     Iterator hmObservedIterator = hmObserved.entrySet().iterator();
+	     while (hmObservedIterator.hasNext())
+	     {
+	        Map.Entry pairs = (Map.Entry) hmObservedIterator.next();
+	        BigInteger theBigInteger = (BigInteger) pairs.getKey();
+	        String szmapping = theBigInteger.toString(3);  //getting back the mapping string
+
+	        //ObservedRec theObservedRec = (ObservedRec) pairs.getValue();
+	        int ncurrindex = ((Integer) pairs.getValue()).intValue();// theObservedRec.nobserved;//this is an index on which obervation combination it is
+
+	        boolean[] traindataObservedValues_ncurrindex = traindataObservedValues[ncurrindex];
+	        boolean[] traindataNotMissing_ncurrindex = traindataNotMissing[ncurrindex]; 
+	    
+	        //if the mapping string is less than the number of data sets then 
+	        //there are leading 0's will set for leading 0's not missing and absent
+	        int numch = szmapping.length();
+	        int numleading0 = numdatasets - numch;
+	        for (int nj = 0; nj < numleading0; nj++)
+	        {
+		   traindataObservedValues_ncurrindex[nj] = false;
+		   traindataNotMissing_ncurrindex[nj] = true;
+		}
+
+	        int nmappedindex = numleading0; //starting from the leading 0 position
+	        for (int nj = 0; nj < numch; nj++)
+	        {
+	           char ch = szmapping.charAt(nj);
+
+	           if (ch == '0')
+	           {
+		      traindataObservedValues_ncurrindex[nmappedindex] = false;
+		      traindataNotMissing_ncurrindex[nmappedindex] = true;
+		   }
+	           else if (ch=='1')
+	           {
+		      traindataObservedValues_ncurrindex[nmappedindex] = true;
+		      traindataNotMissing_ncurrindex[nmappedindex] = true;
+		   }
+	           else
+	           {
+		      //missing data
+		      traindataObservedValues_ncurrindex[nmappedindex] = false;
+		      traindataNotMissing_ncurrindex[nmappedindex] = false;
+		   }
+	           nmappedindex++;
+		}
+	     }      
+
+
+
+
+	      ///////////////////////////////////////////////////////////
+	      //int[] traindataObservedIndex_nseq = traindataObservedIndex[nseq];
+	      //boolean[] traindataObservedSeqFlags_nseq = traindataObservedSeqFlags[nseq];
+
+             double[][][] gammaksum_nseq = gammaksumstore[nseq];
+
+	     for (int ns = 0; ns < gammaksum_nseq.length; ns++)
+	     {
+		 //resetting the gamma sufficient statistics in the current sequence
+		double[][] gammaksum_nseq_ns = gammaksum_nseq[ns];
+	        for (int nmark = 0; nmark < gammaksum_nseq_ns.length; nmark++)
+	        {
+		   for (int nbucket = 0; nbucket < numbuckets; nbucket++)
+		   {
+	              gammaksum_nseq_ns[nmark][nbucket] = 0;
+	           }
+	        }
+	     }
+
+	     double[][] sxi_nseq = sxistore[nseq];
+	     for (int ni = 0; ni < sxi_nseq.length; ni++)
+	     {
+		 //reseeting the sxi sufficient statistics in the current sequence
+		double[] sxi_nseq_ni = sxi_nseq[ni];
+	        for (int nj = 0; nj < sxi_nseq_ni.length; nj++)
+	        {
+	           sxi_nseq_ni[nj] = 0;
+	        }
+	     }
+
+	     //gammaObservedSum stores the weight for each combination of marks in each state
+	     //for (int ncombo = 0; ncombo < gammaObservedSum.length; ncombo++)
+	     for (int ncombo = 0; ncombo < nobserved; ncombo++)
+	     {
+		 //resetting that to 0
+		double[] gammaObservedSum_ncombo = gammaObservedSum[ncombo];
+	        for (int ns = 0; ns < gammaObservedSum_ncombo.length; ns++)
+	        {
+	           gammaObservedSum_ncombo[ns] = 0;
+	        }
+	     }
+
+
+	     //for (int ni = 0; ni < emissionproducts.length; ni++)
+	     for (int ni = 0; ni < nobserved; ni++)
+	     {
+	        //going through each combination of marks
+	        //if (traindataObservedSeqFlags_nseq[ni])
+		//{
+	        //this signature of marks is observed on the current chromosome so
+       	        //updating its emission probabilities
+       	        double[] emissionproducts_ni = emissionproducts[ni];
+      	        boolean[] traindataObservedValues_ni = traindataObservedValues[ni];
+       	        boolean[] traindataNotMissing_ni = traindataNotMissing[ni];		  
+
+	        boolean ballzero = true;
+
+	        for (int ns = 0; ns < numstates; ns++)
+	        {
+	           double dproduct = 1;
+	           double[][] emissionprobs_ns = emissionprobs[ns];
+
+		   for (int nmod = 0; nmod < numdatasets; nmod++)
+	           {
+		      if (traindataNotMissing_ni[nmod])
+	      	      {
+		         //we are include this marks emission probability
+		         if (traindataObservedValues_ni[nmod])
+		         {
+		      	    //System.out.println("positive\t"+ns+"\t"+nmod+"\t1\t"+emissionprobs_ns[nmod][1]);
+		            dproduct *= emissionprobs_ns[nmod][1];
+		         }
+		         else 
+		         {
+		      	    ///System.out.println("negative\t"+ns+"\t"+nmod+"\t0\t"+emissionprobs_ns[nmod][0]);
+		            dproduct *= emissionprobs_ns[nmod][0];
+		         }
+		      }
+			   // otherwise treated as missing omitting from product
+		   }
+		   //System.out.println(ns+"\t"+dproduct);
+		   emissionproducts_ni[ns] = dproduct;
+
+		   if (dproduct >= EPSILONEMISSIONS)
+		   {
+	              ballzero = false;
+		   }
+		}
+
+		if (ballzero)
+	        {
+	           for (int ns = 0; ns < numstates; ns++)
+		   {
+		      emissionproducts_ni[ns] = EPSILONEMISSIONS;
+		   }
+		}
+	     }
+	  
+	     //initial probability in state s is initial probability times emission probability at first position
+	     double[] alpha_nt = alpha[0];
+	     double dscale = 0;
+	     double[] emissionproducts_nobserveindex =emissionproducts[traindataObservedIndex[0]];
+ 	     for (int ns = 0; ns < numstates; ns++)
+             {
+	        alpha_nt[ns] = probinit[ns] * emissionproducts_nobserveindex[ns];
+	        dscale += alpha_nt[ns];
+	     }
+	     scale[0] = dscale;
+
+	     //alpha_t(s)=P(o_0,...,o_t,x_t=s|lambda)
+	     //converts the alpha terms to probabilities
+	     for (int ni = 0; ni < numstates; ni++)
+	     {
+		 alpha_nt[ni] /= dscale;
+	     }
+	     dloglike += Math.log(dscale); 
+
+	     //stores in coltransitionprobs the transpose of transitionprobs
+	     for (int ni = 0; ni < numstates; ni++)
+	     {
+	        double[] coltransitionprobs_ni = coltransitionprobs[ni];
+	        for (int nj = 0; nj < numstates; nj++)
+	        {
+	           coltransitionprobs_ni[nj] = transitionprobs[nj][ni];
+	        }
+	     }
+
+	     //forward step
+	     int numtime_nseq = numtime[nseq];
+	     for (int nt = 1; nt < numtime_nseq; nt++)
+	     {
+	        //the actual observed combination at position t	        
+	        double[] alpha_ntm1 = alpha[nt-1];
+	        alpha_nt = alpha[nt];
+	      
+	        dscale = 0;
+		emissionproducts_nobserveindex = emissionproducts[traindataObservedIndex[nt]];
+	        for (int ns = 0; ns < numstates; ns++)
+	        {
+		   //stores the emission product for each location on the chromosome		   
+
+		   int transitionprobsnumCol_ns = transitionprobsnumCol[ns];
+		   int[] transitionprobsindexCol_ns = transitionprobsindexCol[ns];
+	           double[] coltransitionprobs_ns = coltransitionprobs[ns];
+
+	           double dtempsum = 0;
+                   if (transitionprobsnumCol_ns < nsparsecutoff)
+		   {
+		       //number of transitions is sparse enough worth going through the extra redirection
+	              for (int nj = 0; nj < transitionprobsnumCol_ns; nj++)
+		      {
+		         //for each next state computing inner sum of all previous alpha and the transition probability
+		         //for all non-zero transitions into the state
+		         int nmappedindex = transitionprobsindexCol_ns[nj];
+		         dtempsum += coltransitionprobs_ns[nmappedindex]*alpha_ntm1[nmappedindex];
+		      }
+		   }
+		   else
+	           {
+		       //avoid the redirect and multiply by 0
+                      for (int nj = 0; nj < numstates; nj++)
+		      {
+		         dtempsum += coltransitionprobs_ns[nj]*alpha_ntm1[nj];
+		      }
+		   }
+	           //multiply the transition sum by the emission probability
+		   double dalphaval = dtempsum*emissionproducts_nobserveindex[ns];
+	           alpha_nt[ns] = dalphaval;
+		   //System.out.println(ns+"\t"+alpha_nt[ns]+"\t"+dtempsum+"\t"+emissionproducts_nobserveindex[ns]);
+	           dscale += dalphaval;
+	        }
+
+
+		//rescaling alpha
+	        scale[nt] = dscale;
+                //scale_t(s)=P(o_0,...,o_t|lambda) summed over all states
+
+	        for (int ns = 0; ns < numstates; ns++)
+	        {
+                   alpha_nt[ns] /= dscale;
+		}
+
+      	        dloglike += Math.log(dscale);
+	     }
+	    
+	     //backward step
+	     //beta_t(s)=P(o_t+1,...,o_T|x_t=s,lambda)
+	     int nlastindex = numtime_nseq-1;
+	     double dinitval = 1.0/scale[nlastindex];
+             for (int ns = 0; ns < numstates; ns++)
+	     {
+	        beta_ntp1[ns] = dinitval;
+	     }
+
+	     double ddenom = 0;	       
+
+	     //gamma_nt - P(x=S| o_0,...,o_t)
+	     //P(o_t+1,...,o_T|x_t=s,lambda) * P(o_0,...,o_t,xt=s|lambda)
+	     alpha_nt = alpha[nlastindex];
+	     for (int ns = 0; ns < gamma_nt.length; ns++)
+	     {
+	        double dval = alpha_nt[ns]*beta_ntp1[ns];
+	        ddenom += dval;
+	        gamma_nt[ns] = dval;
+	     }
+
+             for (int ns = 0; ns < gamma_nt.length; ns++)
+	     {
+		 gamma_nt[ns] /=ddenom;
+	     }
+
+	     double[] gammaObservedSum_combo_nt = gammaObservedSum[traindataObservedIndex[nlastindex]];
+		
+	     for (int ns = 0; ns < numstates; ns++)
+	     { 
+                //first sum gamma over all common signatures		     
+	        //updates probability of observing the signature when in the state
+	        gammaObservedSum_combo_nt[ns] += gamma_nt[ns];
+	     }
+
+	     for (int nt = nlastindex - 1; nt >= 0; nt--)
+	     {
+	        int ntp1 = (nt+1);
+		   
+	        double[] emissionproducts_combo_ntp1 = emissionproducts[traindataObservedIndex[ntp1]];
+
+		for (int ns = 0; ns < numstates; ns++)
+	        {
+		    tempproductbetaemiss[ns] = beta_ntp1[ns]*emissionproducts_combo_ntp1[ns];
+		}
+
+		//double dscaleinv = 1.0/scale[nt];
+		double dscale_nt = scale[nt];
+                //scale_t(s)=P(o_0,...,o_t|lambda) summed over all states
+
+	        for (int ni = 0; ni < numstates; ni++)
+		{
+	           double dtempsum = 0;
+	           int[] transitionprobsindex_ni =  transitionprobsindex[ni];
+	           double[] transitionprobs_ni = transitionprobs[ni];
+		   int transitionprobsnum_ni = transitionprobsnum[ni];
+
+                   if (transitionprobsnum_ni < nsparsecutoff)
+		   {
+		       //sparse enought to pay the indirection penalty
+		      for (int nj = 0; nj < transitionprobsnum_ni; nj++)
+		      {
+		         //for each state summing over transition probability to state j, emission probablity in j at next step
+		         //and probability of observing the remaining sequence
+			 int nmappedindexouter = transitionprobsindex_ni[nj];
+		         dtempsum += transitionprobs_ni[nmappedindexouter]*tempproductbetaemiss[nmappedindexouter];
+		      }
+		   }
+		   else
+		   {
+		       //not trying to exploit sparsity here
+                      for (int nj = 0; nj < numstates; nj++)
+		      {
+		         //for each state summing over transition probability to state j, emission probablity in j at next step
+		         //and probability of observing the remaining sequence
+			 dtempsum += transitionprobs_ni[nj]*tempproductbetaemiss[nj];
+		      }
+		   }
+		   beta_nt[ni] = dtempsum/dscale_nt;
+		}		
+		
+                ddenom = 0;
+		
+	        alpha_nt = alpha[nt];	     
+
+		//gamma_nt - P(x=S| o_0,...,o_t)
+	        //P(o_t+1,...,o_T|x_t=s,lambda) * P(o_0,...,o_t,xt=s|lambda)
+
+		for (int ns = 0; ns < gamma_nt.length; ns++)
+	        {
+		   double dval = alpha_nt[ns]*beta_nt[ns];
+	           ddenom += dval;
+	           gamma_nt[ns] = dval;
+		} 
+
+	        for (int ns = 0; ns < gamma_nt.length; ns++)
+	        {
+		    gamma_nt[ns] /= ddenom;
+		}
+
+                gammaObservedSum_combo_nt = gammaObservedSum[traindataObservedIndex[nt]];
+
+                for (int ns = 0; ns < numstates; ns++)
+		{
+		   //first sum gamma over all common signatures
+		   //updates probability of observing the signature when in the state
+	           gammaObservedSum_combo_nt[ns] += gamma_nt[ns];
+		}
+
+		double dsum = 0;
+		  
+                //this compues the numerator portion
+	        for (int ni = 0; ni < numstates; ni++)
+	        {
+		   double[] sumforsxi_ni = sumforsxi[ni]; //computing expected number of transition from state i
+	           int[] transitionprobsindex_ni = transitionprobsindex[ni]; //indicies of non-zero transitions from state i
+	           double[] transitionprobs_ni = transitionprobs[ni]; //probability of transitions from state i
+	           int ntransitionprobsnum_ni = transitionprobsnum[ni]; //number of non-zero transitions from state i
+	           double dalpha_nt_ni = alpha_nt[ni]; 
+	           //sxi is P(q_t = S_i, q_(t+1) = S_j | O)
+
+                   if (ntransitionprobsnum_ni < nsparsecutofflooser)
+      	           {
+		       //enough 0 transitionto use sparsity here
+		       //looser cut off since the indirection is less of the total time
+	              for (int nj = 0; nj < ntransitionprobsnum_ni; nj++)
+		      {
+		         int nmappedindex = transitionprobsindex_ni[nj];
+		         //computes transition probability from state i to j
+		         double dtempval = transitionprobs_ni[nmappedindex] *dalpha_nt_ni*tempproductbetaemiss[nmappedindex];
+                         dsum += dtempval;
+	      	         sumforsxi_ni[nmappedindex] = dtempval;
+		      }
+		   }
+	           else
+	           {
+		      for (int nj = 0; nj < numstates; nj++)
+		      {
+		         //computes transition probability from state i to j
+		         double dtempval = transitionprobs_ni[nj]*dalpha_nt_ni*tempproductbetaemiss[nj];
+		         dsum += dtempval;
+		         sumforsxi_ni[nj] = dtempval;
+		       }
+		   }
+		}		 
+		   
+		//normalizing the numerator by the sum of the denominator and updating this iterations value for it
+	        for (int ni = 0; ni < numstates; ni++)
+	        {
+		   int[] transitionprobsindex_ni = transitionprobsindex[ni];
+	           double[] sumforsxi_ni = sumforsxi[ni];
+	           double[] sxi_nseq_ni = sxi_nseq[ni];
+	           int ntransitionprobsnum_ni = transitionprobsnum[ni];
+
+                   if (ntransitionprobsnum_ni < nsparsecutoff)
+	           {
+		       //guessing sparse enough to avoid the indirections
+		      for (int nj = 0; nj < ntransitionprobsnum_ni; nj++)
+		      {
+	      	         int nmappedindex = transitionprobsindex_ni[nj];
+		         sxi_nseq_ni[nmappedindex] += sumforsxi_ni[nmappedindex]/dsum;
+		      }
+		   }
+	           else
+	           {
+                      for (int nj = 0; nj < numstates; nj++)
+	      	      {
+			  sxi_nseq_ni[nj] += sumforsxi_ni[nj]/dsum;
+		      }
+		   }
+	        }   	 
+		beta_ntp1 = beta_nt;  //updating beta_ntp1 
+	     }
+
+	     double[] gammainitstore_nseq = gammainitstore[nseq];
+	     for (int ns = 0; ns < numstates; ns++)
+	     {
+	        //storing the initial gamma from this iteration
+	        gammainitstore_nseq[ns] = gamma_nt[ns];
+	     }
+
+	     //for (int nindex = 0; nindex < gammaObservedSum.length; nindex++)
+	     for (int nindex = 0; nindex < nobserved; nindex++)
+	     {
+	        //going through all the gamma sufficient statistic
+
+	        //only update for those combinations that were observed on this sequnce
+	        //gets the observed combination and missing combination signatures
+          	boolean[] traindataObservedValues_nindex = traindataObservedValues[nindex];
+	        boolean[] traindataNotMissing_nindex = traindataNotMissing[nindex];
+
+	           
+	        double[] gammaObservedSum_nindex = gammaObservedSum[nindex];
+
+	        for (int ns = 0; ns < numstates; ns++)
+	        {
+	           //going through each state
+		   double[][] gammaksum_nseq_ns = gammaksum_nseq[ns];
+	           double gammaObservedSum_nindex_ns = gammaObservedSum_nindex[ns];
+	           for (int nmark = 0; nmark < numdatasets; nmark++)
+	           {
+		      //going through each mark
+	      	      if (traindataNotMissing_nindex[nmark])
+		      {
+		         //only update non-missing
+		         if (traindataObservedValues_nindex[nmark])
+		         {
+		            //updates the gamma sum for each mark when in state and observed 1
+		            gammaksum_nseq_ns[nmark][1] += gammaObservedSum_nindex_ns;
+		         }
+		         else
+		         {
+		  	    //updates the gamma sum for each mark when in state and observed 0
+		            gammaksum_nseq_ns[nmark][0] += gammaObservedSum_nindex_ns;
+			 }
+		      }
+		   }
+		}
+	     }
+	     
+
+	  
+	     //M step	      
+	     if ((niteration >1) ||(nseq==(chromfiles.length-1)))
+	     {
+	        //executes the M-step after any pass through a sequence after one pass has been made through all sequences
+	        double dsum = 0;
+
+		//updating the inital probabilities
+                for (int ni = 0; ni < numstates; ni++)
+	        {
+		   double dgammainitsum = 0;
+                   for (int nitr = 0; nitr < chromfiles.length; nitr++)
+	           {
+	              dgammainitsum += gammainitstore[nitr][ni];
+	           }
+		   probinit[ni] = dgammainitsum;
+                   dsum += dgammainitsum;
+		}
+ 
+	        for (int ni = 0; ni < numstates; ni++)
+	        {
+	           probinit[ni] /= dsum;		
+	        }
+
+		//this indicates if there is a change on the set of 0 probability transitions
+	        boolean bchange = false;
+	        for (int ni = 0; ni < transitionprobs.length; ni++)
+                {
+	           dsum = 0;
+	           //computes the denominator for the transition probabilities
+
+		   int[] transitionprobsindex_ni = transitionprobsindex[ni];
+	           double[] transitionprobs_ni =  transitionprobs[ni];
+		   int transitionprobsnum_ni = transitionprobsnum[ni];
+	           for (int nj = 0; nj < transitionprobsnum_ni; nj++)
+	           {
+		      int ntransitionprobsindex_ni_nj = transitionprobsindex_ni[nj];
+	              double dsxistoreitr = 0;
+	              for (int nitr = 0; nitr < chromfiles.length; nitr++)
+	              {
+	                 dsxistoreitr += sxistore[nitr][ni][ntransitionprobsindex_ni_nj];
+		      }
+		      transitionprobs_ni[ntransitionprobsindex_ni_nj] = dsxistoreitr;
+
+	              dsum += dsxistoreitr;
+		   }
+
+	           for (int nj = 0; nj < transitionprobsnum_ni; nj++)
+	           {
+		      int ntransitionprobsindex_ni_nj = transitionprobsindex_ni[nj];
+		      //computes the updated transition probabilities
+		      transitionprobs_ni[ntransitionprobsindex_ni_nj] /= dsum;
+	    
+		      if ((transitionprobs_ni[ntransitionprobsindex_ni_nj] < dzerotransitioncutoff) && (ni != ntransitionprobsindex_ni_nj))
+		      {
+		         //if falls below threshold eliminate the transition probabilities
+	       	         elim[ni][ntransitionprobsindex_ni_nj] = true;
+		         bchange = true;
+		         nelim++;
+		         transitionprobs_ni[ntransitionprobsindex_ni_nj] = 0;
+		      }
+		   }
+		}
+	       
+	        if (bchange)
+	        {
+	           //a transition was eliminated we need to update the probabilities
+	           for (int ni = 0; ni < transitionprobs.length; ni++)
+	           {
+		      int nindex = 0;		        
+                      ddenom = 0;
+		      boolean[] elim_ni = elim[ni];
+		      double[] transitionprobs_ni = transitionprobs[ni];
+		      int[] transitionprobsindex_ni = transitionprobsindex[ni];
+		      for (int nj = 0; nj < transitionprobs_ni.length; nj++)
+	              {
+		         if (!elim_ni[nj])
+		         {
+		            //we have not eliminated this transition
+		            //stores its index in order and add sum to denominator
+		            transitionprobsindex_ni[nindex] = nj;
+		            ddenom += transitionprobs_ni[nj];
+		            nindex++;
+		         }
+		      }
+
+		      //renormalize the transition probabilities by the sum of the non-eliminated transitions
+		      for (int nj = 0; nj < transitionprobs_ni.length; nj++)
+	              {
+		         transitionprobs_ni[nj] /= ddenom;
+		      }
+		      //update the number of valid transitions
+		      transitionprobsnum[ni] = nindex; 
+		   }
+
+		   for (int ni = 0; ni < transitionprobs.length; ni++)
+	           {
+		      int nindex =0;
+		      int[] transitionprobsindexCol_ni = transitionprobsindexCol[ni];
+		      for (int nj = 0; nj < transitionprobs[ni].length; nj++)
+	              {
+		         if (!elim[nj][ni])
+		         {
+		            //copy into the column of i the index of all non-eliminated transitions of i
+		            transitionprobsindexCol_ni[nindex] = nj;
+		            nindex++;
+		         }
+		      }
+		      //updates the number of non-zero transitions from column i
+		      transitionprobsnumCol[ni] = nindex; 
+		   }
+		}
+	    
+	        //updating the emission parameters
+	        for (int ns = 0; ns < numstates; ns++)
+	        {
+		   double[][] emissionprobs_ns = emissionprobs[ns];
+	           for (int nmark = 0; nmark < emissionprobs_ns.length; nmark++)
+	           {
+		      double[] emissionprobs_ns_nmark = emissionprobs_ns[nmark];
+		      //can't used a general gamma sum because of missing emission vals
+		      double dgammadenom = 0;
+
+	              //updates gamma sum
+                      for (int nbucket = 0; nbucket < numbuckets; nbucket++)
+		      {
+		         emissionprobs_ns_nmark[nbucket] = 0;
+	                
+	                 for (int nitr = 0; nitr < chromfiles.length; nitr++)
+	                 {
+	                    emissionprobs_ns_nmark[nbucket] += gammaksumstore[nitr][ns][nmark][nbucket];
+		         }
+		         dgammadenom += emissionprobs_ns_nmark[nbucket];
+		      }
+
+
+		      //added to avoid NA values
+		      if (dgammadenom > 0)
+		      {
+		         for (int nbucket = 0; nbucket < numbuckets; nbucket++)
+		         {
+		            emissionprobs_ns_nmark[nbucket] /= dgammadenom;
+		         }
+		      }
+		   }
+		}
+	     }
+
+	     if (ChromHMM.BVERBOSE)
+	     {
+	        System.out.println("\t"+niteration+"\t"+dloglike);
+	     }	     
+	  }
+
+	  double ddiff =(dloglike-dprevloglike);
+
+	  //dconvergediff is only enforced if greater thanor equal to 0
+          dprevloglike = dloglike;       
+
+	  makeStateOrdering();
+
+	  if (bordercols)
+	  {
+	     makeColOrdering();
+	  }
+	  //updates after each iteration the current status of the search
+          printTransitionTable(niteration);
+          printEmissionTable(niteration);
+          printEmissionImage(niteration);
+          printTransitionImage(niteration);
+	  printParametersToFile(niteration);
+
+	  //we just completed a full iteration
+          long ltimefinal =  System.currentTimeMillis();	  
+	  double dtimechange = (ltimefinal-ltimeitr)/(double) 1000;
+          bconverged = (((niteration >= nmaxiterations)||((ddiff< dconvergediff)&&(dconvergediff>=0)))||((dtimechange>nmaxseconds)&&(nmaxseconds>=0)));	  
+          if (ChromHMM.BVERBOSE)
+	  {
+	     System.out.println(niteration+"\tTime Iteration\t"+dtimechange+"\t"+"\tElim\t"+nelim);
+	     System.out.println("Full "+niteration+"\t"+dloglike+"\t"+dprevloglike+"\t"+ddiff);        
+	  }
+
+
+	  if (niteration == 1)
+	  {
+	      System.out.format("%10s %25s %10s %20s%n","Iteration","Estimated Log Likelihood", "Change","Total Time (secs)");
+	      System.out.format("%10s %25s %10s %20s%n",""+niteration,""+nf3.format(dloglike),"-",""+nf1.format(dtimechange));
+	  }
+	  else
+	  {
+	      //System.out.format(niteration+"            "+nf3.format(dloglike)+"           "+nf3.format(ddiff)+"       "+nf1.format(dtimechange));
+	      System.out.format("%10s %25s %10s %20s%n",""+niteration,""+nf3.format(dloglike),""+nf3.format(ddiff),""+nf1.format(dtimechange));
+	  }
+	  niteration++;
+       }
+       while (!bconverged);
+    }
+
+    //////////////////////////////////////////////////////////////////////////////////////////
     /**
      * This is the core procedure for learning the parameters of the model
      */
@@ -3871,13 +6096,12 @@ public class ChromHMM
 		         dgammadenom += emissionprobs_ns_nmark[nbucket];
 		      }
 
-
-                      //added to avoid NA values
-                      if (dgammadenom > 0)
+		      //added to avoid NA values
+		      if (dgammadenom > 0)
 		      {
 		         for (int nbucket = 0; nbucket < numbuckets; nbucket++)
 		         {
-			    emissionprobs_ns_nmark[nbucket] /= dgammadenom;
+		            emissionprobs_ns_nmark[nbucket] /= dgammadenom;
 			 }
 		      }
 		   }
@@ -4109,6 +6333,7 @@ public class ChromHMM
            {
 	      alpha_nt[ns] = probinit[ns] * emissionproducts_nobserveindex[ns];
 	      dscale += alpha_nt[ns];
+	      
 	   }
 	   scale[0] = dscale;
 
@@ -4398,12 +6623,1260 @@ public class ChromHMM
 	}
     }
 
+    ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+
+
+    /////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    // Create a new thread.
+    class NewThreadWithLoad implements Runnable 
+    {
+       
+	//int[] traindataObservedIndex_nseq;
+	//boolean[] traindataObservedSeqFlags_nseq;
+	double[][][] gammaksum_nseq;
+	double[][] sxi_nseq;
+	int numtime_nseq;
+	String chromfiles_nseq;
+	double[] gammainitstore_nseq;
+	double[][][] gammaObservedSum_Pool;
+	double[][][] alpha_Pool;
+	//double[][] emissionproducts;
+	double[][] gamma_nt_Pool;
+	double[][] coltransitionprobs;
+	double[][] scale_Pool;
+	double[][] beta_nt_Pool;
+	double[][] beta_ntp1_Pool;
+	double[][] tempproductbetaemiss_Pool;
+	int nsparsecutoff;
+	int nsparsecutofflooser;
+	double[][][] sumforsxi_Pool;
+	double[] dloglikeA;
+	int nseq;
+
+	int[][] traindataObservedIndex_Pool;
+        boolean[][][] traindataObservedValues_Pool;
+        boolean[][][] traindataNotMissing_Pool;
+	double[][][] emissionproducts_Pool;
+
+	NewThreadWithLoad(
+                          String chromfiles_nseq,
+                          int[][] traindataObservedIndex_Pool,
+			  boolean[][][] traindataObservedValues_Pool,
+			  boolean[][][] traindataNotMissing_Pool,
+			  //boolean[] traindataObservedSeqFlags_nseq,
+		  double[][][] gammaksum_nseq,
+		  double[][] sxi_nseq,
+		  int numtime_nseq,
+		  double[] gammainitstore_nseq,
+		  double[][][] gammaObservedSum_Pool,
+		  double[][][] alpha_Pool,
+		  double[][][] emissionproducts_Pool,
+		  double[][] gamma_nt_Pool,
+		  double[][] coltransitionprobs,
+		  double[][] scale_Pool,
+		  double[][] beta_nt_Pool,
+		  double[][] beta_ntp1_Pool,
+		  double[][] tempproductbetaemiss_Pool,
+		  double[][][] sumforsxi_Pool,
+		  int nsparsecutoff,
+		  int nsparsecutofflooser,
+		  double[] dloglikeA,
+		  int nseq)
+        {
+	    this.emissionproducts_Pool = emissionproducts_Pool;
+	    this.chromfiles_nseq = chromfiles_nseq;
+	    this.traindataObservedIndex_Pool = traindataObservedIndex_Pool;
+	    this.traindataObservedValues_Pool = traindataObservedValues_Pool;
+	    this.traindataNotMissing_Pool = traindataNotMissing_Pool;
+	    //this.traindataObservedIndex_nseq = traindataObservedIndex_nseq;
+	    //this.traindataObservedSeqFlags_nseq = traindataObservedSeqFlags_nseq;
+	    this.gammaksum_nseq = gammaksum_nseq;
+	    this.sxi_nseq = sxi_nseq;
+	    this.numtime_nseq = numtime_nseq;
+	    this.gammainitstore_nseq = gammainitstore_nseq;
+	    this.gammaObservedSum_Pool = gammaObservedSum_Pool;
+	    this.alpha_Pool = alpha_Pool;
+	    //this.emissionproducts = emissionproducts;
+	    this.gamma_nt_Pool = gamma_nt_Pool;
+	    this.coltransitionprobs = coltransitionprobs;
+	    this.scale_Pool = scale_Pool;
+	    this.beta_nt_Pool = beta_nt_Pool;
+	    this.beta_ntp1_Pool = beta_ntp1_Pool;
+	    this.tempproductbetaemiss_Pool = tempproductbetaemiss_Pool;
+	    this.nsparsecutoff = nsparsecutoff;
+	    this.nsparsecutofflooser = nsparsecutofflooser;
+	    this.sumforsxi_Pool = sumforsxi_Pool;
+	    this.dloglikeA = dloglikeA;
+	    this.nseq = nseq;
+	}
+
+	private int slotavailable()
+	{
+	   for (int ni = 0; ni < threadslots.length; ni++)
+	   {
+	      if (!threadslots[ni])
+	      {
+	         threadslots[ni] = true;
+	         return ni;
+	      }
+	   }
+	   return -1;	    
+	}
+
+	// This is the entry point for the second thread.
+	public void run() 
+        {
+	    int nprocess;
+
+	    synchronized (objlock)
+	    {
+	       while ((nprocess=slotavailable())==-1)
+	       {
+                  try
+                  {
+	             objlock.wait();
+	          }
+	          catch (InterruptedException ex) {}
+	       }
+	    }
+
+            try
+            {
+
+  	       estep(
+		  emissionproducts_Pool[nprocess],
+		  traindataObservedIndex_Pool[nprocess],
+		  traindataObservedValues_Pool[nprocess],
+		  traindataNotMissing_Pool[nprocess],
+                  gammaObservedSum_Pool[nprocess],
+		  alpha_Pool[nprocess],
+		  gamma_nt_Pool[nprocess],
+		  scale_Pool[nprocess],
+		  beta_nt_Pool[nprocess],
+		  beta_ntp1_Pool[nprocess],
+		  tempproductbetaemiss_Pool[nprocess],
+		  sumforsxi_Pool[nprocess]);
+	    }
+	    catch (IOException ioex)
+	    {
+		ioex.printStackTrace(System.out);
+	    }
+	    
+	    synchronized(objlock)
+	    {
+		nlaunched--;
+		threadslots[nprocess] = false;
+		objlock.notifyAll();
+	    }
+	}
+
+        public void estep(
+		  double[][] emissionproducts,
+		  int[] traindataObservedIndex,
+		  boolean[][] traindataObservedValues,
+		  boolean[][] traindataNotMissing,
+		  double[][] gammaObservedSum,
+		  double[][] alpha,
+		  double[] gamma_nt,
+		  double[] scale,
+		  double[] beta_nt,
+		  double[] beta_ntp1,
+		  double[] tempproductbetaemiss,
+		  double[][] sumforsxi) throws IOException
+	{ 
+	      //going through each sequence
+
+	      ///////////////////////////////////////////////////////////
+	      //loading the data just for the current chromosome 
+
+	      HashMap hmObserved = new HashMap(); //maps an observation string to an index and set of flags
+ 
+    	      int nobserved = 0;
+
+	      if (ChromHMM.BVERBOSE)
+	      {
+                 System.out.println("reading\t"+szinputdir+" "+chromfiles_nseq);
+	      }
+
+	      BufferedReader br = Util.getBufferedReader(szinputdir+"/"+chromfiles_nseq);
+              String szLine = br.readLine(); //first line tells cell type and chromosome
+	      br.readLine();//flush mark header
+	      ArrayList aldata = new ArrayList();
+	      while ((szLine = br.readLine())!=null)
+	      {
+	         StringTokenizer st = new StringTokenizer(szLine,"\t");
+		 StringBuffer sb = new StringBuffer();
+		
+		 for (int ncol = 0; ncol < numdatasets; ncol++)
+		 {
+		    if (!st.hasMoreTokens())
+		    {
+	      	       throw new IllegalArgumentException("Found line without "+numdatasets+" values in file "+chromfiles_nseq);
+		    }
+
+		    String sztoken = st.nextToken();
+		    
+		    if (sztoken.equals("0"))
+		    {
+		       sb.append("0");
+		    }
+		    else if (sztoken.equals("1"))
+		    {
+		       sb.append("1");
+		    }
+		    else if (sztoken.equals("2"))
+		    {
+		       //this means missing
+	               sb.append("2");
+		    }
+		    else
+	            {
+	               throw new IllegalArgumentException("Unrecognized value "+sztoken+" found in "+szinputdir+"/"+chromfiles_nseq);
+	            }
+		 }
+		 aldata.add(sb.toString());
+	      }
+	      br.close();
+	      
+	      int nsize = aldata.size();
+	      //traindataObservedIndex[nfile] = new int[nsize];
+	      //int[] traindataObservedIndex_nfile = traindataObservedIndex[nfile];
+
+	      for (int nrow = 0; nrow < nsize; nrow++)
+	      {
+	         BigInteger theBigInteger = new BigInteger((String) aldata.get(nrow),3);
+		 Integer theObservedInt  = (Integer) hmObserved.get(theBigInteger);
+	         //boolean[] flagA;
+
+	         if (theObservedInt == null)
+       	         {
+		    //System.out.println(szmappingbyte.length());
+		    //storing a mapping from observed byte string to an integer index in alFlags and alObserved
+		     hmObserved.put(theBigInteger, new Integer(nobserved));
+
+		    //saving this observed index
+		    traindataObservedIndex[nrow] = nobserved;
+
+		    //increments the number of observed combinations of marks
+		    nobserved++;
+		 }
+		 else
+		 {
+		    //storing the index of the flags associated with this row 
+		     traindataObservedIndex[nrow] = ((Integer) theObservedInt).intValue();
+		 }
+	      }	  	 
+	   
+
+
+	     Iterator hmObservedIterator = hmObserved.entrySet().iterator();
+	     while (hmObservedIterator.hasNext())
+	     {
+	        Map.Entry pairs = (Map.Entry) hmObservedIterator.next();
+	        BigInteger theBigInteger = (BigInteger) pairs.getKey();
+	        String szmapping = theBigInteger.toString(3);  //getting back the mapping string
+
+	        //ObservedRec theObservedRec = (ObservedRec) pairs.getValue();
+
+	        int ncurrindex = ((Integer) pairs.getValue()).intValue();// theObservedRec.nobserved;//this is an index on which obervation combination it is
+
+	        boolean[] traindataObservedValues_ncurrindex = traindataObservedValues[ncurrindex];
+	        boolean[] traindataNotMissing_ncurrindex = traindataNotMissing[ncurrindex]; 
+	    
+	        //if the mapping string is less than the number of data sets then 
+	        //there are leading 0's will set for leading 0's not missing and absent
+	        int numch = szmapping.length();
+	        int numleading0 = numdatasets - numch;
+	        for (int nj = 0; nj < numleading0; nj++)
+	        {
+		   traindataObservedValues_ncurrindex[nj] = false;
+		   traindataNotMissing_ncurrindex[nj] = true;
+		}
+
+	        int nmappedindex = numleading0; //starting from the leading 0 position
+	        for (int nj = 0; nj < numch; nj++)
+	        {
+	           char ch = szmapping.charAt(nj);
+
+	           if (ch == '0')
+	           {
+		      traindataObservedValues_ncurrindex[nmappedindex] = false;
+		      traindataNotMissing_ncurrindex[nmappedindex] = true;
+		   }
+	           else if (ch=='1')
+	           {
+		      traindataObservedValues_ncurrindex[nmappedindex] = true;
+		      traindataNotMissing_ncurrindex[nmappedindex] = true;
+		   }
+	           else
+	           {
+		      //missing data
+		      traindataObservedValues_ncurrindex[nmappedindex] = false;
+		      traindataNotMissing_ncurrindex[nmappedindex] = false;
+		   }
+	           nmappedindex++;
+		}
+	     }     
+
+
+	     for (int ni = 0; ni < nobserved; ni++)
+	     {
+	        //going through each combination of marks
+	        //if (traindataObservedSeqFlags_nseq[ni])
+		//{
+	        //this signature of marks is observed on the current chromosome so
+       	        //updating its emission probabilities
+       	        double[] emissionproducts_ni = emissionproducts[ni];
+      	        boolean[] traindataObservedValues_ni = traindataObservedValues[ni];
+       	        boolean[] traindataNotMissing_ni = traindataNotMissing[ni];		  
+
+	        boolean ballzero = true;
+
+	        for (int ns = 0; ns < numstates; ns++)
+	        {
+	           double dproduct = 1;
+	           double[][] emissionprobs_ns = emissionprobs[ns];
+
+		   for (int nmod = 0; nmod < numdatasets; nmod++)
+	           {
+		      if (traindataNotMissing_ni[nmod])
+	      	      {
+		         //we are include this marks emission probability
+		         if (traindataObservedValues_ni[nmod])
+		         {
+		      	    //System.out.println("positive\t"+ns+"\t"+nmod+"\t1\t"+emissionprobs_ns[nmod][1]);
+		            dproduct *= emissionprobs_ns[nmod][1];
+		         }
+		         else 
+		         {
+		      	    ///System.out.println("negative\t"+ns+"\t"+nmod+"\t0\t"+emissionprobs_ns[nmod][0]);
+		            dproduct *= emissionprobs_ns[nmod][0];
+		         }
+		      }
+			   // otherwise treated as missing omitting from product
+		   }
+		   //System.out.println(ns+"\t"+dproduct);
+		   emissionproducts_ni[ns] = dproduct;
+
+		   if (dproduct >= EPSILONEMISSIONS)
+		   {
+	              ballzero = false;
+		   }
+		}
+
+		if (ballzero)
+	        {
+	           for (int ns = 0; ns < numstates; ns++)
+		   {
+		      emissionproducts_ni[ns] = EPSILONEMISSIONS;
+		   }
+		}
+	     }
+
+
+
+	   double dloglikeseq = 0;
+
+	   for (int ns = 0; ns < gammaksum_nseq.length; ns++)
+	   {
+	      //resetting the gamma sufficient statistics in the current sequence
+	      double[][] gammaksum_nseq_ns = gammaksum_nseq[ns];
+	      for (int nmark = 0; nmark < gammaksum_nseq_ns.length; nmark++)
+	      {
+	         for (int nbucket = 0; nbucket < numbuckets; nbucket++)
+	         {
+	            gammaksum_nseq_ns[nmark][nbucket] = 0;
+	         }
+	      }
+           }
+
+	   for (int ni = 0; ni < sxi_nseq.length; ni++)
+	   {
+	      //reseeting the sxi sufficient statistics in the current sequence
+	      double[] sxi_nseq_ni = sxi_nseq[ni];
+	      for (int nj = 0; nj < sxi_nseq_ni.length; nj++)
+	      {
+                 sxi_nseq_ni[nj] = 0;
+	      }
+	   }
+
+	   //gammaObservedSum stores the weight for each combination of marks in each stat
+	   //for (int ncombo = 0; ncombo < gammaObservedSum.length; ncombo++)
+	   for (int ncombo = 0; ncombo < nobserved; ncombo++)
+	   {
+	      //resetting that to 0
+	      double[] gammaObservedSum_ncombo = gammaObservedSum[ncombo];
+	      for (int ns = 0; ns < gammaObservedSum_ncombo.length; ns++)
+	      {
+	         gammaObservedSum_ncombo[ns] = 0;
+	      }
+	   }
+
+	   //initial probability in state s is initial probability times emission probability at first position
+	   double[] alpha_nt = alpha[0];
+           double dscale = 0;
+	   double[] emissionproducts_nobserveindex =emissionproducts[traindataObservedIndex[0]];
+ 	   for (int ns = 0; ns < numstates; ns++)
+           {
+	      alpha_nt[ns] = probinit[ns] * emissionproducts_nobserveindex[ns];
+	      //System.out.println(ns+"\t"+alpha_nt[ns]);
+	      dscale += alpha_nt[ns];
+	   }
+	   scale[0] = dscale;
+
+	   //alpha_t(s)=P(o_0,...,o_t,x_t=s|lambda)
+	   //converts the alpha terms to probabilities
+	   for (int ni = 0; ni < numstates; ni++)
+	   {
+	      alpha_nt[ni] /= dscale;
+	   }
+	   dloglikeseq += Math.log(dscale); 
+
+	   //forward step
+	   //int numtime_nseq = numtime[nseq];
+	   for (int nt = 1; nt < numtime_nseq; nt++)
+	   {
+	      //the actual observed combination at position t	        
+	      double[] alpha_ntm1 = alpha[nt-1];
+	      alpha_nt = alpha[nt];
+	      
+	      dscale = 0;
+	      emissionproducts_nobserveindex = emissionproducts[traindataObservedIndex[nt]];
+
+	      for (int ns = 0; ns < numstates; ns++)
+	      {
+	         //stores the emission product for each location on the chromosome		   
+
+		 int transitionprobsnumCol_ns = transitionprobsnumCol[ns];
+	         int[] transitionprobsindexCol_ns = transitionprobsindexCol[ns];
+	         double[] coltransitionprobs_ns = coltransitionprobs[ns];
+
+	         double dtempsum = 0;
+                 if (transitionprobsnumCol_ns < nsparsecutoff)
+		 {
+	            //number of transitions is sparse enough worth going through the extra redirection
+	            for (int nj = 0; nj < transitionprobsnumCol_ns; nj++)
+	            {
+	               //for each next state computing inner sum of all previous alpha and the transition probability
+	               //for all non-zero transitions into the state
+	               int nmappedindex = transitionprobsindexCol_ns[nj];
+	               dtempsum += coltransitionprobs_ns[nmappedindex]*alpha_ntm1[nmappedindex];
+	            }
+		 }
+		 else
+	         {
+	            //avoid the redirect and multiply by 0
+                    for (int nj = 0; nj < numstates; nj++)
+	            {
+	               dtempsum += coltransitionprobs_ns[nj]*alpha_ntm1[nj];
+	            }
+		 }
+	         //multiply the transition sum by the emission probability
+	         double dalphaval = dtempsum*emissionproducts_nobserveindex[ns];
+	         alpha_nt[ns] = dalphaval;
+	         //System.out.println(ns+"\t"+alpha_nt[ns]+"\t"+dtempsum+"\t"+emissionproducts_nobserveindex[ns]);
+	         dscale += dalphaval;
+	      }
+
+	      //rescaling alpha
+	      scale[nt] = dscale;
+              //scale_t(s)=P(o_0,...,o_t|lambda) summed over all states
+
+	      for (int ns = 0; ns < numstates; ns++)
+	      {
+                 alpha_nt[ns] /= dscale;
+              }
+
+      	      dloglikeseq += Math.log(dscale);
+	   }
+	    
+	   //backward step
+	   //beta_t(s)=P(o_t+1,...,o_T|x_t=s,lambda)
+           int nlastindex = numtime_nseq-1;
+           double dinitval = 1.0/scale[nlastindex];
+           for (int ns = 0; ns < numstates; ns++)
+	   {
+	      beta_ntp1[ns] = dinitval;
+	   }
+
+	   double ddenom = 0;	       
+
+	   //gamma_nt - P(x=S| o_0,...,o_t)
+	   //P(o_t+1,...,o_T|x_t=s,lambda) * P(o_0,...,o_t,xt=s|lambda)
+	   alpha_nt = alpha[nlastindex];
+	   for (int ns = 0; ns < gamma_nt.length; ns++)
+           {
+	       double dval = alpha_nt[ns]*beta_ntp1[ns];
+	       ddenom += dval;
+	       gamma_nt[ns] = dval;
+	   }
+
+           for (int ns = 0; ns < gamma_nt.length; ns++)
+	   {
+	      gamma_nt[ns] /=ddenom;
+	   }
+
+	   double[] gammaObservedSum_combo_nt = gammaObservedSum[traindataObservedIndex[nlastindex]];
+		
+	   for (int ns = 0; ns < numstates; ns++)
+	   { 
+              //first sum gamma over all common signatures		     
+	      //updates probability of observing the signature when in the state
+	      gammaObservedSum_combo_nt[ns] += gamma_nt[ns];
+	   }
+
+	   for (int nt = nlastindex - 1; nt >= 0; nt--)
+	   {
+	      int ntp1 = (nt+1);
+		   
+	      double[] emissionproducts_combo_ntp1 = emissionproducts[traindataObservedIndex[ntp1]];
+
+	      for (int ns = 0; ns < numstates; ns++)
+	      {
+	         tempproductbetaemiss[ns] = beta_ntp1[ns]*emissionproducts_combo_ntp1[ns];
+	      }
+
+	      //double dscaleinv = 1.0/scale[nt];
+	      double dscale_nt = scale[nt];
+              //scale_t(s)=P(o_0,...,o_t|lambda) summed over all states
+	      for (int ni = 0; ni < numstates; ni++)
+	      {
+	         double dtempsum = 0;
+	         int[] transitionprobsindex_ni =  transitionprobsindex[ni];
+	         double[] transitionprobs_ni = transitionprobs[ni];
+	         int transitionprobsnum_ni = transitionprobsnum[ni];
+
+                 if (transitionprobsnum_ni < nsparsecutoff)
+	         {
+		    //sparse enought to pay the indirection penalty
+		    for (int nj = 0; nj < transitionprobsnum_ni; nj++)
+		    {
+		       //for each state summing over transition probability to state j, emission probablity in j at next step
+		       //and probability of observing the remaining sequence
+		       int nmappedindexouter = transitionprobsindex_ni[nj];
+		       dtempsum += transitionprobs_ni[nmappedindexouter]*tempproductbetaemiss[nmappedindexouter];
+		    }
+		 }
+		 else
+		 {
+		    //not trying to exploit sparsity here
+                    for (int nj = 0; nj < numstates; nj++)
+		    {
+		       //for each state summing over transition probability to state j, emission probablity in j at next step
+		       //and probability of observing the remaining sequence
+		       dtempsum += transitionprobs_ni[nj]*tempproductbetaemiss[nj];
+		    }
+		 }
+		 beta_nt[ni] = dtempsum/dscale_nt;
+	      }
+		
+	      ddenom = 0;
+		
+	      alpha_nt = alpha[nt];	    
+
+	      //gamma_nt - P(x=S| o_0,...,o_t)
+	      //P(o_t+1,...,o_T|x_t=s,lambda) * P(o_0,...,o_t,xt=s|lambda)
+
+	      for (int ns = 0; ns < gamma_nt.length; ns++)
+	      {
+	         double dval = alpha_nt[ns]*beta_nt[ns];
+	         ddenom += dval;
+	         gamma_nt[ns] = dval;
+	      }
+
+	      for (int ns = 0; ns < gamma_nt.length; ns++)
+	      {
+	         gamma_nt[ns] /= ddenom;
+	      }
+
+              gammaObservedSum_combo_nt = gammaObservedSum[traindataObservedIndex[nt]];
+
+              for (int ns = 0; ns < numstates; ns++)
+	      {
+	         //first sum gamma over all common signatures
+		 //updates probability of observing the signature when in the state
+	         gammaObservedSum_combo_nt[ns] += gamma_nt[ns];
+	      }
+
+	      double dsum = 0;
+		  
+              //this compues the numerator portion
+	      for (int ni = 0; ni < numstates; ni++)
+	      {
+	         double[] sumforsxi_ni = sumforsxi[ni]; //computing expected number of transition from state i
+	         int[] transitionprobsindex_ni = transitionprobsindex[ni]; //indicies of non-zero transitions from state i
+	         double[] transitionprobs_ni = transitionprobs[ni]; //probability of transitions from state i
+	         int ntransitionprobsnum_ni = transitionprobsnum[ni]; //number of non-zero transitions from state i
+	         double dalpha_nt_ni = alpha_nt[ni]; 
+	         //sxi is P(q_t = S_i, q_(t+1) = S_j | O)
+
+                 if (ntransitionprobsnum_ni < nsparsecutofflooser)
+      	         {
+		    //enough 0 transitionto use sparsity here
+		    //looser cut off since the indirection is less of the total time
+	            for (int nj = 0; nj < ntransitionprobsnum_ni; nj++)
+		    {
+		       int nmappedindex = transitionprobsindex_ni[nj];
+		       //computes transition probability from state i to j
+		       double dtempval = transitionprobs_ni[nmappedindex] *dalpha_nt_ni*tempproductbetaemiss[nmappedindex];
+                       dsum += dtempval;
+	      	       sumforsxi_ni[nmappedindex] = dtempval;
+		    }
+		 }
+	         else
+	         {
+		    for (int nj = 0; nj < numstates; nj++)
+		    {
+		       //computes transition probability from state i to j
+		       double dtempval = transitionprobs_ni[nj]*dalpha_nt_ni*tempproductbetaemiss[nj];
+		       dsum += dtempval;
+		       sumforsxi_ni[nj] = dtempval;
+		    }
+		 }
+	      }    	 
+		   
+	      //normalizing the numerator by the sum of the denominator and updating this iterations value for it
+	      for (int ni = 0; ni < numstates; ni++)
+	      {
+		  int[] transitionprobsindex_ni = transitionprobsindex[ni];
+		  double[] sumforsxi_ni = sumforsxi[ni];
+		  double[] sxi_nseq_ni = sxi_nseq[ni];
+		  int ntransitionprobsnum_ni = transitionprobsnum[ni];
+
+                  if (ntransitionprobsnum_ni < nsparsecutoff)
+	          {
+		     //guessing sparse enough to avoid the indirections
+		     for (int nj = 0; nj < ntransitionprobsnum_ni; nj++)
+		     {
+	      	        int nmappedindex = transitionprobsindex_ni[nj];
+		        sxi_nseq_ni[nmappedindex] += sumforsxi_ni[nmappedindex]/dsum;
+		     }
+		  }
+	          else
+	          {
+                     for (int nj = 0; nj < numstates; nj++)
+	      	     {
+		        sxi_nseq_ni[nj] += sumforsxi_ni[nj]/dsum;
+		     }
+		  }
+	      }   	 
+	      beta_ntp1 = beta_nt;  //updating beta_ntp1 
+	   }
+
+	   //double[] gammainitstore_nseq = gammainitstore[nseq];
+	   for (int ns = 0; ns < numstates; ns++)
+	   {
+	      //storing the initial gamma from this iteration
+	      gammainitstore_nseq[ns] = gamma_nt[ns];
+	   }
+
+	   //for (int nindex = 0; nindex < gammaObservedSum.length; nindex++)
+	  for (int nindex = 0; nindex < nobserved; nindex++)
+	  {
+	     //going through all the gamma sufficient statistic
+	     //if (traindataObservedSeqFlags_nseq[nindex])
+	     {
+	        //only update for those combinations that were observed on this sequence
+		//gets the observed combination and missing combination signatures
+	        boolean[] traindataObservedValues_nindex = traindataObservedValues[nindex];
+	        boolean[] traindataNotMissing_nindex = traindataNotMissing[nindex];
+	           
+		double[] gammaObservedSum_nindex = gammaObservedSum[nindex];
+
+		for (int ns = 0; ns < numstates; ns++)
+	        {
+	           //going through each state
+		   double[][] gammaksum_nseq_ns = gammaksum_nseq[ns];
+	           double gammaObservedSum_nindex_ns = gammaObservedSum_nindex[ns];
+		   for (int nmark = 0; nmark < numdatasets; nmark++)
+	           {
+		      //going through each mark
+		      if (traindataNotMissing_nindex[nmark])
+		      {
+		         //only update non-missing
+		         if (traindataObservedValues_nindex[nmark])
+		         {
+		            //updates the gamma sum for each mark when in state and observed 1
+		            gammaksum_nseq_ns[nmark][1] += gammaObservedSum_nindex_ns;			    
+			 }
+		         else
+		         {
+		    	    //updates the gamma sum for each mark when in state and observed 0
+		            gammaksum_nseq_ns[nmark][0] += gammaObservedSum_nindex_ns;			    
+			 }
+		      }
+		   }
+		}
+	     }
+	  }
+	  //System.out.println("==>"+nseq+"\t"+dloglikeseq);
+          dloglikeA[nseq] = dloglikeseq;	
+	}
+    }
+
+
+    ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
     boolean[] threadslots;
 
     Object objlock = new Object();
     int nlaunched;
+
+
+    ///////////////////////////////////////////////////////////////////////////////////////////////////////
+    /**
+     * This is the core procedure for learning the parameters of the model loading from data
+     */
+    public void trainParametersParallelWithLoad() throws IOException
+    {
+        NumberFormat nf3 = NumberFormat.getInstance();
+        nf3.setMaximumFractionDigits(3);
+	nf3.setGroupingUsed(false);
+	nf3.setMinimumFractionDigits(3);
+
+        NumberFormat nf1 = NumberFormat.getInstance();
+	nf1.setMaximumFractionDigits(1);
+	nf1.setMinimumFractionDigits(1);
+	nf1.setGroupingUsed(false);
+
+       int niteration = 1;
+
+       boolean bconverged = false;
+
+       double dzerotransitioncutoff = Math.pow(10,-nzerotransitionpower);
+
+       //number of non-zero transition for the 
+       int nsparsecutoff = (int) (numstates * ChromHMM.SPARSECUTOFFRATIO);
+
+       //number of non-zero transition that need to be less than this at the looser cut-off
+       int nsparsecutofflooser = (int) (numstates * ChromHMM.SPARSECUTOFFLOOSERRATIO);
+
+       double dprevloglike;
+
+       //stores the maximum number of locations in any sequence and in each sequence
+       //int[] numtime = new int[chromfiles.length];//traindataObservedIndex.length];
+       int nmaxtime = 0;
+       for (int nseq = 0; nseq < numtime.length; nseq++) //traindataObservedIndex.length;
+       {
+	   //numtime[nseq] = traindataObservedIndex[nseq].length;
+          if (numtime[nseq] > nmaxtime)
+	  {
+      	     nmaxtime = numtime[nseq];
+	  }
+       }
+
+       if (ChromHMM.BVERBOSE)
+       {
+          System.out.println("Maximum number of locations\t"+nmaxtime);
+       }
+
+
+       int numprocessors;
+       //    for (int nseq = 0; nseq < traindataObservedIndex.length; nseq++)
+
+       if (nmaxprocessors <= 0)
+       {
+	   numprocessors = Math.min(numtime.length,Runtime.getRuntime().availableProcessors()); //changed from  traindataObservedIndex.length;
+       }
+       else
+       {
+	   numprocessors = Math.min(numtime.length, //changed from  traindataObservedIndex.length;
+				    Math.min(nmaxprocessors,Runtime.getRuntime().availableProcessors()));
+       }
+
+       //if (ChromHMM.BVERBOSE)
+       {
+	   if (numprocessors == 1)
+              System.out.println("Using "+numprocessors+" thread for Baum-Welch training");
+	   else
+	       System.out.println("Using "+numprocessors+" threads for Baum-Welch training");
+       }
+       threadslots = new boolean[numprocessors];
+
+       int ncurrnumincludeseq;
+       int[] samples= null;
+       if (numincludeseq >= 1)
+       {
+	   ncurrnumincludeseq = Math.min(numincludeseq, chromfiles.length);
+	   samples = new int[ncurrnumincludeseq];
+       }
+       else
+       {
+	   ncurrnumincludeseq = chromfiles.length;
+       }
+
+       //stores the emission probability for the i^th combination of marks in the j^th state
+       double[][][] emissionproducts_Pool = new double[numprocessors][nmaxtime][numstates]; //traindataObservedValues.length
+
+       //stores temporary product terms
+       double[][] tempproductbetaemiss_Pool = new double[numprocessors][numstates];
+
+       //This stores the alpha values at each time point and number of states
+       double[][][] alpha_Pool = new double[numprocessors][nmaxtime][numstates];
+
+       //Temporary storage of the gamma's for each state
+       double[][] gamma_nt_Pool = new double[numprocessors][numstates];
+
+       //Temporary storage of the beta values for each state
+       double[][] beta_nt_Pool = new double[numprocessors][numstates];
+
+       //Temporary storage of the beta values for each state at the next time point
+       double[][] beta_ntp1_Pool = new double[numprocessors][numstates];
+
+       //stores the scaling value for each time point
+       double[][] scale_Pool = new double[numprocessors][nmaxtime];
+
+       //stores the transition probabilities for each column
+       double[][] coltransitionprobs = new double[numstates][numstates];
+
+       //stores the sufficient statistic for the initital probability in each state for the last visit
+       //double[][] gammainitstore = new double[chromfiles.length][numstates];
+       double[][] gammainitstore = new double[ncurrnumincludeseq][numstates];
+
+       //stores the sufficient statistics for computing the transition probabilities cumulated for each iteration
+       double[][][] sxistore = new double[ncurrnumincludeseq][numstates][numstates];
+       //double[][][] sxistore = new double[chromfiles.length][numstates][numstates];
+
+       //stores the sufficient statistic for computing the emission probabilities
+       double[][][][] gammaksumstore = 
+	   //new double[chromfiles.length][numstates][numdatasets][numbuckets];
+                 new double[ncurrnumincludeseq][numstates][numdatasets][numbuckets];
+
+       //temporary storage in computation of sxi
+       double[][][] sumforsxi_Pool = new double[numprocessors][numstates][numstates];
+
+       //stores the sum of the gamma values associated with each combination in each state
+       double[][][] gammaObservedSum_Pool = new double[numprocessors][nmaxtime][numstates]; //nmaxtime instead of traindataObservedValues.length
+
+       //stores the indicies of the data
+       int[][] traindataObservedIndex_Pool = new int[numprocessors][nmaxtime];
+
+       //saving the mapping of signatures and chromsome observed on
+       //stores whether there is a present call at each location
+       boolean[][][] traindataObservedValues_Pool = new boolean[numprocessors][nmaxtime][numdatasets];
+
+       //stores whether the mark is not considered missing
+       boolean[][][] traindataNotMissing_Pool = new boolean[numprocessors][nmaxtime][numdatasets]; //usually nobserved
+
+
+       double[] dloglikeA = new double[ncurrnumincludeseq];//chromfiles.length];
+
+       int nelim = 0;
+       long ltimeitr= System.currentTimeMillis();
+       dprevloglike = Double.NEGATIVE_INFINITY;
+
+
+
+
+
+       boolean[] bincludeseq = new boolean[chromfiles.length];
+       for (int nk = 0; nk < bincludeseq.length; nk++)
+       {
+	   bincludeseq[nk] = true;
+       }
+
+       do
+       {
+
+	   if (numincludeseq >=1)
+	   {
+	       for (int ni = 0; ni < samples.length; ni++)
+	       {
+	          samples[ni] = ni;
+	       }
+
+	       //Random theRandom2 = new Random(412);//433
+
+	       //sampling without replacement data locations wanted
+	       for (int ni = ncurrnumincludeseq; ni < chromfiles.length; ni++)
+	       {
+	          if (theRandom.nextDouble() < ncurrnumincludeseq/((double) ni +1))
+		  {
+		     samples[theRandom.nextInt(ncurrnumincludeseq)] = ni;
+		  }
+	       }
+
+               for (int nk = 0; nk < bincludeseq.length; nk++)
+	       {
+	           bincludeseq[nk] = false;
+	       }
+
+	       for (int nk = 0; nk < samples.length; nk++)
+	       {
+		   bincludeseq[samples[nk]] = true;
+		   //System.out.println("including\t"+samples[nk]+"\t"+bincludeseq[samples[nk]]);
+	       }
+	   }
+
+	   //dloglike= 0;	  
+
+	   /*
+	   //for (int ni = 0; ni < emissionproducts.length; ni++)
+	  for (int ni = 0; ni < emissionproducts.length; ni++)
+          {
+             //going through each combination of marks
+	     //this signature of marks is observed on the current chromosome so
+	     //updating its emission probabilities
+             double[] emissionproducts_ni = emissionproducts[ni];
+	     boolean[] traindataObservedValues_ni = traindataObservedValues[ni];
+	     boolean[] traindataNotMissing_ni = traindataNotMissing[ni];		  
+
+	     boolean ballzero = true;
+
+             for (int ns = 0; ns < numstates; ns++)
+	     {
+                double dproduct = 1;
+	        double[][] emissionprobs_ns = emissionprobs[ns];
+
+		for (int nmod = 0; nmod < numdatasets; nmod++)
+	        {
+	     	   if (traindataNotMissing_ni[nmod])
+		   {
+		      //we are include this marks emission probability
+	              if (traindataObservedValues_ni[nmod])
+		      {
+		         //System.out.println("positive\t"+ns+"\t"+nmod+"\t1\t"+emissionprobs_ns[nmod][1]);
+		         dproduct *= emissionprobs_ns[nmod][1];
+		      }
+		      else 
+	              {
+		         ///System.out.println("negative\t"+ns+"\t"+nmod+"\t0\t"+emissionprobs_ns[nmod][0]);
+		         dproduct *= emissionprobs_ns[nmod][0];
+		      }
+		   }
+		   // otherwise treated as missing omitting from product
+		}
+	        //System.out.println(ns+"\t"+dproduct);
+	        emissionproducts_ni[ns] = dproduct;
+
+		if (dproduct >= EPSILONEMISSIONS)
+		{
+	      	   ballzero = false;
+	        }
+	     }
+
+	     if (ballzero)
+	     {
+	        for (int ns = 0; ns < numstates; ns++)
+	        {
+	       	   emissionproducts_ni[ns] = EPSILONEMISSIONS;
+	        }
+	     }
+	  }
+	   */
+
+	  //stores in coltransitionprobs the transpose of transitionprobs
+          for (int ni = 0; ni < numstates; ni++)
+	  {
+             double[] coltransitionprobs_ni = coltransitionprobs[ni];
+	     for (int nj = 0; nj < numstates; nj++)
+	     {
+                coltransitionprobs_ni[nj] = transitionprobs[nj][ni];
+             }
+          }	     
+
+          synchronized (objlock)
+	  {
+	      nlaunched = ncurrnumincludeseq;// chromfiles.length;// traindataObservedIndex.length;
+	  }
+
+          //for (int nseq = 0; nseq < traindataObservedIndex.length; nseq++)
+	  int nincludeindex = 0;
+          for (int nseq = 0; nseq < chromfiles.length; nseq++)
+          {
+
+	     if (bincludeseq[nseq])
+	     {
+		double[][] sxi_nseq = sxistore[nincludeindex];//nseq];
+	        int numtime_nseq = numtime[nseq];
+	        String chromfiles_nseq = chromfiles[nseq];
+	        //int[] traindataObservedIndex_nseq = traindataObservedIndex[nseq];
+	        //boolean[] traindataObservedSeqFlags_nseq = traindataObservedSeqFlags[nseq];
+	        double[][][] gammaksum_nseq = gammaksumstore[nincludeindex];//nseq];
+	        double[] gammainitstore_nseq = gammainitstore[nincludeindex];//nseq];
+	       
+	        NewThreadWithLoad myNewThreadWithLoad = new NewThreadWithLoad(
+					 chromfiles_nseq,
+					 traindataObservedIndex_Pool,
+				      	 traindataObservedValues_Pool,
+					 traindataNotMissing_Pool,
+					 //traindataObservedIndex_nseq,
+					 //traindataObservedSeqFlags_nseq,
+					 gammaksum_nseq,
+					 sxi_nseq,
+					 numtime_nseq,
+					 gammainitstore_nseq,
+					 gammaObservedSum_Pool,
+					 alpha_Pool,
+					 emissionproducts_Pool,
+					 gamma_nt_Pool,
+					 coltransitionprobs,
+					 scale_Pool,
+					 beta_nt_Pool,
+					 beta_ntp1_Pool,
+					 tempproductbetaemiss_Pool,
+					 sumforsxi_Pool,
+					 nsparsecutoff,
+					 nsparsecutofflooser,
+					 dloglikeA,
+					 nincludeindex);
+		   nincludeindex++;
+
+	           new Thread(myNewThreadWithLoad).start();
+	     }	    
+	  }	
+	   
+
+	  synchronized(objlock)
+	  {
+	     while (nlaunched > 0)
+	     {
+                try
+                {
+	           objlock.wait();
+		}
+	        catch (InterruptedException ex) {}
+	     }
+	  }
+
+
+	  //normal EM
+	  //executes the M-step after any pass through a sequence after one pass has been made through all sequences
+          double dsum = 0;
+
+	  //updating the initial probabilities
+          for (int ni = 0; ni < numstates; ni++)
+	  {
+	     double dgammainitsum = 0;
+             //for (int nitr = 0; nitr < traindataObservedIndex.length; nitr++)
+             //for (int nitr = 0; nitr < chromfiles.length; nitr++)
+             for (int nitr = 0; nitr < ncurrnumincludeseq; nitr++)
+	     {
+                dgammainitsum += gammainitstore[nitr][ni];
+	     }
+	     probinit[ni] = dgammainitsum;
+             dsum += dgammainitsum;
+	  }
+ 
+	  for (int ni = 0; ni < numstates; ni++)
+          {
+             probinit[ni] /= dsum;		
+          }
+
+	  //this indicates if there is a change on the set of 0 probability transitions
+	  boolean bchange = false;
+	  for (int ni = 0; ni < transitionprobs.length; ni++)
+          {
+	      dsum = 0;
+	      //computes the denominator for the transition probabilities
+
+	      int[] transitionprobsindex_ni = transitionprobsindex[ni];
+	      double[] transitionprobs_ni =  transitionprobs[ni];
+	      int transitionprobsnum_ni = transitionprobsnum[ni];
+	      for (int nj = 0; nj < transitionprobsnum_ni; nj++)
+              {
+		  int ntransitionprobsindex_ni_nj = transitionprobsindex_ni[nj];
+		  double dsxistoreitr = 0;
+	          //for (int nitr = 0; nitr < chromfiles.length; nitr++) //traindataObservedIndex.length
+	          for (int nitr = 0; nitr < ncurrnumincludeseq; nitr++) //traindataObservedIndex.length
+	          {
+		      //if (bincludeseq[nitr])
+		     {
+	                dsxistoreitr += sxistore[nitr][ni][ntransitionprobsindex_ni_nj];
+		     }
+	          }
+	          transitionprobs_ni[ntransitionprobsindex_ni_nj] = dsxistoreitr;
+
+	          dsum += dsxistoreitr;
+	      }
+	       
+              for (int nj = 0; nj < transitionprobsnum_ni; nj++)
+	      {
+		  int ntransitionprobsindex_ni_nj = transitionprobsindex_ni[nj];
+		  //computes the updated transition probabilities
+	          transitionprobs_ni[ntransitionprobsindex_ni_nj] /= dsum;
+	    
+		  if ((transitionprobs_ni[ntransitionprobsindex_ni_nj] < dzerotransitioncutoff) && (ni != ntransitionprobsindex_ni_nj))
+	          {
+		      //if falls below threshold eliminate the transition probabilities
+		      elim[ni][ntransitionprobsindex_ni_nj] = true;
+	              bchange = true;
+	              nelim++;
+	              transitionprobs_ni[ntransitionprobsindex_ni_nj] = 0;
+	           }
+	      }
+	  }
+	       
+	      
+          if (bchange)
+	  {
+	     //a transition was eliminated we need to update the probabilities
+	     for (int ni = 0; ni < transitionprobs.length; ni++)
+             {
+		 int nindex = 0;		        
+		 double ddenom = 0;
+		 boolean[] elim_ni = elim[ni];
+		 double[] transitionprobs_ni = transitionprobs[ni];
+		 int[] transitionprobsindex_ni = transitionprobsindex[ni];
+		 for (int nj = 0; nj < transitionprobs_ni.length; nj++)
+	         {
+	            if (!elim_ni[nj])
+		    {
+		       //we have not eliminated this transition
+		       //stores its index in order and add sum to denominator
+		       transitionprobsindex_ni[nindex] = nj;
+	               ddenom += transitionprobs_ni[nj];
+	               nindex++;
+		    }
+		 }
+
+		 //renormalize the transition probabilities by the sum of the non-eliminated transitions
+	         for (int nj = 0; nj < transitionprobs_ni.length; nj++)
+	         {
+	            transitionprobs_ni[nj] /= ddenom;
+	         }
+		 //update the number of valid transitions
+	         transitionprobsnum[ni] = nindex; 
+	     }
+
+	     for (int ni = 0; ni < transitionprobs.length; ni++)
+             {
+		 int nindex =0;
+		 int[] transitionprobsindexCol_ni = transitionprobsindexCol[ni];
+		 for (int nj = 0; nj < transitionprobs[ni].length; nj++)
+	         {
+		    if (!elim[nj][ni])
+	            {
+		       //copy into the column of i the index of all non-eliminated transitions of i
+	               transitionprobsindexCol_ni[nindex] = nj;
+	               nindex++;
+		    }
+		 }
+	         //updates the number of non-zero transitions from column i
+	         transitionprobsnumCol[ni] = nindex; 
+	     }
+	  }
+	    
+	  //updating the emission parameters
+	  for (int ns = 0; ns < numstates; ns++)
+          {
+	      double[][] emissionprobs_ns = emissionprobs[ns];
+	      for (int nmark = 0; nmark < emissionprobs_ns.length; nmark++)
+	      {
+		  double[] emissionprobs_ns_nmark = emissionprobs_ns[nmark];
+		  //can't used a general gamma sum because of missing emission vals
+		  double dgammadenom = 0;
+
+	          //updates gamma sum
+                  for (int nbucket = 0; nbucket < numbuckets; nbucket++)
+		  {
+		      emissionprobs_ns_nmark[nbucket] = 0;
+		      //ncurrnumincludeseq
+	              //for (int nitr = 0; nitr < chromfiles.length; nitr++) //was traindataobserved length
+	              for (int nitr = 0; nitr < ncurrnumincludeseq; nitr++) //was traindataobserved length
+	              {
+			  //if (bincludeseq[nitr])
+			  //{
+	                 emissionprobs_ns_nmark[nbucket] += gammaksumstore[nitr][ns][nmark][nbucket];
+		          //}
+	              }
+		      dgammadenom += emissionprobs_ns_nmark[nbucket];
+		  }
+
+		  //added to avoid NA
+		  if (dgammadenom > 0)
+	          {
+	             for (int nbucket = 0; nbucket < numbuckets; nbucket++)
+	             {
+	                emissionprobs_ns_nmark[nbucket] /= dgammadenom;
+		     }
+		  }
+	      }
+	  }
+       
+
+          if (ChromHMM.BVERBOSE)
+          {
+             System.out.println("\t"+niteration+"\t"+dloglike);
+	  }	     
+
+
+	  dloglike = 0;
+	  for (int nindex = 0; nindex < dloglikeA.length; nindex++)
+	  {
+	      //if (bincludeseq[nindex])
+	      {
+	         dloglike += dloglikeA[nindex];
+	      }
+	  }
+    
+	  double ddiff =(dloglike-dprevloglike);
+
+
+	  //dconvergediff is only enforced if greater thanor equal to 0
+          dprevloglike = dloglike;       
+
+	  makeStateOrdering();
+
+	  if (bordercols)
+	  {
+	     makeColOrdering();
+	  }
+	  //updates after each iteration the current status of the search
+          printTransitionTable(niteration);
+          printEmissionTable(niteration);
+          printEmissionImage(niteration);
+          printTransitionImage(niteration);
+	  printParametersToFile(niteration);
+
+	  //we just completed a full iteration
+          long ltimefinal =  System.currentTimeMillis();	  
+	  double dtimechange = (ltimefinal-ltimeitr)/(double) 1000;
+          bconverged = (((niteration >= nmaxiterations)||((ddiff< dconvergediff)&&(dconvergediff>=0)))||((dtimechange>nmaxseconds)&&(nmaxseconds>=0)));	  
+          if (ChromHMM.BVERBOSE)
+	  {
+	     System.out.println(niteration+"\tTime Iteration\t"+dtimechange+"\t"+"\tElim\t"+nelim);
+	     System.out.println("Full "+niteration+"\t"+dloglike+"\t"+dprevloglike+"\t"+ddiff);        
+	  }
+
+
+	  if (niteration == 1)
+	  {
+	      System.out.format("%10s %25s %10s %20s%n","Iteration","Estimated Log Likelihood", "Change","Total Time (secs)");
+	      System.out.format("%10s %25s %10s %20s%n",""+niteration,""+nf3.format(dloglike),"-",""+nf1.format(dtimechange));
+	  }
+	  else
+	  {
+	      //System.out.format(niteration+"            "+nf3.format(dloglike)+"           "+nf3.format(ddiff)+"       "+nf1.format(dtimechange));
+	      System.out.format("%10s %25s %10s %20s%n",""+niteration,""+nf3.format(dloglike),""+nf3.format(ddiff),""+nf1.format(dtimechange));
+	  }
+	  niteration++;
+       }
+       while (!bconverged);
+    }
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////
     /**
@@ -4475,6 +7948,18 @@ public class ChromHMM
        }
        threadslots = new boolean[numprocessors];
 
+       int ncurrnumincludeseq;
+       int[] samples= null;
+       if (numincludeseq >= 1)
+       {
+	   ncurrnumincludeseq = Math.min(numincludeseq, chromfiles.length);
+	   samples = new int[ncurrnumincludeseq];
+       }
+       else
+       {
+	   ncurrnumincludeseq = chromfiles.length;
+       }
+
        //stores the emission probability for the i^th combination of marks in the j^th state
        double[][] emissionproducts = new double[traindataObservedValues.length][numstates];
 
@@ -4500,14 +7985,17 @@ public class ChromHMM
        double[][] coltransitionprobs = new double[numstates][numstates];
 
        //stores the sufficient statistic for the initital probability in each state for the last visit
-       double[][] gammainitstore = new double[traindataObservedIndex.length][numstates];
+       double[][] gammainitstore = //new double[traindataObservedIndex.length][numstates];
+ 	              new double[ncurrnumincludeseq][numstates];
 
        //stores the sufficient statistics for computing the transition probabilities cumulated for each iteration
-       double[][][] sxistore = new double[traindataObservedIndex.length][numstates][numstates];
+       double[][][] sxistore = //new double[traindataObservedIndex.length][numstates][numstates];
+ 	             new double[ncurrnumincludeseq][numstates][numstates];
 
        //stores the sufficient statistic for computing the emission probabilities
        double[][][][] gammaksumstore = 
-                 new double[traindataObservedIndex.length][numstates][numdatasets][numbuckets];
+	         new double[ncurrnumincludeseq][numstates][numdatasets][numbuckets];
+                  //new double[traindataObservedIndex.length][numstates][numdatasets][numbuckets];
 
        //temporary storage in computation of sxi
        double[][][] sumforsxi_Pool = new double[numprocessors][numstates][numstates];
@@ -4516,16 +8004,56 @@ public class ChromHMM
        double[][][] gammaObservedSum_Pool = new double[numprocessors][traindataObservedValues.length][numstates];
 
 
-       double[] dloglikeA = new double[traindataObservedIndex.length];
+       double[] dloglikeA = new double[ncurrnumincludeseq]; 
+	   //new double[traindataObservedIndex.length];
 
        int nelim = 0;
        long ltimeitr= System.currentTimeMillis();
        dprevloglike = Double.NEGATIVE_INFINITY;
 
 
+       boolean[] bincludeseq = new boolean[chromfiles.length];
+       for (int nk = 0; nk < bincludeseq.length; nk++)
+       {
+	   bincludeseq[nk] = true;
+       }
+
+
        do
        {
 	   //dloglike= 0;	  
+
+	   if (numincludeseq >=1)
+	   {
+	       for (int ni = 0; ni < samples.length; ni++)
+	       {
+	          samples[ni] = ni;
+	       }
+
+	       //Random theRandom2 = new Random(412);//433
+
+	       //sampling without replacement data locations wanted
+	       for (int ni = ncurrnumincludeseq; ni < chromfiles.length; ni++)
+	       {
+	          if (theRandom.nextDouble() < ncurrnumincludeseq/((double) ni +1))
+		  {
+		     samples[theRandom.nextInt(ncurrnumincludeseq)] = ni;
+		  }
+	       }
+
+               for (int nk = 0; nk < bincludeseq.length; nk++)
+	       {
+	           bincludeseq[nk] = false;
+	       }
+
+	       for (int nk = 0; nk < samples.length; nk++)
+	       {
+		   bincludeseq[samples[nk]] = true;
+		   //System.out.println("including\t"+samples[nk]+"\t"+bincludeseq[samples[nk]]);
+	       }
+	   }
+
+
 
 	  for (int ni = 0; ni < emissionproducts.length; ni++)
           {
@@ -4592,19 +8120,25 @@ public class ChromHMM
 
           synchronized (objlock)
 	  {
-	     nlaunched = traindataObservedIndex.length;
+	      nlaunched = ncurrnumincludeseq;//traindataObservedIndex.length;
 	  }
 
+
+	  int nincludeindex = 0;
           for (int nseq = 0; nseq < traindataObservedIndex.length; nseq++)
           {
-	     double[][] sxi_nseq = sxistore[nseq];
-	     int numtime_nseq = numtime[nseq];
-	     int[] traindataObservedIndex_nseq = traindataObservedIndex[nseq];
-	     boolean[] traindataObservedSeqFlags_nseq = traindataObservedSeqFlags[nseq];
-	     double[][][] gammaksum_nseq = gammaksumstore[nseq];
-	     double[] gammainitstore_nseq = gammainitstore[nseq];
+	      //System.out.println(nseq+"\t"+bincludeseq[nseq]);
+	     if (bincludeseq[nseq])
+	     {
 
-	     NewThread myNewThread = new NewThread(traindataObservedIndex_nseq,
+	        double[][] sxi_nseq = sxistore[nseq];
+	        int numtime_nseq = numtime[nseq];
+	        int[] traindataObservedIndex_nseq = traindataObservedIndex[nseq];
+	        boolean[] traindataObservedSeqFlags_nseq = traindataObservedSeqFlags[nseq];
+	        double[][][] gammaksum_nseq = gammaksumstore[nseq];
+	        double[] gammainitstore_nseq = gammainitstore[nseq];
+
+	        NewThread myNewThread = new NewThread(traindataObservedIndex_nseq,
 					 traindataObservedSeqFlags_nseq,
 					 gammaksum_nseq,
 					 sxi_nseq,
@@ -4623,10 +8157,11 @@ public class ChromHMM
 					 nsparsecutoff,
 					 nsparsecutofflooser,
 					 dloglikeA,
-					 nseq);
-
+					 nincludeindex);
+						      //nseq);
+		nincludeindex++;
 	        new Thread(myNewThread).start();
-	    
+	     } 
 	  }	
 	   
 
@@ -4650,9 +8185,13 @@ public class ChromHMM
           for (int ni = 0; ni < numstates; ni++)
 	  {
 	     double dgammainitsum = 0;
-             for (int nitr = 0; nitr < traindataObservedIndex.length; nitr++)
+             //for (int nitr = 0; nitr < traindataObservedIndex.length; nitr++)
+             for (int nitr = 0; nitr < ncurrnumincludeseq; nitr++)
 	     {
-                dgammainitsum += gammainitstore[nitr][ni];
+		 //if (bincludeseq[nitr])
+		{
+                   dgammainitsum += gammainitstore[nitr][ni];
+		}
 	     }
 	     probinit[ni] = dgammainitsum;
              dsum += dgammainitsum;
@@ -4677,9 +8216,13 @@ public class ChromHMM
               {
 		  int ntransitionprobsindex_ni_nj = transitionprobsindex_ni[nj];
 		  double dsxistoreitr = 0;
-	          for (int nitr = 0; nitr < traindataObservedIndex.length; nitr++)
+	          //for (int nitr = 0; nitr < traindataObservedIndex.length; nitr++)
+	          for (int nitr = 0; nitr < ncurrnumincludeseq; nitr++)
 	          {
-	             dsxistoreitr += sxistore[nitr][ni][ntransitionprobsindex_ni_nj];
+		      //if (bincludeseq[nitr])
+		     {
+	                dsxistoreitr += sxistore[nitr][ni][ntransitionprobsindex_ni_nj];
+		     }
 	          }
 	          transitionprobs_ni[ntransitionprobsindex_ni_nj] = dsxistoreitr;
 
@@ -4768,20 +8311,24 @@ public class ChromHMM
 		  {
 		      emissionprobs_ns_nmark[nbucket] = 0;
 	                
-	              for (int nitr = 0; nitr < traindataObservedIndex.length; nitr++)
+	              //for (int nitr = 0; nitr < traindataObservedIndex.length; nitr++)
+	              for (int nitr = 0; nitr < ncurrnumincludeseq; nitr++)
 	              {
-	                 emissionprobs_ns_nmark[nbucket] += gammaksumstore[nitr][ns][nmark][nbucket];
+			  //if (bincludeseq[nitr])
+			 {
+	                    emissionprobs_ns_nmark[nbucket] += gammaksumstore[nitr][ns][nmark][nbucket];
+			 }
 	              }
 		      dgammadenom += emissionprobs_ns_nmark[nbucket];
 		  }
 
-		  //added to avoid NA values
+		  //added to avoid NA
 		  if (dgammadenom > 0)
-                  {
+		  {
 	             for (int nbucket = 0; nbucket < numbuckets; nbucket++)
 	             {
 	                emissionprobs_ns_nmark[nbucket] /= dgammadenom;
-		     }
+	             }
 		  }
 	      }
 	  }
@@ -4796,7 +8343,10 @@ public class ChromHMM
 	  dloglike = 0;
 	  for (int nindex = 0; nindex < dloglikeA.length; nindex++)
 	  {
-	      dloglike += dloglikeA[nindex];
+	      //if (bincludeseq[nindex])
+	      {
+	         dloglike += dloglikeA[nindex];
+	      }
 	  }
     
 	  double ddiff =(dloglike-dprevloglike);
@@ -4846,8 +8396,353 @@ public class ChromHMM
 
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////
+    /**
+     * Loads in the input data
+     * If there are multiple cell type associated with the files that should be
+     * indicated by a prefix before an '_'
+     */
+    public void loadDataFileStubs() throws IOException
+    {
+
+	if (szinputfilelist == null)
+        {
+	    //takes all files in the directory with a _binary
+	   File dir = new File(szinputdir);
+           String[] chromfilesall = dir.list();
+	   if (chromfilesall == null)
+	   {
+	       throw new IllegalArgumentException(szinputdir+" is not a valid directory!");
+	   }
+	   ArrayList alfiles = new ArrayList();
+	   for (int nfile = 0; nfile < chromfilesall.length; nfile++)
+	   {
+	       if ((chromfilesall[nfile].contains("_binary"))&&(!(new File(chromfilesall[nfile])).isHidden()))
+	       {
+	           //added hidden check in v.1.11
+	          alfiles.add(chromfilesall[nfile]);
+	       }
+	   }
+
+	   if (alfiles.size() == 0)
+	   {
+	       throw new IllegalArgumentException("No files found in "+szinputdir+" containing '_binary' that are not Hidden");
+	   }
+
+ 	   //stores them in chromfiles
+           chromfiles = new String[alfiles.size()];
+           for (int nfile = 0; nfile < chromfiles.length; nfile++)
+           {
+              chromfiles[nfile] = (String) alfiles.get(nfile);
+           }	   
+	}
+	else
+	{
+	    //loads in the input coords list
+	    BufferedReader brfiles = Util.getBufferedReader(szinputfilelist);
+
+	    ArrayList alfiles = new ArrayList();
+	    String szLine;
+	    while ((szLine = brfiles.readLine())!=null)
+	    {
+		alfiles.add(szLine);
+	    }
+	    brfiles.close(); 
+
+	    //stores them in chromfiles
+	    chromfiles = new String[alfiles.size()];
+	    for (int nfile = 0; nfile < chromfiles.length; nfile++)
+	    {
+		chromfiles[nfile] = (String) alfiles.get(nfile);
+	    }
+	}
+
+	Arrays.sort(chromfiles);//gives a deterministic reproducible starting order to the chromfiles
+	
+	//randomly orders the chromosome files to visit
+	RecIntDouble[] recA = new RecIntDouble[chromfiles.length];
+	String[] tempchromfiles = new String[chromfiles.length];
+
+	//now going to randomize the order of chromosomes if theRandom is not null
+	//the order of chromosome matters when doing an incremental expectation maximization
+	for (int ni = 0; ni < chromfiles.length; ni++)
+	{
+	   tempchromfiles[ni] = chromfiles[ni];
+	   if (theRandom == null)
+	   {
+	       recA[ni] = new RecIntDouble(ni, ni);
+	   }
+	   else
+	   {
+	      recA[ni] = new RecIntDouble(ni,theRandom.nextDouble());
+	   }
+	}
+
+	if (theRandom != null)
+	{
+	    //already in order if random is null
+	    Arrays.sort(recA,new RecIntDoubleCompare());
+	}
+
+	cellSeq = new String[chromfiles.length];
+	chromSeq = new String[chromfiles.length];
+
+	for (int ni = 0; ni < chromfiles.length; ni++)
+	{
+	    //swapping into chromfiles the sorted chromosome ordering
+	    chromfiles[ni] = tempchromfiles[recA[ni].nindex];
+	}
+	
+	traindataObservedIndex = new int[chromfiles.length][]; //number of columns depends on number of lines in file
+        numtime = new int[chromfiles.length];
+
+	HashMap hmObserved = new HashMap(); //maps an observation string to an index and set of flags
+ 
+	int nobserved = 0;
+        //PrintWriter pw = null;
+
+	for (int nfile = 0; nfile < chromfiles.length; nfile++)
+        {
+	    if (ChromHMM.BVERBOSE)
+	    {
+	       System.out.println("reading\t"+szinputdir+" "+chromfiles[nfile]);
+	    }
+	    BufferedReader br = Util.getBufferedReader(szinputdir+"/"+chromfiles[nfile]);
+	    String szLine = br.readLine(); //first line tells cell type and chromosome
+	    if (szLine == null)
+	    {
+		throw new IllegalArgumentException(szinputdir+"/"+chromfiles[nfile]+" is empty!");
+	    }
+	    StringTokenizer st = new StringTokenizer(szLine,"\t");
+            if (!st.hasMoreTokens())
+	    {
+	       throw new IllegalArgumentException("First line must contain cell type and chromosome. No entries found.");
+	    }
+
+	    cellSeq[nfile] = st.nextToken();
+	    if (!st.hasMoreTokens())
+	    {
+		throw new IllegalArgumentException("First line must contain cell type and chromosome. Only one entry found.");
+	    }
+	    chromSeq[nfile] = st.nextToken();
+
+	    if (st.hasMoreTokens())
+	    {
+		throw new IllegalArgumentException("First line should only contain cell type and chromosome");
+	    }
+	    szLine = br.readLine(); //reading header
+            //to output binary
+	    if (szLine == null)
+	    {
+		throw new IllegalArgumentException(szinputdir+"/"+chromfiles[nfile]+" only has one line!");
+	    }
+	    st = new StringTokenizer(szLine,"\t");
+	    int numtokens = st.countTokens();
+	    if (nfile == 0)
+	    {
+		//first time reading header taking tokens
+	       datasets = new String[numtokens];
+	       int ntoken = 0;
+	       while (st.hasMoreTokens())
+	       {
+		   datasets[ntoken] = st.nextToken();
+		   ntoken++;
+	       }
+ 	       //numdatasets is the number of marks we are integrating
+      	       numdatasets = datasets.length; 
+	    }
+	    else
+	    {
+		//Requires number of tokens to match
+		if (numtokens != datasets.length)
+		{
+		    throw new IllegalArgumentException(" numtokens "+numtokens+" does not match "+datasets.length);
+		}
+
+		int ntoken = 0;
+		//Gives warning if a header column does not match
+	        while (st.hasMoreTokens())
+	        {
+		   String sztoken = st.nextToken();
+	           if (!datasets[ntoken].equals(sztoken))
+		   {
+		       System.out.println("WARNING headers do not match between "+chromfiles[nfile]+" and "+chromfiles[0]);
+		   }
+		   ntoken++;
+	        }
+	    }
 
 
+
+	    // LineNumberReader  lnr = new LineNumberReader(br);//new FileReader(new File("File1")));
+	    //while (lnr.skip(Long.MAX_VALUE) > 0);
+	    //int nlinecount = lnr.getLineNumber();
+
+
+	    
+	    int nlinecount  = 0;
+	    while ((szLine = br.readLine())!=null)
+            {
+	    	nlinecount++;
+	    }
+	    
+	    //System.out.println("num lines is\t"+nlinecount+"\t"+nfile);
+	    br.close();
+	    //lnr.close();
+	    numtime[nfile] = nlinecount;
+
+
+	}
+    }
+
+
+    /*
+	    ArrayList aldata = new ArrayList();
+	    while ((szLine = br.readLine())!=null)
+	    {
+		st = new StringTokenizer(szLine,"\t");
+		StringBuffer sb = new StringBuffer();
+		
+		for (int ncol = 0; ncol < numdatasets; ncol++)
+		{
+
+		    if (!st.hasMoreTokens())
+		    {
+			throw new IllegalArgumentException("Found line without "+numdatasets+" values in file "+chromfiles[nfile]);
+		    }
+
+		    String sztoken = st.nextToken();
+		    
+		    if (sztoken.equals("0"))
+		    {
+			sb.append("0");
+		    }
+		    else if (sztoken.equals("1"))
+		    {
+			sb.append("1");
+		    }
+		    else if (sztoken.equals("2"))
+		    {
+			//this means missing
+			sb.append("2");
+		    }
+		    else
+		    {
+			throw new IllegalArgumentException("Unrecognized value "+sztoken+" found in "+szinputdir+"/"+chromfiles[nfile]);
+		    }
+		}
+
+		aldata.add(sb.toString());
+	    }
+	    br.close();
+
+	    int nsize = aldata.size();
+	    traindataObservedIndex[nfile] = new int[nsize];
+	    int[] traindataObservedIndex_nfile = traindataObservedIndex[nfile];
+
+	    for (int nrow = 0; nrow < nsize; nrow++)
+	    {
+		BigInteger theBigInteger = new BigInteger((String) aldata.get(nrow),3);
+		ObservedRec theObservedRec  = (ObservedRec) hmObserved.get(theBigInteger);
+		boolean[] flagA;
+
+		if (theObservedRec == null)
+		{
+		    //this is the first time we encountered this combination of marks
+		    flagA = new boolean[chromfiles.length];
+		    //recording which chromsomes this mark combination was observed
+		    flagA[nfile] =true;
+
+		    //System.out.println(szmappingbyte.length());
+		    //storing a mapping from observed byte string to an integer index in alFlags and alObserved
+		    hmObserved.put(theBigInteger, new ObservedRec(nobserved,flagA));
+
+		    //saving this observed index
+		    traindataObservedIndex[nfile][nrow] = nobserved;
+
+		    //increments the number of observed combinations of marks
+		    nobserved++;
+		}
+		else
+		{
+		    //updating that this signature was observed on this chromosome
+		    theObservedRec.flagA[nfile] = true;
+		    //storing the index of the flags associated with this row 
+		    traindataObservedIndex_nfile[nrow] = theObservedRec.nobserved;
+		}
+	    }
+	}
+	    
+	//saving the mapping of signatures and chromsome observed on
+
+	//stores whether there is a present call at each location
+	traindataObservedValues = new boolean[nobserved][numdatasets];
+
+	//stores whether the mark is not considered missing
+	traindataNotMissing = new boolean[nobserved][numdatasets];
+
+	//stores whether this sequence combination appears on the chromosome
+	traindataObservedSeqFlags = new boolean[chromfiles.length][traindataObservedValues.length];
+
+	Iterator hmObservedIterator = hmObserved.entrySet().iterator();
+	while (hmObservedIterator.hasNext())
+	{
+	    Map.Entry pairs = (Map.Entry) hmObservedIterator.next();
+	    BigInteger theBigInteger = (BigInteger) pairs.getKey();
+	    String szmapping = theBigInteger.toString(3);  //getting back the mapping string
+
+	    ObservedRec theObservedRec = (ObservedRec) pairs.getValue();
+	    int ncurrindex = theObservedRec.nobserved;//this is an index on which obervation combination it is
+
+	    boolean[] traindataObservedValues_ncurrindex = traindataObservedValues[ncurrindex];
+	    boolean[] traindataNotMissing_ncurrindex = traindataNotMissing[ncurrindex]; 
+	    
+	    //if the mapping string is less than the number of data sets then 
+	    //there are leading 0's will set for leading 0's not missing and absent
+	    int numch = szmapping.length();
+	    int numleading0 = numdatasets - numch;
+	    for (int nj = 0; nj < numleading0; nj++)
+	    {
+		traindataObservedValues_ncurrindex[nj] = false;
+		traindataNotMissing_ncurrindex[nj] = true;
+	    }
+
+	    int nmappedindex = numleading0; //starting from the leading 0 position
+	    for (int nj = 0; nj < numch; nj++)
+	    {
+	       char ch = szmapping.charAt(nj);
+
+	       if (ch == '0')
+	       {
+		   traindataObservedValues_ncurrindex[nmappedindex] = false;
+		   traindataNotMissing_ncurrindex[nmappedindex] = true;
+	       }
+	       else if (ch=='1')
+	       {
+		   traindataObservedValues_ncurrindex[nmappedindex] = true;
+		   traindataNotMissing_ncurrindex[nmappedindex] = true;
+	       }
+	       else
+	       {
+		   //missing data
+		   traindataObservedValues_ncurrindex[nmappedindex] = false;
+		   traindataNotMissing_ncurrindex[nmappedindex] = false;
+	       }
+	       nmappedindex++;
+	    }
+
+	    boolean[] currFlags = theObservedRec.flagA;
+	    for (int nj = 0; nj < chromfiles.length; nj++)
+            {
+		//storing at this observation whether it is found for each chromosome
+		traindataObservedSeqFlags[nj][ncurrindex] = currFlags[nj];
+	    }
+	}	
+    */
+
+
+
+
+    ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
     /**
      * Loads in the input data
@@ -4949,7 +8844,7 @@ public class ChromHMM
 	HashMap hmObserved = new HashMap(); //maps an observation string to an index and set of flags
  
 	int nobserved = 0;
-        PrintWriter pw = null;
+        //PrintWriter pw = null;
 
 	for (int nfile = 0; nfile < chromfiles.length; nfile++)
         {
@@ -5185,7 +9080,7 @@ public class ChromHMM
 
 	if (szcommand.equalsIgnoreCase("Version"))
 	{
-	    System.out.println("This is Version 1.12 of ChromHMM (c) Copyright 2008-2012 Massachusetts Institute of Technology");
+	    System.out.println("This is Version 1.13 of ChromHMM (c) Copyright 2008-2012 Massachusetts Institute of Technology");
 	}
         else if ((szcommand.equals("BinarizeBam"))||(szcommand.equalsIgnoreCase("BinarizeBed")))
 	{
@@ -5661,6 +9556,7 @@ public class ChromHMM
                                                   szmodelfile, szoutfileID, nbinsize, breadposterior,
 						  breadsegments,breadstatebyline,szinclude,bappend, theColor);
 
+
 	          theHMM.makeSegmentationConfusion();
 	       }
 
@@ -5686,6 +9582,7 @@ public class ChromHMM
 	    String szchromlengthfile = null;
 	    int nbinsize = ChromHMM.DEFAULT_BINSIZEBASEPAIRS;
 	    String szoutfileID = "";
+	    boolean blowmem = false;
 
 	    int nargindex = 1;
 
@@ -5708,6 +9605,10 @@ public class ChromHMM
 		  else if (args[nargindex].equals("-l"))
 		  {
 		     szchromlengthfile = args[++nargindex];
+		  }
+		  else if (args[nargindex].equals("-lowmem"))
+		  {
+		      blowmem = true;
 		  }
 		  else if (args[nargindex].equals("-nobed"))
 		  {
@@ -5777,9 +9678,16 @@ public class ChromHMM
 	       {
 
 		   ChromHMM theHMM = new ChromHMM(szinputdir, szinputfilelist,szchromlengthfile, szoutputdir, szmodelfile, szoutfileID, nbinsize, bprintposterior,
-                                              bprintsegments,bprintstatebyline);
+						  bprintsegments,bprintstatebyline, blowmem);
 
-	          theHMM.makeSegmentation();
+		  if (blowmem)
+		  {
+		     theHMM.makeSegmentationWithLoad();
+		  }
+		  else
+		  {
+	             theHMM.makeSegmentation();
+		  }
 	       }
 	       else
 	       {
@@ -5793,7 +9701,7 @@ public class ChromHMM
 
 	    if (!bok)
 	    {
-		System.out.println("usage: MakeSegmentation [-b binsize][-f inputfilelist][-i outfileID][-l chromosomelengthfile][-nobed]"+
+		System.out.println("usage: MakeSegmentation [-b binsize][-f inputfilelist][-i outfileID][-l chromosomelengthfile][-lowmem][-nobed]"+
                                    "[-printposterior][-printstatesbyline]"+
                                    "  modelfile inputdir outputdir");
 	    }
@@ -5871,6 +9779,7 @@ public class ChromHMM
 	    String sztitle = "Fold Enrichments";
 	    
 	    boolean bmax= true;
+	    boolean blowmem = false;
 
 	    int nr=ChromHMM.DEFAULTCOLOR_R;
 	    int ng=ChromHMM.DEFAULTCOLOR_G;
@@ -5953,6 +9862,10 @@ public class ChromHMM
 		  {
 		     sztitle = args[++nargindex];
 		  }
+		  else if (args[nargindex].equals("-lowmem"))
+		  {
+		      blowmem = true;
+		  }
 		  else
 	          { 
 		     bok = false;
@@ -5977,8 +9890,16 @@ public class ChromHMM
 	       System.out.println("Computing Enrichments...");
 	       if (bmax)
 	       {
-		   StateAnalysis.enrichmentMax(szinput, szinputcoorddir,szinputcoordlist,noffsetleft,noffsetright,nbinsize,  
+		   if (blowmem)
+		   {
+		      StateAnalysis.enrichmentMaxLowMem(szinput, szinputcoorddir,szinputcoordlist,noffsetleft,noffsetright,nbinsize,  
 					       bcenter, bunique,  busesignal,szcolfields,bbaseres, szoutfile,bcolscaleheat,theColor,sztitle, szlabelmapping);
+		   }
+		   else
+		   {
+		      StateAnalysis.enrichmentMax(szinput, szinputcoorddir,szinputcoordlist,noffsetleft,noffsetright,nbinsize,  
+					       bcenter, bunique,  busesignal,szcolfields,bbaseres, szoutfile,bcolscaleheat,theColor,sztitle, szlabelmapping);
+		   }
 	       }
 	       else
 	       {
@@ -5994,7 +9915,7 @@ public class ChromHMM
 	    if (!bok)
 	    {
 		System.out.println("usage OverlapEnrichment [-a cell][-b binsize][-binres][-color r,g,b][-center][-colfields chromosome,start,end[,signal]]"+
-                                   "[-e offsetend][-f coordlistfile][-m labelmappingfile]"+
+                                   "[-e offsetend][-f coordlistfile][-lowmem][-m labelmappingfile]"+
                                    "[-multicount][-posterior][-s offsetstart][-signal][-t title][-uniformscale]"+
                                    " inputsegment inputcoorddir outfileprefix");
 	    }
@@ -6022,6 +9943,7 @@ public class ChromHMM
 	    int nb=ChromHMM.DEFAULTCOLOR_B;
 
 	    boolean bmax = true;
+	    boolean blowmem = false;
 	    int nargindex = 1;
 
 	    boolean bspacing = false;
@@ -6064,6 +9986,10 @@ public class ChromHMM
 		  else if (args[nargindex].equals("-l"))
 		  {
 		     numleft = Integer.parseInt(args[++nargindex]);
+		  }
+		  else if (args[nargindex].equals("-lowmem"))
+		  {
+		      blowmem = true;
 		  }
 		  else if (args[nargindex].equals("-m"))
 	          {
@@ -6128,8 +10054,16 @@ public class ChromHMM
 	       }
                else if (bmax)
 	       {
-	           StateAnalysis.neighborhoodMax(szinput,szanchorpositions,nbinsize,numleft,numright,
+		   if (blowmem)
+		   {
+	              StateAnalysis.neighborhoodMaxLowMem(szinput,szanchorpositions,nbinsize,numleft,numright,
 						 nspacing,busestrand,busesignal,szcolfields,noffsetanchor,szoutfile,theColor,sztitle,szlabelmapping);
+		   }
+		   else
+		   {
+	              StateAnalysis.neighborhoodMax(szinput,szanchorpositions,nbinsize,numleft,numright,
+						 nspacing,busestrand,busesignal,szcolfields,noffsetanchor,szoutfile,theColor,sztitle,szlabelmapping);
+		   }
 	       }
 	       else
 	       {
@@ -6145,7 +10079,7 @@ public class ChromHMM
 	    if (!bok)
 	    {
 		System.out.println("usage NeighborhoodEnrichment [-a cell][-b binsize][-color r,g,b][-colfields chromosome,position[,optionalcol1|,optionalcol1,optionalcol2]"+
-                                  "[-l numleftintervals][-nostrand][-m labelmappingfile]"+
+                                  "[-l numleftintervals][-lowmem][-nostrand][-m labelmappingfile]"+
                                   "[-o anchoroffset][-posterior][-r numrightintervals]"+
                                   "[-s spacing][-signal][-t title] inputsegment anchorpositions outfileprefix");
 	    }
@@ -6156,6 +10090,7 @@ public class ChromHMM
 	    String decodedPath = URLDecoder.decode(path, "UTF-8");
 	    String szprefixpath = decodedPath.substring(0, decodedPath.lastIndexOf("/") + 1); 
 	    //System.out.println("prefix path is "+szprefixpath);
+
 
 	    int nseed = 999;
 	    int nmaxiterations= 200;//number of passes through all the data
@@ -6171,6 +10106,8 @@ public class ChromHMM
 	    boolean bnoprintsegment = false;
 	    boolean bprintbrowser = true;
 	    boolean bprintenrich = true;
+	    boolean blowmem = false;
+
 	    String szinputfilelist = null;
 	    String szchromlengthfile = null;
 	    int nbinsize = ChromHMM.DEFAULT_BINSIZEBASEPAIRS;
@@ -6180,6 +10117,7 @@ public class ChromHMM
 	    int nargindex = 1;
 	    int nmaxseconds = -1;
 	    int nmaxprocessors = 0;
+	    int numincludeseq = 0;
 	    boolean bnormalEM = false;
 
 	    int nr=ChromHMM.DEFAULTCOLOR_R;
@@ -6259,6 +10197,10 @@ public class ChromHMM
 		  {
 		     szInitFile = args[++nargindex];
 		  }
+		  else if (args[nargindex].equals("-n"))
+		  {
+		      numincludeseq = Integer.parseInt(args[++nargindex]);
+		  }
 		  else if (args[nargindex].equals("-nobed"))
 		  {
 		     bnoprintsegment = true;
@@ -6296,6 +10238,10 @@ public class ChromHMM
 		  else if (args[nargindex].equals("-printposterior"))
 		  {
 		     bprintposterior = true;
+		  }
+                  else if (args[nargindex].equals("-lowmem"))
+	          {
+		      blowmem = true;
 		  }
 		  else if (args[nargindex].equals("-r"))
 		  {
@@ -6408,7 +10354,8 @@ public class ChromHMM
  	          ChromHMM theHMM = new ChromHMM(szinputdir, szoutputdir, szinputfilelist,szchromlengthfile,numstates, nseed,ninitmethod,
 						 szInitFile,dloadsmoothemission,dloadsmoothtransition,dinformationsmooth,
 					     nmaxiterations,dconvergediff,nmaxseconds, bprintposterior,bprintsegments,bprintstatebyline,
-						 nbinsize,szoutfileID,nstateorder,bordercols,nzerotransitionpower,theColor,bnormalEM, nmaxprocessors);
+						 nbinsize,szoutfileID,nstateorder,bordercols,nzerotransitionpower,theColor,bnormalEM, nmaxprocessors, 
+                                                 blowmem,numincludeseq);
 	          theHMM.buildModel();
 
 
@@ -6452,7 +10399,14 @@ public class ChromHMM
 
 	          if (bprintsegments||bprintposterior||bprintstatebyline) 
 	          {
-	             theHMM.makeSegmentation();
+		     if (blowmem)
+		     {
+			 theHMM.makeSegmentationWithLoad();
+		     }
+		     else
+		     {
+	                theHMM.makeSegmentation();
+		     }
 
 		     if (bprintsegments)
 		     {
@@ -6519,13 +10473,26 @@ public class ChromHMM
 			       File fcoordassembly = new File(szprefixpath+"/"+COORDDIR+"/"+szassembly);
 		               if (fcoordassembly.exists())
 			       {
-			          StateAnalysis.enrichmentMax(szsegmentfile,szprefixpath+"/"+COORDDIR+"/"+szassembly,null,//szinputcoordlist,
+				  if (blowmem)
+			          {
+			             StateAnalysis.enrichmentMaxLowMem(szsegmentfile,szprefixpath+"/"+COORDDIR+"/"+szassembly,null,//szinputcoordlist,
                                                           ChromHMM.DEFAULT_OVERLAPENRICHMENT_NOFFSETLEFT,
                                                           ChromHMM.DEFAULT_OVERLAPENRICHMENT_NOFFSETRIGHT,nbinsize,  
 							  ChromHMM.DEFAULT_OVERLAPENRICHMENT_BCENTER, !ChromHMM.DEFAULT_OVERLAPENRICHMENT_BCOUNTMULTI, 
                                                           ChromHMM.DEFAULT_OVERLAPENRICHMENT_BUSESIGNAL,null,//szcolfields,
                                                           ChromHMM.DEFAULT_OVERLAPENRICHMENT_BBASERES, szoutputdir+"/"+szprefix+ChromHMM.SZOVERLAPEXTENSION,
 							      !ChromHMM.DEFAULT_OVERLAPENRICHMENT_BUNIFORMHEAT,theColor,"Fold Enrichment "+szprefix,null);
+				  }
+				  else
+				  {
+			             StateAnalysis.enrichmentMax(szsegmentfile,szprefixpath+"/"+COORDDIR+"/"+szassembly,null,//szinputcoordlist,
+                                                          ChromHMM.DEFAULT_OVERLAPENRICHMENT_NOFFSETLEFT,
+                                                          ChromHMM.DEFAULT_OVERLAPENRICHMENT_NOFFSETRIGHT,nbinsize,  
+							  ChromHMM.DEFAULT_OVERLAPENRICHMENT_BCENTER, !ChromHMM.DEFAULT_OVERLAPENRICHMENT_BCOUNTMULTI, 
+                                                          ChromHMM.DEFAULT_OVERLAPENRICHMENT_BUSESIGNAL,null,//szcolfields,
+                                                          ChromHMM.DEFAULT_OVERLAPENRICHMENT_BBASERES, szoutputdir+"/"+szprefix+ChromHMM.SZOVERLAPEXTENSION,
+							      !ChromHMM.DEFAULT_OVERLAPENRICHMENT_BUNIFORMHEAT,theColor,"Fold Enrichment "+szprefix,null);
+				  }
 				  String szoverlapoutfile = szprefix+ChromHMM.SZOVERLAPEXTENSION+".txt";
 				  pwweb.println("<img src=\""+szprefix+ChromHMM.SZOVERLAPEXTENSION+".png\"> <br>");
 				  pwweb.println("<li><a href=\""+szprefix+ChromHMM.SZOVERLAPEXTENSION+".svg"+"\">"+szprefix+" Overlap Enrichment SVG File"+"</a><br>");
@@ -6561,12 +10528,24 @@ public class ChromHMM
 				        szanchorname = dir[nfile].substring(0,nperiodindex);
 				     }
 
-			             StateAnalysis.neighborhoodMax(szsegmentfile,szprefixpath+"/"+
+				     if (blowmem)
+				     {
+			                StateAnalysis.neighborhoodMaxLowMem(szsegmentfile,szprefixpath+"/"+
                                                                  ANCHORFILEDIR+"/"+szassembly+"/"+dir[nfile],nbinsize,ChromHMM.DEFAULT_NEIGHBORHOOD_NUMLEFT,
 							     ChromHMM.DEFAULT_NEIGHBORHOOD_NUMRIGHT, nbinsize,//nspacing
-                                        ChromHMM.DEFAULT_NEIGHBORHOOD_BUSESTRAND,ChromHMM.DEFAULT_NEIGHBORHOOD_BUSESIGNAL,null,//szcolfields,
-                                        ChromHMM.DEFAULT_NEIGHBORHOOD_NOFFSETANCHOR,szoutputdir+"/"+szprefix+"_"+szanchorname+"_neighborhood",
+                                           ChromHMM.DEFAULT_NEIGHBORHOOD_BUSESTRAND,ChromHMM.DEFAULT_NEIGHBORHOOD_BUSESIGNAL,null,//szcolfields,
+                                           ChromHMM.DEFAULT_NEIGHBORHOOD_NOFFSETANCHOR,szoutputdir+"/"+szprefix+"_"+szanchorname+"_neighborhood",
 								   theColor,"Fold Enrichment "+szprefix+" "+szanchorname,null);
+				     }
+				     else
+				     {
+			                StateAnalysis.neighborhoodMax(szsegmentfile,szprefixpath+"/"+
+                                                                 ANCHORFILEDIR+"/"+szassembly+"/"+dir[nfile],nbinsize,ChromHMM.DEFAULT_NEIGHBORHOOD_NUMLEFT,
+							     ChromHMM.DEFAULT_NEIGHBORHOOD_NUMRIGHT, nbinsize,//nspacing
+                                           ChromHMM.DEFAULT_NEIGHBORHOOD_BUSESTRAND,ChromHMM.DEFAULT_NEIGHBORHOOD_BUSESIGNAL,null,//szcolfields,
+                                           ChromHMM.DEFAULT_NEIGHBORHOOD_NOFFSETANCHOR,szoutputdir+"/"+szprefix+"_"+szanchorname+"_neighborhood",
+								   theColor,"Fold Enrichment "+szprefix+" "+szanchorname,null);
+				     }
 				     String szneighborhoodoutfileprefix = szprefix+"_"+szanchorname+ChromHMM.SZNEIGHBORHOODEXTENSION;
 				   
 				     pwweb.println("<img src=\""+szneighborhoodoutfileprefix+".png\"> <br>");
@@ -6602,8 +10581,8 @@ public class ChromHMM
 	    if (!bok)
 	    {
 		System.out.println("usage: LearnModel [-b binsize][-color r,g,b][-d convergedelta][-e loadsmoothemission][-f inputfilelist][-h informationsmooth]"+
-                                     "[-holdcolumnorder][-i outfileID][-init information|random|load][-l chromosomelengthfile][-m modelinitialfile]"+
-                                    "[-nobed][-nobrowser][-noenrich][-p maxprocessors][-printposterior][-printstatebyline][-r maxiterations][-s seed]"+
+                                     "[-holdcolumnorder][-i outfileID][-init information|random|load][-l chromosomelengthfile][-lowmem][-m modelinitialfile]"+
+                                    "[-n numseq][-nobed][-nobrowser][-noenrich][-p maxprocessors][-printposterior][-printstatebyline][-r maxiterations][-s seed]"+
                                     "[-stateordering emission|transition]"+
                                    "[-t loadsmoothtransition][-x maxseconds][-z zerotransitionpower] inputdir outputdir numstates assembly");
 	    }
