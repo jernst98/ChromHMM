@@ -494,6 +494,18 @@ public class ChromHMM
      */
     boolean bprintimage;
 
+
+    /**
+     * true if emission parameters should be rescaled
+     */
+    boolean bscaleemissions = false;
+
+    /**
+     * true if should add pseudo-counts when learning models
+     */
+    boolean bpseudo = false;
+
+
     ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
     /**
      * Stores an integer index and array of boolean flags
@@ -597,7 +609,8 @@ public class ChromHMM
                     String szInitFile, double dloadsmoothemission,double dloadsmoothtransition,double dinformationsmooth,
 		     int nmaxiterations,double dcovergediff,int nmaxseconds,boolean bprintposterior,
 		    boolean bprintsegment,boolean bprintstatebyline, int nbinsize,String szoutfileID,int nstateorder,boolean bordercols,int nzerotransitionpower,
-		     Color theColor, boolean bnormalEM, int nmaxprocessors, boolean blowmem, int numincludeseq, boolean bprintimage) throws IOException
+		     Color theColor, boolean bnormalEM, int nmaxprocessors, boolean blowmem, 
+                     int numincludeseq, boolean bprintimage, boolean bscaleemissions, boolean bpseudo) throws IOException
     {
 	this.szinputdir = szinputdir;
         this.szoutputdir = szoutputdir;
@@ -628,6 +641,8 @@ public class ChromHMM
 	this.numincludeseq = numincludeseq;
 	this.blowmem = blowmem;
 	this.bprintimage = bprintimage;
+	this.bscaleemissions = bscaleemissions;
+	this.bpseudo = bpseudo;
 
         hmlabelExtend = new HashMap();
         theRandom = new Random(nseed);
@@ -731,7 +746,7 @@ public class ChromHMM
      * Constructor initializes the variable and loads the data used for making segmentation from a model
      */
     public ChromHMM(String szinputdir, String szinputfilelist, String szchromlengthfile, String szoutputdir, String szInitFile, String szoutfileID,
-                    int nbinsize, boolean bprintposterior, boolean bprintsegment,boolean bprintstatebyline, boolean blowmem) throws IOException
+                    int nbinsize, boolean bprintposterior, boolean bprintsegment,boolean bprintstatebyline, boolean blowmem, boolean bscaleemissions) throws IOException
     {
 	this.szinputdir = szinputdir;
 	this.szinputfilelist = szinputfilelist;
@@ -744,6 +759,7 @@ public class ChromHMM
 	this.szInitFile = szInitFile;
 	this.nbinsize = nbinsize;
 	this.blowmem = blowmem;
+	this.bscaleemissions = bscaleemissions;
         hmlabelExtend = new HashMap();
 
 	if (blowmem)
@@ -777,7 +793,7 @@ public class ChromHMM
     public ChromHMM(String szinputdir, String szsegmentdir, String szinputfilelist, String szconfusionfileprefix,
                     String szInitFile, String szoutfileID,
                     int nbinsize, boolean breadposterior, boolean breadsegment,boolean breadstatebyline,
-                    String szincludemarks, boolean bappend, Color theColor, boolean bprintimage) throws IOException
+                    String szincludemarks, boolean bappend, Color theColor, boolean bprintimage, boolean blowmem, boolean bscaleemissions) throws IOException
     {
 	this.bappend = bappend;
 	this.szinputdir = szinputdir;
@@ -794,8 +810,19 @@ public class ChromHMM
 	this.szincludemarks = szincludemarks;
 	this.theColor = theColor;
 	this.bprintimage = bprintimage;
+	this.blowmem = blowmem;
+	this.bscaleemissions = bscaleemissions;
         hmlabelExtend = new HashMap();
-	loadData();
+
+	if (blowmem)
+	{
+	   loadDataFileStubs();
+	}
+	else
+        {
+	   loadData();
+	}
+	//loadData();
 	loadModel();
 
 	stateordering = new int[numstates];
@@ -1667,7 +1694,7 @@ public class ChromHMM
        	          {
 		    //System.out.println(szmappingbyte.length());
 		    //storing a mapping from observed byte string to an integer index in alFlags and alObserved
-		     hmObservedLoad.put(theBigInteger, new Integer(nobservedload));
+		      hmObservedLoad.put(theBigInteger, Integer.valueOf(nobservedload));
 
 		     //saving this observed index
 		     traindataObservedIndex[nrow] = nobservedload;
@@ -3019,53 +3046,120 @@ public class ChromHMM
 	  }
 
 
-	  for (int ni = 0; ni < emissionproducts.length; ni++)
-          {
-	     //going through each combination of marks
-	     if (traindataObservedSeqFlags_nseq[ni])
+          if (bscaleemissions)
+	  {
+	     for (int ni = 0; ni < emissionproducts.length; ni++)
 	     {
-	        //this signature of marks is observed on the current chromosome so
-	        //updating its emission probabilities
-	        double[] emissionproducts_ni = emissionproducts[ni];
-	        boolean[] traindataObservedValues_ni = traindataObservedValues[ni];
-	        boolean[] traindataNotMissing_ni = traindataNotMissing[ni];	
-		boolean ballzero = true;
-	  
-	        for (int ns = 0; ns < numstates; ns++)
-	        {
-	           double dproduct = 1;
-	           double[][] emissionprobs_ni = emissionprobs[ns];
+	        //going through each combination of marks
+		if (traindataObservedSeqFlags_nseq[ni])
+		{
+		   //this signature of marks is observed on the current chromosome so
+		   //updating its emission probabilities
+		   double[] emissionproducts_ni = emissionproducts[ni];
+		   boolean[] traindataObservedValues_ni = traindataObservedValues[ni];
+		   boolean[] traindataNotMissing_ni = traindataNotMissing[ni];
 
-		   //going through all marks
+		   for (int ns = 0; ns < numstates; ns++)
+		   {
+		      emissionproducts_ni[ns] = 1;
+		   }
+
 		   for (int nmod = 0; nmod < numdatasets; nmod++)
-	           {
-		      if ((traindataNotMissing_ni[nmod])&&(includemarks[nmod]))
+		   {
+		      for (int ns = 0; ns < numstates; ns++)
 		      {
-			  //we have observed the mark
-		         if (traindataObservedValues_ni[nmod])
+			 if ((traindataNotMissing_ni[nmod])&&(includemarks[nmod]))
+			 {
+			    //we are include this marks emission probability
+			    if (traindataObservedValues_ni[nmod])
+			    {
+			       emissionproducts_ni[ns] *= emissionprobs[ns][nmod][1];
+			    }
+			    else
+			    {
+			       emissionproducts_ni[ns] *= emissionprobs[ns][nmod][0];
+			    }
+			 }
+			 // otherwise treated as missing omitting from product
+		      }
+
+		      double dmaxval = 0;
+		      for (int ns = 0; ns < numstates; ns++)
+		      {
+		         if (emissionproducts_ni[ns] > dmaxval)
+			 {
+			    dmaxval = emissionproducts_ni[ns];
+			 }
+		      }
+
+		      if (dmaxval <= 0)
+		      {
+		         for (int ns = 0; ns < numstates; ns++)
 		         {
-		            dproduct *= emissionprobs_ni[nmod][1];
-		         }
-		         else 
-	                 {
-		            dproduct *= emissionprobs_ni[nmod][0];
+		            emissionproducts_ni[ns] = 1;
 		         }
 		      }
-		      // otherwise treated as missing omitting from product
-		   }
-	           emissionproducts_ni[ns] = dproduct;
-
-		   if (dproduct >= EPSILONEMISSIONS)
-		   {
-		      ballzero = false;
+		      else
+		      {
+		         for (int ns = 0; ns < numstates; ns++)
+		         {
+		            emissionproducts_ni[ns]/= dmaxval;
+		         }
+		      }
 		   }
 		}
-
-		if (ballzero)
+	     }
+	  }
+	  else
+	  {
+	     for (int ni = 0; ni < emissionproducts.length; ni++)
+             {
+	        //going through each combination of marks
+	        if (traindataObservedSeqFlags_nseq[ni])
 	        {
-	      	   for (int ns = 0; ns < numstates; ns++)
+	           //this signature of marks is observed on the current chromosome so
+	           //updating its emission probabilities
+	           double[] emissionproducts_ni = emissionproducts[ni];
+	           boolean[] traindataObservedValues_ni = traindataObservedValues[ni];
+	           boolean[] traindataNotMissing_ni = traindataNotMissing[ni];	
+		   boolean ballzero = true;
+	  
+	           for (int ns = 0; ns < numstates; ns++)
 	           {
-		      emissionproducts_ni[ns] = EPSILONEMISSIONS;
+	              double dproduct = 1;
+	              double[][] emissionprobs_ni = emissionprobs[ns];
+
+		      //going through all marks
+		      for (int nmod = 0; nmod < numdatasets; nmod++)
+	              {
+		         if ((traindataNotMissing_ni[nmod])&&(includemarks[nmod]))
+		         {
+			     //we have observed the mark
+		            if (traindataObservedValues_ni[nmod])
+		            {
+		               dproduct *= emissionprobs_ni[nmod][1];
+		            }
+		            else 
+	                    {
+		               dproduct *= emissionprobs_ni[nmod][0];
+		            }
+			 }
+		         // otherwise treated as missing omitting from product
+		      }
+	              emissionproducts_ni[ns] = dproduct;
+
+		      if (dproduct >= EPSILONEMISSIONS)
+		      {
+		         ballzero = false;
+		      }
+		   }
+
+		   if (ballzero)
+	           {
+	      	      for (int ns = 0; ns < numstates; ns++)
+	              {
+		         emissionproducts_ni[ns] = EPSILONEMISSIONS;
+		      }
 		   }
 		}
 	     }
@@ -3382,6 +3476,826 @@ public class ChromHMM
     }
 
 
+    /**
+     * Takes an existing model and segmentation and outputs a confusion matrix by a selected subset
+     */
+    public void makeSegmentationConfusionWithLoad() throws IOException
+    {
+	//added in 1.15
+        NumberFormat nf = NumberFormat.getInstance();
+        nf.setMaximumFractionDigits(4);
+
+       //number of non-zero transition required to be less than this at the more stringent cutoff 
+       //for trying to exploit sparsity in the transition matrix for efficiency gains
+       int nsparsecutoff = (int) (numstates * ChromHMM.SPARSECUTOFFRATIO);
+
+       //int[] numtime = new int[traindataObservedIndex.length];
+
+       //stores the maximum number of locations in any sequence and in each sequence
+       int nmaxtime = 0;
+       for (int nseq = 0; nseq < numtime.length; nseq++)
+       {
+	   //numtime[nseq] = traindataObservedIndex[nseq].length;
+          if (numtime[nseq] > nmaxtime)
+	  {
+      	     nmaxtime = numtime[nseq];
+	  }
+       }
+
+       //double
+       double[][] fullposterior = null;
+
+       int[] fullmax = null;
+       double[][] confusion = new double[numstates][numstates];
+       double[][] normalizedconfusion = new double[numstates][numstates];
+
+       if (breadposterior)
+       {
+          fullposterior = new double[nmaxtime][numstates];
+       }
+
+       if ((breadstatebyline)||(breadsegment))
+       {
+	  fullmax = new int[nmaxtime];
+       }
+
+
+       if (ChromHMM.BVERBOSE)
+       {
+          System.out.println("Maximum number of locations\t"+nmaxtime);
+       }
+
+
+       //stores the emission probability for the i^th combination of marks in the j^th state
+       double[][] emissionproducts = new double[nmaxtime][numstates]; //previously traindataObservedValues.length
+
+       //stores temporary product terms
+       double[] tempproductbetaemiss = new double[numstates];
+
+       //This stores the alpha values at each time point and number of states
+       double[][] alpha = new double[nmaxtime][numstates];
+
+       //Temporary storage of the gamma's for each state
+       double[][] gamma = new double[nmaxtime][numstates];
+
+       //Temporary storage of the beta values for each state
+       double[] beta_nt = new double[numstates];
+
+       //Temporary storage of the beta values for each state at the next time point
+       double[] beta_ntp1 = new double[numstates];
+
+       //stores the scaling value for each time point
+       double[] scale = new double[nmaxtime];
+
+       //stores the transition probabilities for each column
+       double[][] coltransitionprobs = new double[numstates][numstates];
+
+
+       //stores the indicies of the data
+       int[] traindataObservedIndex = new int[nmaxtime];
+
+       //saving the mapping of signatures and chromsome observed on
+       //stores whether there is a present call at each location
+       boolean[][] traindataObservedValues = new boolean[nmaxtime][numdatasets];
+
+       //stores whether the mark is not considered missing
+       boolean[][] traindataNotMissing = new boolean[nmaxtime][numdatasets]; //usually nobserved
+
+       boolean[] includemarks = new boolean[numdatasets];
+
+       double[] surplus = new double[numstates];
+       double[] deficit = new double[numstates];
+       double[] dstatesagree = new double[numstates];
+
+       if (szincludemarks.length()!=numdatasets)
+       {
+	   throw new IllegalArgumentException("Number of marks in "+szincludemarks+" of "+szincludemarks.length()+" does not equal expected number of "+numdatasets);
+       }
+      
+
+       if ((breadstatebyline)||(breadsegment))
+       {
+	   //stores the maximum assignment with all marks
+          fullmax = new int[nmaxtime];
+       }
+       else
+       {
+	   //stores the posterior assignment with all marks
+          fullposterior = new double[nmaxtime][numstates];
+       }
+
+       String szdatasets = "";
+       for (int nmark = 0; nmark < includemarks.length; nmark++)
+       {
+	   if (szincludemarks.charAt(nmark) == '1')
+	   {
+	       //stores in includemarks those data sets that have a '1' for the mark
+	       includemarks[nmark] = true;
+	       if (szdatasets.equals(""))
+	       {
+		   szdatasets += datasets[nmark];
+	       }
+	       else
+	       {
+		   szdatasets += "," + datasets[nmark];
+	       }
+	   }
+	   else if (szincludemarks.charAt(nmark) == '0')
+	   {
+	       includemarks[nmark] = false;
+	   }
+	   else
+	   {
+	       throw new IllegalArgumentException(szincludemarks+" is not a valid bit string for includemarks!");
+	   }
+       }
+
+       RecIntString[] ordered = new RecIntString[chromfiles.length];
+       for (int nindex = 0; nindex < ordered.length; nindex++)
+       {
+	   ordered[nindex] = new RecIntString(nindex,chromfiles[nindex]);
+       }
+       Arrays.sort(ordered,new RecIntStringCompare());
+
+
+
+       hsprefix = new HashSet();
+
+       for (int nseq = 0; nseq <  chromfiles.length; nseq++) // traindataObservedIndex.length
+       {
+          int nordered_nseq = ordered[nseq].nindex;
+	  //goes through each sequence
+
+	  ///////////////////////////////////////////////////////////////////////////////
+	  //load data here
+
+	  HashMap hmObserved = new HashMap(); //maps an observation string to an index and set of flags
+
+	  int nobserved = 0;
+
+	  if (ChromHMM.BVERBOSE)
+	  {
+	     System.out.println("reading\t"+szinputdir+" "+chromfiles[nordered_nseq]);
+          }
+	  BufferedReader br = Util.getBufferedReader(szinputdir+"/"+chromfiles[nordered_nseq]); //fixed bug was chromfiles[nseq]
+	  String szLine;
+	  br.readLine(); //first line tells cell type and chromosome
+	  br.readLine();//flush mark header
+	  ArrayList aldata = new ArrayList();
+	  while ((szLine = br.readLine())!=null)
+	  {
+	      StringTokenizer st = new StringTokenizer(szLine,"\t");
+	      StringBuffer sb = new StringBuffer();
+
+	      for (int ncol = 0; ncol < numdatasets; ncol++)
+	      {
+	         if (!st.hasMoreTokens())
+		 {
+		    throw new IllegalArgumentException("Found line without "+numdatasets+" values in file "+chromfiles[nordered_nseq]);
+		 }
+
+		 String sztoken = st.nextToken();
+
+		 if (sztoken.equals("0"))
+		 {
+		    sb.append("0");
+	         }
+		 else if (sztoken.equals("1"))
+	         {
+		     sb.append("1");
+		 }
+		 else if (sztoken.equals("2"))
+	         {
+		    //this means missing
+		     sb.append("2");
+		 }
+		 else
+		 {
+		    throw new IllegalArgumentException("Unrecognized value "+sztoken+" found in "+szinputdir+"/"+chromfiles[nordered_nseq]);
+		 }
+	      }
+	      aldata.add(sb.toString());
+	  }
+	  br.close();
+
+	  int nsize = aldata.size();
+
+	  for (int nrow = 0; nrow < nsize; nrow++)
+	  {
+	     BigInteger theBigInteger = new BigInteger((String) aldata.get(nrow),3);
+	     Integer theObservedInt  = (Integer) hmObserved.get(theBigInteger);
+		  //boolean[] flagA;
+
+	     if (theObservedInt == null)
+	     {
+	        //System.out.println(szmappingbyte.length());
+		//storing a mapping from observed byte string to an integer index in alFlags and alObserved
+		hmObserved.put(theBigInteger, Integer.valueOf(nobserved));
+
+		//saving this observed index
+		traindataObservedIndex[nrow] = nobserved;
+
+		//increments the number of observed combinations of marks
+	        nobserved++;
+	     }
+	     else
+	     {
+	        //storing the index of the flags associated with this row
+		traindataObservedIndex[nrow] = ((Integer) theObservedInt).intValue();
+	     }
+	  }
+
+	  Iterator hmObservedIterator = hmObserved.entrySet().iterator();
+	  while (hmObservedIterator.hasNext())
+	  {
+	     Map.Entry pairs = (Map.Entry) hmObservedIterator.next();
+	     BigInteger theBigInteger = (BigInteger) pairs.getKey();
+	     String szmapping = theBigInteger.toString(3);  //getting back the mapping string
+
+	     //ObservedRec theObservedRec = (ObservedRec) pairs.getValue();
+	     int ncurrindex = ((Integer) pairs.getValue()).intValue();// theObservedRec.nobserved;//this is an index on which obervation combination it is
+
+	     boolean[] traindataObservedValues_ncurrindex = traindataObservedValues[ncurrindex];
+	     boolean[] traindataNotMissing_ncurrindex = traindataNotMissing[ncurrindex];
+
+	     //if the mapping string is less than the number of data sets then
+	     //there are leading 0's will set for leading 0's not missing and absent
+	     int numch = szmapping.length();
+	     int numleading0 = numdatasets - numch;
+	     for (int nj = 0; nj < numleading0; nj++)
+	     {
+	        traindataObservedValues_ncurrindex[nj] = false;
+	        traindataNotMissing_ncurrindex[nj] = true;
+	     }
+
+	     int nmappedindex = numleading0; //starting from the leading 0 position
+	     for (int nj = 0; nj < numch; nj++)
+	     {
+		 char ch = szmapping.charAt(nj);
+
+		 if (ch == '0')
+		 {
+		     traindataObservedValues_ncurrindex[nmappedindex] = false;
+		     traindataNotMissing_ncurrindex[nmappedindex] = true;
+		 }
+		 else if (ch=='1')
+		 {
+		     traindataObservedValues_ncurrindex[nmappedindex] = true;
+		     traindataNotMissing_ncurrindex[nmappedindex] = true;
+		 }
+		 else
+		 {
+		     //missing data
+		     traindataObservedValues_ncurrindex[nmappedindex] = false;
+		     traindataNotMissing_ncurrindex[nmappedindex] = false;
+		 }
+		 nmappedindex++;
+	     }
+	  }
+
+
+          //int[] traindataObservedIndex_nseq = traindataObservedIndex[nordered_nseq];
+          //boolean[] traindataObservedSeqFlags_nseq = traindataObservedSeqFlags[nordered_nseq];
+
+	  String szprefix = "";
+	  if (!cellSeq[nordered_nseq].equals(""))
+	  {
+	     szprefix += cellSeq[nordered_nseq]+"_";
+	  }
+	  szprefix += numstates;
+	  if (!szoutfileID.equals(""))
+	  {
+	     szprefix += "_"+szoutfileID;
+          }
+	  hsprefix.add(szprefix);
+	  
+	  if (breadposterior)
+	  {
+	     BufferedReader brprobs = null;
+	     //creates the posterior file
+	     String szposteriorinfilename = szsegmentdir+"/POSTERIOR/"+szprefix+"_"+chromSeq[nordered_nseq]+ChromHMM.SZPOSTERIOREXTENSION;
+
+	     //updated in v.1.11 to check for  gz extensions
+	     File f = new File (szposteriorinfilename);
+	     File fgz = new File (szposteriorinfilename+".gz");
+	     if ((!f.exists())&&(fgz.exists()))
+	     {
+		 szposteriorinfilename = szposteriorinfilename + ".gz";
+	     }
+	     brprobs = Util.getBufferedReader(szposteriorinfilename);// new BufferedReader(new FileReader(szposteriorinfilename));
+
+	     //skips the header lines
+	     brprobs.readLine();
+	     brprobs.readLine();
+	     String szLinePosterior;
+
+	     int nline = 0;
+	     while ((szLinePosterior = brprobs.readLine())!=null)
+	     {
+		StringTokenizer stposterior = new StringTokenizer(szLinePosterior,"\t");
+	        for (int nstate = 0; nstate < numstates; nstate++)
+	        {
+		   fullposterior[nline][nstate] = Double.parseDouble(stposterior.nextToken());
+		}
+		nline++;
+	     }
+	     brprobs.close(); 
+	  } 
+          else if (breadstatebyline)
+	  {
+	      String szcurrchrom = chromSeq[nordered_nseq];
+	      //reads a file which has the state with the maximum posterior probability
+	      String szmaxinfilename = szsegmentdir+"/STATEBYLINE/"+szprefix+"_"+szcurrchrom+ChromHMM.SZSTATEBYLINEEXTENSION;
+
+	      //updated in v.1.11 to check for  gz extensions
+	      File f = new File (szmaxinfilename);
+	      File fgz = new File (szmaxinfilename+".gz");
+	      if ((!f.exists())&&(fgz.exists()))
+	      {
+	         szmaxinfilename = szmaxinfilename + ".gz";
+	      }
+ 	      BufferedReader brmax = Util.getBufferedReader(szmaxinfilename);// new BufferedReader(new FileReader(szmaxinfilename));
+	      //skip the header lines
+	      brmax.readLine();
+	      brmax.readLine();
+	      String szLineMax;
+	      int nline = 0;
+	      while ((szLineMax = brmax.readLine())!=null)
+	      {
+		  fullmax[nline] = Integer.parseInt(szLineMax)-1;
+		  nline++;
+	      }
+	      brmax.close(); 
+	  }
+	  else if (breadsegment)
+	  {
+
+	     BufferedReader brbed = null;
+	     //creates a file which has the maximum segmentation
+	     //we only have one file per cell type here
+	     String szcurrchrom = chromSeq[nordered_nseq];
+
+	     String szsegmentinfilename = szsegmentdir+"/" + szprefix+ChromHMM.SZSEGMENTEXTENSION;
+
+	     //updated in v.1.11 to check for  gz extensions
+	     File f = new File (szsegmentinfilename);
+	     File fgz = new File (szsegmentinfilename+".gz");
+	     if ((!f.exists())&&(fgz.exists()))
+	     {
+                szsegmentinfilename = szsegmentinfilename + ".gz";
+             }
+
+	     brbed = Util.getBufferedReader(szsegmentinfilename); // new BufferedReader(new FileReader(szsegmentinfilename));
+		 
+	     String szLineMax;
+	     while ((szLineMax = brbed.readLine())!=null)
+	     {
+		 StringTokenizer stchrom = new StringTokenizer(szLineMax,"\t");
+		 String szchrom = stchrom.nextToken();
+
+		 if (szchrom.equals(szcurrchrom))
+	         {
+		     int nbegin = Integer.parseInt(stchrom.nextToken())/nbinsize;
+		     int nend = (Integer.parseInt(stchrom.nextToken())-1)/nbinsize;
+		     int nstate = Integer.parseInt(stchrom.nextToken().substring(1))-1;		        		
+		     for (int nj = nbegin; nj <= nend; nj++)
+		     {
+			 fullmax[nj] = nstate;
+		     }
+		 }	      
+	     }
+	     brbed.close();		
+	  }
+
+
+          if (bscaleemissions)
+	  {
+	     for (int ni = 0; ni < nobserved; ni++) //emissionproducts.length
+	     {
+	        //going through each combination of marks
+		//if (traindataObservedSeqFlags_nseq[ni])
+		//{
+	        //this signature of marks is observed on the current chromosome so
+		//updating its emission probabilities
+                double[] emissionproducts_ni = emissionproducts[ni];
+		boolean[] traindataObservedValues_ni = traindataObservedValues[ni];
+		boolean[] traindataNotMissing_ni = traindataNotMissing[ni];
+
+		for (int ns = 0; ns < numstates; ns++)
+		{
+		   emissionproducts_ni[ns] = 1;
+		}
+
+		for (int nmod = 0; nmod < numdatasets; nmod++)
+		{
+		   for (int ns = 0; ns < numstates; ns++)
+		   {
+		      if ((traindataNotMissing_ni[nmod])&&(includemarks[nmod]))
+		      {
+		         //we are include this marks emission probability
+			 if (traindataObservedValues_ni[nmod])
+			 {
+		            emissionproducts_ni[ns] *= emissionprobs[ns][nmod][1];
+			 }
+		         else
+		         {
+		            emissionproducts_ni[ns] *= emissionprobs[ns][nmod][0];
+			 }
+		      }
+			 // otherwise treated as missing omitting from product
+		   }
+
+		   double dmaxval = 0;
+		   for (int ns = 0; ns < numstates; ns++)
+		   {
+		      if (emissionproducts_ni[ns] > dmaxval)
+		      {
+		         dmaxval = emissionproducts_ni[ns];
+		      }
+		   }
+
+		   if (dmaxval <= 0)
+		   {
+		      for (int ns = 0; ns < numstates; ns++)
+		      {
+		         emissionproducts_ni[ns] = 1;
+		      }
+		   }
+		   else
+		   {
+		      for (int ns = 0; ns < numstates; ns++)
+		      {
+		         emissionproducts_ni[ns]/= dmaxval;
+		      }
+		   }
+		}
+	     }
+	     //}
+	  }
+	  else
+	  {
+	     for (int ni = 0; ni < nobserved; ni++)
+             {
+	        //going through each combination of marks
+	        //if (traindataObservedSeqFlags_nseq[ni])
+	        //{
+	        //this signature of marks is observed on the current chromosome so
+	        //updating its emission probabilities
+	        double[] emissionproducts_ni = emissionproducts[ni];
+	        boolean[] traindataObservedValues_ni = traindataObservedValues[ni];
+	        boolean[] traindataNotMissing_ni = traindataNotMissing[ni];	
+	        boolean ballzero = true;
+	  
+	        for (int ns = 0; ns < numstates; ns++)
+	        {
+	           double dproduct = 1;
+	           double[][] emissionprobs_ni = emissionprobs[ns];
+
+		   //going through all marks
+		   for (int nmod = 0; nmod < numdatasets; nmod++)
+	           {
+		      if ((traindataNotMissing_ni[nmod])&&(includemarks[nmod]))
+		      {
+		         //we have observed the mark
+		         if (traindataObservedValues_ni[nmod])
+		         {
+		            dproduct *= emissionprobs_ni[nmod][1];
+		         }
+		         else 
+	                 {
+		            dproduct *= emissionprobs_ni[nmod][0];
+		         }
+		      }
+		         // otherwise treated as missing omitting from product
+		   }
+	           emissionproducts_ni[ns] = dproduct;
+
+		   if (dproduct >= EPSILONEMISSIONS)
+		   {
+	              ballzero = false;
+		   }
+		}
+
+		if (ballzero)
+	        {
+	      	   for (int ns = 0; ns < numstates; ns++)
+	           {
+		      emissionproducts_ni[ns] = EPSILONEMISSIONS;
+		   }
+		}
+	     }
+	  }
+
+	  //initial probability in state s is initial probability times emission probability at first position
+          double[] alpha_nt = alpha[0];
+	  double dscale = 0;
+	  double[] emissionproducts_nobserveindex =emissionproducts[traindataObservedIndex[0]];
+ 	  for (int ns = 0; ns < numstates; ns++)
+          {
+	      alpha_nt[ns] = probinit[ns] * emissionproducts_nobserveindex[ns];
+	      dscale += alpha_nt[ns];
+	  }
+	  scale[0] = dscale;
+
+	  //alpha_t(s)=P(o_0,...,o_t,x_t=s|lambda)
+          //converts the alpha terms to probabilities
+	  for (int ni = 0; ni < numstates; ni++)
+          {
+             alpha_nt[ni] /= dscale;
+	  }
+	
+          //stores in coltransitionprobs the transpose of transitionprobs
+          for (int ni = 0; ni < numstates; ni++)
+          {
+             double[] coltransitionprobs_ni = coltransitionprobs[ni];
+             for (int nj = 0; nj < numstates; nj++)
+	     {
+	        coltransitionprobs_ni[nj] = transitionprobs[nj][ni];
+	     }
+	  }
+
+          //forward step
+          int numtime_nseq = numtime[nordered_nseq];
+          for (int nt = 1; nt < numtime_nseq; nt++)
+          {
+             //the actual observed combination at position t	        
+	     double[] alpha_ntm1 = alpha[nt-1];
+	     alpha_nt = alpha[nt];
+	      
+	     dscale = 0;
+	     emissionproducts_nobserveindex = emissionproducts[traindataObservedIndex[nt]];
+	     for (int ns = 0; ns < numstates; ns++)
+	     {
+	        //going through each state		   
+
+	        int transitionprobsnumCol_ns = transitionprobsnumCol[ns];
+	        int[] transitionprobsindexCol_ns = transitionprobsindexCol[ns];
+	        double[] coltransitionprobs_ns = coltransitionprobs[ns];
+
+	        double dtempsum = 0;
+                if (transitionprobsnumCol_ns < nsparsecutoff)
+	        {
+		    //if it is sparse enough then it is worth the extra array indirection here
+	           for (int nj = 0; nj < transitionprobsnumCol_ns; nj++)
+	           {
+	               //for each next state computing inner sum of all previous alpha and the transition probability
+	               //for all non-zero transitions into the state
+			int nmappedindex = transitionprobsindexCol_ns[nj];
+			dtempsum += coltransitionprobs_ns[nmappedindex]*alpha_ntm1[nmappedindex];
+		   }
+		}
+	        else
+	        {
+                   for (int nj = 0; nj < numstates; nj++)
+	           {
+	              //for each next state computing inner sum of all previous alpha and the transition probability
+	              //for all transitions into the state
+		      dtempsum += coltransitionprobs_ns[nj]*alpha_ntm1[nj];
+		   }
+		}
+
+                //multiply the transition sum by the emission probability
+	        double dalphaval = dtempsum*emissionproducts_nobserveindex[ns];
+                alpha_nt[ns] = dalphaval;
+	        dscale += dalphaval;
+	     }
+
+	      //rescaling alpha
+              scale[nt] = dscale;
+              //scale_t(s)=P(o_0,...,o_t|lambda) summed over all states
+
+	      for (int ns = 0; ns < numstates; ns++)
+              {
+		  alpha_nt[ns] /= dscale;
+	      }      	       
+	  }
+	    
+          //backward step
+          //beta_t(s)=P(o_t+1,...,o_T|x_t=s,lambda)
+          int nlastindex = numtime_nseq-1;
+          double dinitval = 1.0/scale[nlastindex];
+          for (int ns = 0; ns < numstates; ns++)
+          {
+              beta_ntp1[ns] = dinitval;
+	  }
+	
+	  int nmappedindexouter;
+ 
+	  double ddenom = 0;	      
+
+          //gamma_nt - P(x=S| o_0,...,o_t)
+          //P(o_t+1,...,o_T|x_t=s,lambda) * P(o_0,...,o_t,x_t=s|lambda)
+	  double[] gamma_nt = gamma[nlastindex]; 
+          for (int ns = 0; ns < gamma_nt.length; ns++)
+          {
+	      double dval = alpha[nlastindex][ns]*beta_ntp1[ns];
+	      ddenom += dval;
+	      gamma_nt[ns] = dval;
+	  }
+
+          for (int ns = 0; ns < gamma_nt.length; ns++)
+          {
+	     gamma_nt[ns] /= ddenom;
+	  }
+
+
+          for (int nt = nlastindex - 1; nt >= 0; nt--)
+          {
+	      gamma_nt = gamma[nt];
+	      int ntp1 = (nt+1);
+		   
+	      double[] emissionproducts_ncombo_ntp1 = emissionproducts[traindataObservedIndex[ntp1]];		
+	      double dscale_nt = scale[nt];
+
+	      for (int ns = 0; ns < numstates; ns++)
+              {
+		  tempproductbetaemiss[ns] = beta_ntp1[ns]*emissionproducts_ncombo_ntp1[ns];
+	      }
+
+	      //double dscaleinv = 1.0/scale[nt];
+              //scale_t(s)=P(o_0,...,o_t|lambda) summed over all states
+	      for (int ni = 0; ni < numstates; ni++)
+	      {
+		  double dtempsum = 0;
+		  int[] transitionprobsindex_ni =  transitionprobsindex[ni];
+		  double[] transitionprobs_ni = transitionprobs[ni];
+		  int transitionprobsnum_ni = transitionprobsnum[ni];
+
+                  if (transitionprobsnum_ni < nsparsecutoff)
+	          {
+		    //if it is sparse enough then it is worth the extra array indirection here
+	             for (int nj = 0; nj < transitionprobsnum_ni; nj++)
+	             {
+	                //for each state summing over transition probability to state j, emission probablity in j at next step
+	                //and probability of observing the remaining sequence
+		        nmappedindexouter = transitionprobsindex_ni[nj];
+		        dtempsum += transitionprobs_ni[nmappedindexouter]*tempproductbetaemiss[nmappedindexouter];			
+		     }
+		  }
+	          else
+	          {
+                     for (int nj = 0; nj < numstates; nj++)
+	             {
+	                //for each state summing over transition probability to state j, emission probablity in j at next step
+	                //and probability of observing the remaining sequence
+		        dtempsum += transitionprobs_ni[nj]*tempproductbetaemiss[nj];
+		     }
+		  }
+
+		  double dratio = dtempsum/dscale_nt;
+		  if (dratio > Double.MAX_VALUE)
+		  {
+		      beta_nt[ni] = Double.MAX_VALUE;//dtempsum/dscale_nt;
+		  }
+		  else
+		  {
+		      beta_nt[ni] = dratio;// dtempsum/dscale_nt;
+		  }
+	      }
+
+	      ddenom = 0;		
+	      alpha_nt = alpha[nt];
+
+	       //gamma_nt - P(x=S| o_0,...,o_t)
+               //P(o_t+1,...,o_T|x_t=s,lambda) * P(o_0,...,o_t,xt=s|lambda)
+
+	       for (int ns = 0; ns < gamma_nt.length; ns++)
+               {
+		   double dval = alpha_nt[ns]*beta_nt[ns];
+
+		   ddenom += dval;
+		   gamma_nt[ns] = dval;
+	       }
+
+	       for (int ns = 0; ns < gamma_nt.length; ns++)
+               {
+		   gamma_nt[ns]/=ddenom;       		   
+	       }
+	       beta_ntp1 = beta_nt;		
+	  }
+
+
+          for (int nt = 0; nt < numtime_nseq; nt++)
+	  {
+
+             gamma_nt = gamma[nt];
+
+	     //handling the first line
+	     if ((breadsegment)||(breadstatebyline))
+	     {
+	        double dmaxval = 0;
+                int nmaxstate = 0;
+
+                for (int ns = 0; ns < gamma_nt.length; ns++)
+                {	   	
+	           double dprob = gamma_nt[ns];
+	     
+	           if (dprob > dmaxval)
+	           {
+		      //best one found so far 
+	              dmaxval = dprob;
+	              nmaxstate = ns;
+		   }
+		}
+
+		confusion[fullmax[nt]][nmaxstate]++;
+	     }
+	     else
+	     {
+		 double[] fullposterior_nt = fullposterior[nt];
+		 for (int nstate = 0; nstate < numstates; nstate++)
+		 {
+		     double dfullval = fullposterior_nt[nstate];
+		     double dpartialval = gamma_nt[nstate];
+		     if (dfullval >= dpartialval)
+		     {
+			 //assigned less to this state with the subset of the marks adding that amount to the decifict
+			 dstatesagree[nstate] += dpartialval;
+			 deficit[nstate] = dfullval - dpartialval;
+			 surplus[nstate] = 0;
+		     } 
+		     else
+		     {
+			 //we have a surplus of posterior assigned to this state with a subset of marks
+			 dstatesagree[nstate] += dfullval;
+			 surplus[nstate] = dpartialval - dfullval;
+			 deficit[nstate] = 0;
+		     }
+		 }
+
+		 double dsumdenom = 0;
+		 for (int nb = 0; nb < surplus.length; nb++)
+		 {
+		    dsumdenom += surplus[nb];
+		 }
+		 for (int nb = 0; nb < surplus.length; nb++)
+		 {
+	            //re-normalize surplus
+		    surplus[nb] /= dsumdenom;
+		 }
+
+	         for (int nb = 0; nb < confusion.length; nb++)
+		 {
+		    double[] confusion_nb = confusion[nb];
+		    if (deficit[nb] > 0)
+		    {
+		       double ddeficit_nb = deficit[nb];
+		       for (int nc = 0; nc < confusion_nb.length; nc++)
+		       {
+			   confusion_nb[nc] += ddeficit_nb*surplus[nc];
+                           //there is a deficit for state nb with the subset of marks
+			   //allocating it to the states that proportionally have additional posterior
+		       }
+		    }
+		 }		 		 
+	     	  
+	         for (int nb = 0; nb < confusion.length; nb++)
+	         {
+	            confusion[nb][nb] = dstatesagree[nb];
+		 }
+	     }
+	  }
+       }
+
+       System.out.println("Writing to file "+szconfusionfileprefix+".txt");
+       if (bprintimage)
+       {
+          System.out.println("Writing to file "+szconfusionfileprefix+".svg");
+          System.out.println("Writing to file "+szconfusionfileprefix+".png");
+       }
+       PrintWriter pwconfusion = new PrintWriter(new FileWriter(szconfusionfileprefix+".txt",bappend));
+       pwconfusion.print("EvalSubset\t"+szincludemarks);
+       pwconfusion.println("\t"+szdatasets);
+
+       for (int na = 0; na < confusion.length; na++)
+       {
+	   pwconfusion.print("\t"+chorder+(na+1));
+       }
+       pwconfusion.println();
+
+       for (int na = 0; na < confusion.length; na++)
+       {
+	   pwconfusion.print(""+chorder+(na+1));
+	   double ddenom = 0;
+           for (int nb = 0; nb < confusion[na].length; nb++)
+	   {
+	       ddenom += confusion[na][nb];
+	   }
+
+	   for (int nb = 0; nb < confusion[na].length; nb++)
+	   {
+	       normalizedconfusion[na][nb] = confusion[na][nb]/(double) ddenom;
+	       pwconfusion.print("\t"+nf.format(normalizedconfusion[na][nb]));
+	   }
+	   pwconfusion.println();
+       }
+       pwconfusion.close();
+       if (bprintimage)
+       {
+          printConfusionImage(normalizedconfusion, szconfusionfileprefix, szincludemarks);
+       }
+    }
+
     ///////////////////////////////////////////////////////////////////////////////////////////
 
     /**
@@ -3550,7 +4464,8 @@ public class ChromHMM
               System.out.println("reading\t"+szinputdir+" "+chromfiles[nordered_nseq]);
 	   }
 	   BufferedReader br = Util.getBufferedReader(szinputdir+"/"+chromfiles[nordered_nseq]); //fixed bug was chromfiles[nseq]
-           String szLine = br.readLine(); //first line tells cell type and chromosome
+           String szLine; 
+           br.readLine(); //first line tells cell type and chromosome
 	   br.readLine();//flush mark header
 	   ArrayList aldata = new ArrayList();
 	   while ((szLine = br.readLine())!=null)
@@ -3603,7 +4518,7 @@ public class ChromHMM
        	       {
 	          //System.out.println(szmappingbyte.length());
 	          //storing a mapping from observed byte string to an integer index in alFlags and alObserved
-		  hmObserved.put(theBigInteger, new Integer(nobserved));
+		  hmObserved.put(theBigInteger, Integer.valueOf(nobserved));
 
 		  //saving this observed index
 		  traindataObservedIndex[nrow] = nobserved;
@@ -3735,57 +4650,125 @@ public class ChromHMM
 	  }
 
 
-	  for (int ni = 0; ni < nobserved; ni++)
-          {
-	     //going through each combination of marks
-	     //if (traindataObservedSeqFlags_nseq[ni])
-	     //{
+
+          if (bscaleemissions)
+	  {
+	     for (int ni = 0; ni < nobserved; ni++)
+	     {
+	        //going through each combination of marks
+		//if (traindataObservedSeqFlags_nseq[ni])
+	        //{
+		//this signature of marks is observed on the current chromosome so
+		//updating its emission probabilities
+		double[] emissionproducts_ni = emissionproducts[ni];
+	        boolean[] traindataObservedValues_ni = traindataObservedValues[ni];
+		boolean[] traindataNotMissing_ni = traindataNotMissing[ni];
+
+		for (int ns = 0; ns < numstates; ns++)
+		{
+		   emissionproducts_ni[ns] = 1;
+		}
+
+		for (int nmod = 0; nmod < numdatasets; nmod++)
+		{
+		   for (int ns = 0; ns < numstates; ns++)
+		   {
+		      if (traindataNotMissing_ni[nmod])
+		      {
+		         //we are include this marks emission probability
+			 if (traindataObservedValues_ni[nmod])
+			 {
+			    emissionproducts_ni[ns] *= emissionprobs[ns][nmod][1];
+			 }
+			 else
+			 {
+			    emissionproducts_ni[ns] *= emissionprobs[ns][nmod][0];
+			 }
+                      }
+		      // otherwise treated as missing omitting from product
+                   }
+
+                   double dmaxval = 0;
+                   for (int ns = 0; ns < numstates; ns++)
+		   {
+		      if (emissionproducts_ni[ns] > dmaxval)
+		      {
+		         dmaxval = emissionproducts_ni[ns];
+		      }
+		   }
+
+
+                   if (dmaxval <= 0)//EPSILONEMISSIONS)
+		   {
+		      for (int ns = 0; ns < numstates; ns++)
+		      {
+		         emissionproducts_ni[ns] = 1;
+		      }
+		   }
+		   else
+		   {
+		      for (int ns = 0; ns < numstates; ns++)
+		      {
+		         emissionproducts_ni[ns]/= dmaxval;
+		      }
+		   }
+
+                }
+             }
+          }
+	  else
+	  {
+	     for (int ni = 0; ni < nobserved; ni++)
+             {
+	        //going through each combination of marks
+	        //if (traindataObservedSeqFlags_nseq[ni])
+	        //{
 	        //this signature of marks is observed on the current chromosome so
 	        //updating its emission probabilities
-	      double[] emissionproducts_ni = emissionproducts[ni];
-	      boolean[] traindataObservedValues_ni = traindataObservedValues[ni];
-	      boolean[] traindataNotMissing_ni = traindataNotMissing[ni];		  
+	        double[] emissionproducts_ni = emissionproducts[ni];
+	        boolean[] traindataObservedValues_ni = traindataObservedValues[ni];
+	        boolean[] traindataNotMissing_ni = traindataNotMissing[ni];		  
 
-	      boolean ballzero = true;
+	        boolean ballzero = true;
 
-	      for (int ns = 0; ns < numstates; ns++)
-	      {
-	         double dproduct = 1;
-	         double[][] emissionprobs_ni = emissionprobs[ns];
+	        for (int ns = 0; ns < numstates; ns++)
+	        {
+	           double dproduct = 1;
+	           double[][] emissionprobs_ni = emissionprobs[ns];
 
-		 //going through all marks
-	         for (int nmod = 0; nmod < numdatasets; nmod++)
-	         {
-		    if (traindataNotMissing_ni[nmod])
-		    {
-		       //we have observed the mark
-		       if (traindataObservedValues_ni[nmod])
-		       {
-		          dproduct *= emissionprobs_ni[nmod][1];
-		       }
-		       else 
-	               {
-		          dproduct *= emissionprobs_ni[nmod][0];
-		       }
-		    }
+		   //going through all marks
+	           for (int nmod = 0; nmod < numdatasets; nmod++)
+	           {
+		      if (traindataNotMissing_ni[nmod])
+		      {
+		         //we have observed the mark
+		         if (traindataObservedValues_ni[nmod])
+		         {
+		            dproduct *= emissionprobs_ni[nmod][1];
+		         }
+		         else 
+	                 {
+		            dproduct *= emissionprobs_ni[nmod][0];
+		         }
+		      }
 		      // otherwise treated as missing omitting from product
-		 }
-	         emissionproducts_ni[ns] = dproduct;
+		   }
+	           emissionproducts_ni[ns] = dproduct;
 
-		 if (dproduct >= EPSILONEMISSIONS)
-		 {
-	             ballzero = false;
-		 }
-	      }
-
-	      if (ballzero)
-	      {
-	         for (int ns = 0; ns < numstates; ns++)
-	         {
-	       	    emissionproducts_ni[ns] = EPSILONEMISSIONS;
-		 }
-	      }
-
+		   if (dproduct >= EPSILONEMISSIONS)
+		   {
+	              ballzero = false;
+		   }
+		}
+	     
+	        if (ballzero)
+	        {
+	           for (int ns = 0; ns < numstates; ns++)
+	           {
+	              emissionproducts_ni[ns] = EPSILONEMISSIONS;
+		   }
+		}
+	     }
 	  }
 	  
 
@@ -4275,57 +5258,123 @@ public class ChromHMM
 	  }
 
 
-	  for (int ni = 0; ni < emissionproducts.length; ni++)
-          {
-	     //going through each combination of marks
-	     if (traindataObservedSeqFlags_nseq[ni])
+          if (bscaleemissions)
+	  {
+	     for (int ni = 0; ni < emissionproducts.length; ni++)
 	     {
-	        //this signature of marks is observed on the current chromosome so
-	        //updating its emission probabilities
-	        double[] emissionproducts_ni = emissionproducts[ni];
-	        boolean[] traindataObservedValues_ni = traindataObservedValues[ni];
-	        boolean[] traindataNotMissing_ni = traindataNotMissing[ni];		  
+	        //going through each combination of marks
+		if (traindataObservedSeqFlags_nseq[ni])
+		{
+		   //this signature of marks is observed on the current chromosome so
+		   //updating its emission probabilities
+		   double[] emissionproducts_ni = emissionproducts[ni];
+		   boolean[] traindataObservedValues_ni = traindataObservedValues[ni];
+		   boolean[] traindataNotMissing_ni = traindataNotMissing[ni];
 
-		boolean ballzero = true;
+		   for (int ns = 0; ns < numstates; ns++)
+		   {
+		      emissionproducts_ni[ns] = 1;
+		   }
 
-	        for (int ns = 0; ns < numstates; ns++)
-	        {
-	           double dproduct = 1;
-	           double[][] emissionprobs_ni = emissionprobs[ns];
-
-		   //going through all marks
 		   for (int nmod = 0; nmod < numdatasets; nmod++)
-	           {
-		      if (traindataNotMissing_ni[nmod])
+		   {
+		      for (int ns = 0; ns < numstates; ns++)
 		      {
-			  //we have observed the mark
-		         if (traindataObservedValues_ni[nmod])
-		         {
-		            dproduct *= emissionprobs_ni[nmod][1];
-		         }
-		         else 
+		         if (traindataNotMissing_ni[nmod])
+			 {
+			    //we are include this marks emission probability
+			    if (traindataObservedValues_ni[nmod])
+			    {
+			       emissionproducts_ni[ns] *= emissionprobs[ns][nmod][1];
+			    }
+			    else
+			    {
+				emissionproducts_ni[ns] *= emissionprobs[ns][nmod][0];
+			    }
+			 }
+			 // otherwise treated as missing omitting from product
+		      }
+
+		      double dmaxval = 0;
+		      for (int ns = 0; ns < numstates; ns++)
+		      {
+		         if (emissionproducts_ni[ns] > dmaxval)
+			 {
+			    dmaxval = emissionproducts_ni[ns];
+			 }
+		      }
+
+		      if (dmaxval <=0)
+		      {
+		         for (int ns = 0; ns < numstates; ns++)
 	                 {
-		            dproduct *= emissionprobs_ni[nmod][0];
+			    emissionproducts_ni[ns] = 1;
 		         }
 		      }
-		      // otherwise treated as missing omitting from product
+		      else
+		      {
+		         for (int ns = 0; ns < numstates; ns++)
+	                 {
+			    emissionproducts_ni[ns]/= dmaxval;
+		         }
+		      }
 		   }
-	           emissionproducts_ni[ns] = dproduct;
-
-		   if (dproduct >= EPSILONEMISSIONS)
-		   {
-		      ballzero = false;
-	           }
 		}
-
-		if (ballzero)
+	     }
+	  }
+	  else
+	  {
+	     for (int ni = 0; ni < emissionproducts.length; ni++)
+             {
+	        //going through each combination of marks
+	        if (traindataObservedSeqFlags_nseq[ni])
 	        {
-	      	   for (int ns = 0; ns < numstates; ns++)
-	           {
-	       	      emissionproducts_ni[ns] = EPSILONEMISSIONS;
-		   }
-		}
+	           //this signature of marks is observed on the current chromosome so
+	           //updating its emission probabilities
+	           double[] emissionproducts_ni = emissionproducts[ni];
+	           boolean[] traindataObservedValues_ni = traindataObservedValues[ni];
+	           boolean[] traindataNotMissing_ni = traindataNotMissing[ni];		  
 
+		   boolean ballzero = true;
+
+	          for (int ns = 0; ns < numstates; ns++)
+	          {
+	             double dproduct = 1;
+	             double[][] emissionprobs_ni = emissionprobs[ns];
+
+		     //going through all marks
+		     for (int nmod = 0; nmod < numdatasets; nmod++)
+	             {
+		        if (traindataNotMissing_ni[nmod])
+		        {
+			   //we have observed the mark
+		           if (traindataObservedValues_ni[nmod])
+		           {
+		              dproduct *= emissionprobs_ni[nmod][1];
+			   }
+		           else 
+	                   {
+		              dproduct *= emissionprobs_ni[nmod][0];
+			   }
+			}
+		        // otherwise treated as missing omitting from product
+		     }
+	             emissionproducts_ni[ns] = dproduct;
+
+		     if (dproduct >= EPSILONEMISSIONS)
+		     {
+		        ballzero = false;
+		     }
+		  }
+
+		  if (ballzero)
+	          {
+	      	     for (int ns = 0; ns < numstates; ns++)
+	             {
+	       	        emissionproducts_ni[ns] = EPSILONEMISSIONS;
+		     }
+		  }
+		}
 	     }
 	  }
 
@@ -4707,6 +5756,14 @@ public class ChromHMM
        //stores the emission probability for the i^th combination of marks in the j^th state
        double[][] emissionproducts = new double[nmaxtime][numstates]; //changed to maxtime here
 
+       //stores the scale for the emission probability for the i^th combination of marks
+       double[] emissionproducts_scale = null;
+
+       if (bscaleemissions)
+       {
+          emissionproducts_scale = new double[nmaxtime];
+       }
+
        //stores temporary product terms
        double[] tempproductbetaemiss = new double[numstates];
 
@@ -4780,7 +5837,8 @@ public class ChromHMM
                  System.out.println("reading\t"+szinputdir+" "+chromfiles[nseq]);
 	      }
 	      BufferedReader br = Util.getBufferedReader(szinputdir+"/"+chromfiles[nseq]);
-              String szLine = br.readLine(); //first line tells cell type and chromosome
+              String szLine; 
+              br.readLine(); //first line tells cell type and chromosome
 	      br.readLine();//flush mark header
 	      ArrayList aldata = new ArrayList();
 	      while ((szLine = br.readLine())!=null)
@@ -4833,7 +5891,7 @@ public class ChromHMM
        	         {
 		    //System.out.println(szmappingbyte.length());
 		    //storing a mapping from observed byte string to an integer index in alFlags and alObserved
-		     hmObserved.put(theBigInteger, new Integer(nobserved));
+		     hmObserved.put(theBigInteger, Integer.valueOf(nobserved));
 
 		    //saving this observed index
 		    traindataObservedIndex[nrow] = nobserved;
@@ -4946,57 +6004,124 @@ public class ChromHMM
 	     }
 
 
-	     //for (int ni = 0; ni < emissionproducts.length; ni++)
-	     for (int ni = 0; ni < nobserved; ni++)
+             if (bscaleemissions)
 	     {
-	        //going through each combination of marks
-	        //if (traindataObservedSeqFlags_nseq[ni])
-		//{
-	        //this signature of marks is observed on the current chromosome so
-       	        //updating its emission probabilities
-       	        double[] emissionproducts_ni = emissionproducts[ni];
-      	        boolean[] traindataObservedValues_ni = traindataObservedValues[ni];
-       	        boolean[] traindataNotMissing_ni = traindataNotMissing[ni];		  
-
-	        boolean ballzero = true;
-
-	        for (int ns = 0; ns < numstates; ns++)
+	        //for (int ni = 0; ni < emissionproducts.length; ni++)
+		for (int ni = 0; ni < nobserved; ni++)
 	        {
-	           double dproduct = 1;
-	           double[][] emissionprobs_ns = emissionprobs[ns];
+	           //going through each combination of marks
+		   //if (traindataObservedSeqFlags_nseq[ni])
+		   //{
+		   //this signature of marks is observed on the current chromosome so
+		   //updating its emission probabilities
+		   double[] emissionproducts_ni = emissionproducts[ni];
+		   boolean[] traindataObservedValues_ni = traindataObservedValues[ni];
+		   boolean[] traindataNotMissing_ni = traindataNotMissing[ni];
+
+		   for (int ns = 0; ns < numstates; ns++)
+		   {
+		       emissionproducts_ni[ns] = 1;
+		   }
+		   emissionproducts_scale[ni] = 0;
 
 		   for (int nmod = 0; nmod < numdatasets; nmod++)
-	           {
-		      if (traindataNotMissing_ni[nmod])
-	      	      {
-		         //we are include this marks emission probability
-		         if (traindataObservedValues_ni[nmod])
-		         {
-		      	    //System.out.println("positive\t"+ns+"\t"+nmod+"\t1\t"+emissionprobs_ns[nmod][1]);
-		            dproduct *= emissionprobs_ns[nmod][1];
-		         }
-		         else 
-		         {
-		      	    ///System.out.println("negative\t"+ns+"\t"+nmod+"\t0\t"+emissionprobs_ns[nmod][0]);
-		            dproduct *= emissionprobs_ns[nmod][0];
-		         }
-		      }
-			   // otherwise treated as missing omitting from product
-		   }
-		   //System.out.println(ns+"\t"+dproduct);
-		   emissionproducts_ni[ns] = dproduct;
-
-		   if (dproduct >= EPSILONEMISSIONS)
 		   {
-	              ballzero = false;
+		      for (int ns = 0; ns < numstates; ns++)
+		      {
+		         if (traindataNotMissing_ni[nmod])
+			 {
+			    //we are include this marks emission probability
+			    if (traindataObservedValues_ni[nmod])
+			    {
+			       emissionproducts_ni[ns] *= emissionprobs[ns][nmod][1];
+			    }
+			 }
+					     // otherwise treated as missing omitting from product
+		      }
+
+		      double dmaxval = 0;
+		      for (int ns = 0; ns < numstates; ns++)
+		      {
+		         if (emissionproducts_ni[ns] > dmaxval)
+			 {
+			     dmaxval = emissionproducts_ni[ns];
+			 }
+		      }
+
+		      if (dmaxval <= 0)//EPSILONEMISSIONS)
+		      {
+		         for (int ns = 0; ns < numstates; ns++)
+		         {
+			    emissionproducts_ni[ns] = 1;
+			 }
+			 //approximating log-likelihood
+                         emissionproducts_scale[ni] += Math.log(EPSILONEMISSIONS);
+		      }
+		      else
+		      {
+		         for (int ns = 0; ns < numstates; ns++)
+		         {
+			    emissionproducts_ni[ns]/= dmaxval;
+		         }
+		         emissionproducts_scale[ni] += Math.log(dmaxval);
+		      }
 		   }
 		}
-
-		if (ballzero)
+	     }
+	     else
+	     {
+	        //for (int ni = 0; ni < emissionproducts.length; ni++)
+	        for (int ni = 0; ni < nobserved; ni++)
 	        {
+	           //going through each combination of marks
+	           //if (traindataObservedSeqFlags_nseq[ni])
+		   //{
+	           //this signature of marks is observed on the current chromosome so
+       	           //updating its emission probabilities
+       	           double[] emissionproducts_ni = emissionproducts[ni];
+      	           boolean[] traindataObservedValues_ni = traindataObservedValues[ni];
+       	           boolean[] traindataNotMissing_ni = traindataNotMissing[ni];		  
+
+	           boolean ballzero = true;
+
 	           for (int ns = 0; ns < numstates; ns++)
-		   {
-		      emissionproducts_ni[ns] = EPSILONEMISSIONS;
+	           {
+	              double dproduct = 1;
+	              double[][] emissionprobs_ns = emissionprobs[ns];
+
+		      for (int nmod = 0; nmod < numdatasets; nmod++)
+	              {
+		         if (traindataNotMissing_ni[nmod])
+	      	         {
+		            //we are include this marks emission probability
+		            if (traindataObservedValues_ni[nmod])
+		            {
+		      	       //System.out.println("positive\t"+ns+"\t"+nmod+"\t1\t"+emissionprobs_ns[nmod][1]);
+		               dproduct *= emissionprobs_ns[nmod][1];
+		            }
+		            else 
+		            {
+		      	       ///System.out.println("negative\t"+ns+"\t"+nmod+"\t0\t"+emissionprobs_ns[nmod][0]);
+		               dproduct *= emissionprobs_ns[nmod][0];
+			    }
+			 }
+			   // otherwise treated as missing omitting from product
+		      }
+		      //System.out.println(ns+"\t"+dproduct);
+		      emissionproducts_ni[ns] = dproduct;
+
+		      if (dproduct >= EPSILONEMISSIONS)
+		      {
+	                 ballzero = false;
+		      }
+		   }
+
+		   if (ballzero)
+	           {
+	              for (int ns = 0; ns < numstates; ns++)
+		      {
+		         emissionproducts_ni[ns] = EPSILONEMISSIONS;
+		      }
 		   }
 		}
 	     }
@@ -5019,6 +6144,11 @@ public class ChromHMM
 		 alpha_nt[ni] /= dscale;
 	     }
 	     dloglike += Math.log(dscale); 
+
+             if (bscaleemissions)
+	     {
+	        dloglike += emissionproducts_scale[traindataObservedIndex[0]];
+	     }
 
 	     //stores in coltransitionprobs the transpose of transitionprobs
 	     for (int ni = 0; ni < numstates; ni++)
@@ -5086,6 +6216,11 @@ public class ChromHMM
 		}
 
       	        dloglike += Math.log(dscale);
+
+                if (bscaleemissions)
+		{
+		   dloglike += emissionproducts_scale[traindataObservedIndex[nt]];
+	        }
 	     }
 	    
 	     //backward step
@@ -5333,6 +6468,12 @@ public class ChromHMM
 	           {
 	              dgammainitsum += gammainitstore[nitr][ni];
 	           }
+
+	           if (bpseudo)
+	           {
+		      dgammainitsum++;
+	           }
+
 		   probinit[ni] = dgammainitsum;
                    dsum += dgammainitsum;
 		}
@@ -5360,6 +6501,13 @@ public class ChromHMM
 	              {
 	                 dsxistoreitr += sxistore[nitr][ni][ntransitionprobsindex_ni_nj];
 		      }
+
+		      if (bpseudo)
+		      {
+		         //pseudo-count to avoid divide by zero
+		         dsxistoreitr++;
+		      }
+
 		      transitionprobs_ni[ntransitionprobsindex_ni_nj] = dsxistoreitr;
 
 	              dsum += dsxistoreitr;
@@ -5450,6 +6598,12 @@ public class ChromHMM
 	                 {
 	                    emissionprobs_ns_nmark[nbucket] += gammaksumstore[nitr][ns][nmark][nbucket];
 		         }
+
+			 if (bpseudo)
+			 {
+			    emissionprobs_ns_nmark[nbucket]++;
+			 }
+
 		         dgammadenom += emissionprobs_ns_nmark[nbucket];
 		      }
 
@@ -5569,6 +6723,14 @@ public class ChromHMM
        //stores the emission probability for the i^th combination of marks in the j^th state
        double[][] emissionproducts = new double[traindataObservedValues.length][numstates];
 
+       //stores the scale for the emission probability for the i^th combination of marks
+       double[] emissionproducts_scale = null;
+
+       if (bscaleemissions)
+       {
+          emissionproducts_scale = new double[traindataObservedValues.length];
+       }
+
        //stores temporary product terms
        double[] tempproductbetaemiss = new double[numstates];
 
@@ -5658,57 +6820,127 @@ public class ChromHMM
 	        }
 	     }
 
-
-	     for (int ni = 0; ni < emissionproducts.length; ni++)
+             if (bscaleemissions)
 	     {
-	        //going through each combination of marks
-	        if (traindataObservedSeqFlags_nseq[ni])
+	        for (int ni = 0; ni < emissionproducts.length; ni++)
 		{
-		   //this signature of marks is observed on the current chromosome so
-		   //updating its emission probabilities
-		   double[] emissionproducts_ni = emissionproducts[ni];
-		   boolean[] traindataObservedValues_ni = traindataObservedValues[ni];
-		   boolean[] traindataNotMissing_ni = traindataNotMissing[ni];		  
-
-		   boolean ballzero = true;
-
-	           for (int ns = 0; ns < numstates; ns++)
-	           {
-		      double dproduct = 1;
-		      double[][] emissionprobs_ns = emissionprobs[ns];
-
-		      for (int nmod = 0; nmod < numdatasets; nmod++)
-		      {
-			 if (traindataNotMissing_ni[nmod])
-			 {
-			     //we are include this marks emission probability
-		            if (traindataObservedValues_ni[nmod])
-		            {
-				//System.out.println("positive\t"+ns+"\t"+nmod+"\t1\t"+emissionprobs_ns[nmod][1]);
-		               dproduct *= emissionprobs_ns[nmod][1];
-			    }
-		            else 
-		            {
-				///System.out.println("negative\t"+ns+"\t"+nmod+"\t0\t"+emissionprobs_ns[nmod][0]);
-		               dproduct *= emissionprobs_ns[nmod][0];
-			    }
-			 }
-			   // otherwise treated as missing omitting from product
-		      }
-		      //System.out.println(ns+"\t"+dproduct);
-		      emissionproducts_ni[ns] = dproduct;
-
-		      if (dproduct >= EPSILONEMISSIONS)
-		      {
-		         ballzero = false;
-		      }
-		   }
-
-		   if (ballzero)
+		   //going through each combination of marks
+		   if (traindataObservedSeqFlags_nseq[ni])
 		   {
-		      for (int ns = 0; ns < numstates; ns++)
+		      //this signature of marks is observed on the current chromosome so
+		      //updating its emission probabilities
+		       double[] emissionproducts_ni = emissionproducts[ni];
+		       boolean[] traindataObservedValues_ni = traindataObservedValues[ni];
+		       boolean[] traindataNotMissing_ni = traindataNotMissing[ni];
+
+		       for (int ns = 0; ns < numstates; ns++)
+		       {
+	       	          emissionproducts_ni[ns] = 1;
+		       }
+		       emissionproducts_scale[ni] = 0;
+
+		       for (int nmod = 0; nmod < numdatasets; nmod++)
+		       {
+		          for (int ns = 0; ns < numstates; ns++)
+			  {
+			     if (traindataNotMissing_ni[nmod])
+			     {
+			        //we are include this marks emission probability
+				if (traindataObservedValues_ni[nmod])
+			        {
+				   emissionproducts_ni[ns] *= emissionprobs[ns][nmod][1];
+				}
+				else
+				{
+				    emissionproducts_ni[ns] *= emissionprobs[ns][nmod][0];
+				}
+			     }
+			     // otherwise treated as missing omitting from product
+			  }
+
+			  double dmaxval = 0;
+			  for (int ns = 0; ns < numstates; ns++)
+			  {
+			     if (emissionproducts_ni[ns] > dmaxval)
+			     {
+			        dmaxval = emissionproducts_ni[ns];
+			     }
+			  }
+
+			  if (dmaxval <= 0)//EPSILONEMISSIONS)
+			  {
+			     for (int ns = 0; ns < numstates; ns++)
+			     {
+			        emissionproducts_ni[ns] = 1;
+			     }
+			     //approximating log-likelihood
+			     emissionproducts_scale[ni] += Math.log(EPSILONEMISSIONS);
+			  }
+			  else
+			  {
+			     for (int ns = 0; ns < numstates; ns++)
+			     {
+			        emissionproducts_ni[ns]/= dmaxval;
+			     }
+			     emissionproducts_scale[ni] += Math.log(dmaxval);
+			  }
+		       }
+		   }
+		}
+	     }
+	     else
+	     {
+	        for (int ni = 0; ni < emissionproducts.length; ni++)
+	        {
+	           //going through each combination of marks
+	           if (traindataObservedSeqFlags_nseq[ni])
+		   {
+		      //this signature of marks is observed on the current chromosome so
+		      //updating its emission probabilities
+		      double[] emissionproducts_ni = emissionproducts[ni];
+		      boolean[] traindataObservedValues_ni = traindataObservedValues[ni];
+		      boolean[] traindataNotMissing_ni = traindataNotMissing[ni];		  
+
+		      boolean ballzero = true;
+
+	              for (int ns = 0; ns < numstates; ns++)
+	              {
+		         double dproduct = 1;
+		         double[][] emissionprobs_ns = emissionprobs[ns];
+
+		         for (int nmod = 0; nmod < numdatasets; nmod++)
+		         {
+			    if (traindataNotMissing_ni[nmod])
+			    {
+			       //we are include this marks emission probability
+		               if (traindataObservedValues_ni[nmod])
+		               {
+				  //System.out.println("positive\t"+ns+"\t"+nmod+"\t1\t"+emissionprobs_ns[nmod][1]);
+		                  dproduct *= emissionprobs_ns[nmod][1];
+			       }
+		               else 
+		               {
+				  ///System.out.println("negative\t"+ns+"\t"+nmod+"\t0\t"+emissionprobs_ns[nmod][0]);
+		                  dproduct *= emissionprobs_ns[nmod][0];
+			       }
+			    }
+			    // otherwise treated as missing omitting from product
+			 }
+		         //System.out.println(ns+"\t"+dproduct);
+		         emissionproducts_ni[ns] = dproduct;
+
+		         if (dproduct >= EPSILONEMISSIONS)
+		         {
+		            ballzero = false;
+			 }
+		      }
+
+		      if (ballzero)
 		      {
-			  emissionproducts_ni[ns] = EPSILONEMISSIONS;
+		         for (int ns = 0; ns < numstates; ns++)
+		         {
+			    emissionproducts_ni[ns] = EPSILONEMISSIONS;
+			 }
 		      }
 		   }
 		}
@@ -5732,6 +6964,11 @@ public class ChromHMM
 		 alpha_nt[ni] /= dscale;
 	     }
 	     dloglike += Math.log(dscale); 
+
+             if (bscaleemissions)
+	     {
+	        dloglike += emissionproducts_scale[traindataObservedIndex_nseq[0]];
+       	     }
 
 	     //stores in coltransitionprobs the transpose of transitionprobs
 	     for (int ni = 0; ni < numstates; ni++)
@@ -5799,6 +7036,12 @@ public class ChromHMM
 		}
 
       	        dloglike += Math.log(dscale);
+
+                if (bscaleemissions)
+		{
+		   dloglike += emissionproducts_scale[traindataObservedIndex_nseq[nt]];
+	        }
+
 	     }
 	    
 	     //backward step
@@ -6047,6 +7290,12 @@ public class ChromHMM
 	           {
 	              dgammainitsum += gammainitstore[nitr][ni];
 	           }
+
+	           if (bpseudo)
+	           {
+		      dgammainitsum++;
+		   }
+
 		   probinit[ni] = dgammainitsum;
                    dsum += dgammainitsum;
 		}
@@ -6074,6 +7323,13 @@ public class ChromHMM
 	              {
 	                 dsxistoreitr += sxistore[nitr][ni][ntransitionprobsindex_ni_nj];
 		      }
+
+		      if (bpseudo)
+		      {
+		         //pseudo-count to avoid divide by zero
+		         dsxistoreitr++;
+		      }
+
 		      transitionprobs_ni[ntransitionprobsindex_ni_nj] = dsxistoreitr;
 
 	              dsum += dsxistoreitr;
@@ -6163,6 +7419,11 @@ public class ChromHMM
 	                 for (int nitr = 0; nitr < traindataObservedIndex.length; nitr++)
 	                 {
 	                    emissionprobs_ns_nmark[nbucket] += gammaksumstore[nitr][ns][nmark][nbucket];
+		         }
+
+		         if (bpseudo)
+		         {
+			    emissionprobs_ns_nmark[nbucket]++;
 		         }
 		         dgammadenom += emissionprobs_ns_nmark[nbucket];
 		      }
@@ -6259,6 +7520,7 @@ public class ChromHMM
 	double[][][] sumforsxi_Pool;
 	double[] dloglikeA;
 	int nseq;
+        double[] emissionproducts_scale;
 
 	NewThread(int[] traindataObservedIndex_nseq,
 		  boolean[] traindataObservedSeqFlags_nseq,
@@ -6279,7 +7541,8 @@ public class ChromHMM
 		  int nsparsecutoff,
 		  int nsparsecutofflooser,
 		  double[] dloglikeA,
-		  int nseq)
+		  int nseq,
+		  double[] emissionproducts_scale)
         {
 	    this.traindataObservedIndex_nseq = traindataObservedIndex_nseq;
 	    this.traindataObservedSeqFlags_nseq = traindataObservedSeqFlags_nseq;
@@ -6301,6 +7564,7 @@ public class ChromHMM
 	    this.sumforsxi_Pool = sumforsxi_Pool;
 	    this.dloglikeA = dloglikeA;
 	    this.nseq = nseq;
+	    this.emissionproducts_scale = emissionproducts_scale;
 	}
 
 	private int slotavailable()
@@ -6419,6 +7683,11 @@ public class ChromHMM
 	   }
 	   dloglikeseq += Math.log(dscale); 
 
+           if (bscaleemissions)
+	   {
+	      dloglikeseq += emissionproducts_scale[traindataObservedIndex_nseq[0]];
+	   }
+
 	   //forward step
 	   //int numtime_nseq = numtime[nseq];
 	   for (int nt = 1; nt < numtime_nseq; nt++)
@@ -6473,6 +7742,12 @@ public class ChromHMM
                  alpha_nt[ns] /= dscale;
               }
       	      dloglikeseq += Math.log(dscale);
+
+              if (bscaleemissions)
+	      {
+	         dloglikeseq += emissionproducts_scale[traindataObservedIndex_nseq[nt]];
+	      }
+
 	   }
 	    
 	   //backward step
@@ -6744,6 +8019,8 @@ public class ChromHMM
         boolean[][][] traindataObservedValues_Pool;
         boolean[][][] traindataNotMissing_Pool;
 	double[][][] emissionproducts_Pool;
+        double[][] emissionproducts_scale_Pool;
+
 
 	NewThreadWithLoad(
                           String chromfiles_nseq,
@@ -6768,9 +8045,11 @@ public class ChromHMM
 		  int nsparsecutoff,
 		  int nsparsecutofflooser,
 		  double[] dloglikeA,
-		  int nseq)
+		  int nseq,
+                  double[][] emissionproducts_scale_Pool)
         {
 	    this.emissionproducts_Pool = emissionproducts_Pool;
+            this.emissionproducts_scale_Pool = emissionproducts_scale_Pool;
 	    this.chromfiles_nseq = chromfiles_nseq;
 	    this.traindataObservedIndex_Pool = traindataObservedIndex_Pool;
 	    this.traindataObservedValues_Pool = traindataObservedValues_Pool;
@@ -6842,7 +8121,8 @@ public class ChromHMM
 		  beta_nt_Pool[nprocess],
 		  beta_ntp1_Pool[nprocess],
 		  tempproductbetaemiss_Pool[nprocess],
-		  sumforsxi_Pool[nprocess]);
+		  sumforsxi_Pool[nprocess],
+                  emissionproducts_scale_Pool[nprocess]);
 	    }
 	    catch (IOException ioex)
 	    {
@@ -6869,7 +8149,8 @@ public class ChromHMM
 		  double[] beta_nt,
 		  double[] beta_ntp1,
 		  double[] tempproductbetaemiss,
-		  double[][] sumforsxi) throws IOException
+		  double[][] sumforsxi,
+                  double[] emissionproducts_scale) throws IOException
 	{ 
 	      //going through each sequence
 
@@ -6886,7 +8167,8 @@ public class ChromHMM
 	      }
 
 	      BufferedReader br = Util.getBufferedReader(szinputdir+"/"+chromfiles_nseq);
-              String szLine = br.readLine(); //first line tells cell type and chromosome
+              String szLine; 
+              br.readLine(); //first line tells cell type and chromosome
 	      br.readLine();//flush mark header
 	      ArrayList aldata = new ArrayList();
 	      while ((szLine = br.readLine())!=null)
@@ -6939,7 +8221,7 @@ public class ChromHMM
        	         {
 		    //System.out.println(szmappingbyte.length());
 		    //storing a mapping from observed byte string to an integer index in alFlags and alObserved
-		     hmObserved.put(theBigInteger, new Integer(nobserved));
+		     hmObserved.put(theBigInteger, Integer.valueOf(nobserved));
 
 		    //saving this observed index
 		    traindataObservedIndex[nrow] = nobserved;
@@ -7005,57 +8287,127 @@ public class ChromHMM
 		}
 	     }     
 
-
-	     for (int ni = 0; ni < nobserved; ni++)
+	     if (bscaleemissions)
 	     {
-	        //going through each combination of marks
-	        //if (traindataObservedSeqFlags_nseq[ni])
-		//{
-	        //this signature of marks is observed on the current chromosome so
-       	        //updating its emission probabilities
-       	        double[] emissionproducts_ni = emissionproducts[ni];
-      	        boolean[] traindataObservedValues_ni = traindataObservedValues[ni];
-       	        boolean[] traindataNotMissing_ni = traindataNotMissing[ni];		  
+	        for (int ni = 0; ni < nobserved; ni++)
+		{
+		   //going through each combination of marks
+		   //if (traindataObservedSeqFlags_nseq[ni])
+		   //{
+		   //this signature of marks is observed on the current chromosome so
+		   //updating its emission probabilities
+		   double[] emissionproducts_ni = emissionproducts[ni];
+		   boolean[] traindataObservedValues_ni = traindataObservedValues[ni];
+		   boolean[] traindataNotMissing_ni = traindataNotMissing[ni];
 
-	        boolean ballzero = true;
-
-	        for (int ns = 0; ns < numstates; ns++)
-	        {
-	           double dproduct = 1;
-	           double[][] emissionprobs_ns = emissionprobs[ns];
+		   for (int ns = 0; ns < numstates; ns++)
+		   {
+		      emissionproducts_ni[ns] = 1;
+		   }
+		   emissionproducts_scale[ni] = 0;
 
 		   for (int nmod = 0; nmod < numdatasets; nmod++)
-	           {
-		      if (traindataNotMissing_ni[nmod])
-	      	      {
-		         //we are include this marks emission probability
-		         if (traindataObservedValues_ni[nmod])
-		         {
-		      	    //System.out.println("positive\t"+ns+"\t"+nmod+"\t1\t"+emissionprobs_ns[nmod][1]);
-		            dproduct *= emissionprobs_ns[nmod][1];
-		         }
-		         else 
-		         {
-		      	    ///System.out.println("negative\t"+ns+"\t"+nmod+"\t0\t"+emissionprobs_ns[nmod][0]);
-		            dproduct *= emissionprobs_ns[nmod][0];
-		         }
+		   {
+		      for (int ns = 0; ns < numstates; ns++)
+		      {
+		         if (traindataNotMissing_ni[nmod])
+			 {
+			    //we are include this marks emission probability
+			    if (traindataObservedValues_ni[nmod])
+			    {
+				emissionproducts_ni[ns] *= emissionprobs[ns][nmod][1];
+			    }
+			    else
+			    {
+				emissionproducts_ni[ns] *= emissionprobs[ns][nmod][0];
+			    }
+			 }
+					 // otherwise treated as missing omitting from product
 		      }
-			   // otherwise treated as missing omitting from product
-		   }
-		   //System.out.println(ns+"\t"+dproduct);
-		   emissionproducts_ni[ns] = dproduct;
 
-		   if (dproduct >= EPSILONEMISSIONS)
-		   {
-	              ballzero = false;
-		   }
+		      
+		      double dmaxval = 0;
+		      for (int ns = 0; ns < numstates; ns++)
+		      {
+		         if (emissionproducts_ni[ns] > dmaxval)
+			 {
+			    dmaxval = emissionproducts_ni[ns];
+			 }
+		      }
+
+		      if (dmaxval <=0)///EPSILONEMISSIONS)
+		      {
+		         for (int ns = 0; ns < numstates; ns++)
+		         {
+		            emissionproducts_ni[ns] = 1;
+		         }
+			 //approximating log-likelihood
+	      	         emissionproducts_scale[ni] += Math.log(EPSILONEMISSIONS);
+		      }
+		      else
+		      {
+		         for (int ns = 0; ns < numstates; ns++)
+			 {
+		            emissionproducts_ni[ns]/= dmaxval;
+			 }
+			 emissionproducts_scale[ni] += Math.log(dmaxval);			  
+		      }		      	      
+		   }		
 		}
-
-		if (ballzero)
+	     }
+	     else
+	     {
+	        for (int ni = 0; ni < nobserved; ni++)
 	        {
+	           //going through each combination of marks
+	           //if (traindataObservedSeqFlags_nseq[ni])
+		   //{
+	           //this signature of marks is observed on the current chromosome so
+       	           //updating its emission probabilities
+       	           double[] emissionproducts_ni = emissionproducts[ni];
+      	           boolean[] traindataObservedValues_ni = traindataObservedValues[ni];
+       	           boolean[] traindataNotMissing_ni = traindataNotMissing[ni];		  
+
+	           boolean ballzero = true;
+
 	           for (int ns = 0; ns < numstates; ns++)
-		   {
-		      emissionproducts_ni[ns] = EPSILONEMISSIONS;
+	           {
+	              double dproduct = 1;
+	              double[][] emissionprobs_ns = emissionprobs[ns];
+
+		      for (int nmod = 0; nmod < numdatasets; nmod++)
+	              {
+		         if (traindataNotMissing_ni[nmod])
+	      	         {
+		            //we are include this marks emission probability
+		            if (traindataObservedValues_ni[nmod])
+		            {
+		      	       //System.out.println("positive\t"+ns+"\t"+nmod+"\t1\t"+emissionprobs_ns[nmod][1]);
+		               dproduct *= emissionprobs_ns[nmod][1];
+		            }
+		            else 
+		            {
+		      	       ///System.out.println("negative\t"+ns+"\t"+nmod+"\t0\t"+emissionprobs_ns[nmod][0]);
+		               dproduct *= emissionprobs_ns[nmod][0];
+			    }
+			 }
+			   // otherwise treated as missing omitting from product
+		      }
+		      //System.out.println(ns+"\t"+dproduct);
+		      emissionproducts_ni[ns] = dproduct;
+
+		      if (dproduct >= EPSILONEMISSIONS)
+		      {
+	                 ballzero = false;
+		      }
+		   }
+
+		   if (ballzero)
+	           {
+	              for (int ns = 0; ns < numstates; ns++)
+		      {
+		         emissionproducts_ni[ns] = EPSILONEMISSIONS;
+		      }
 		   }
 		}
 	     }
@@ -7119,6 +8471,11 @@ public class ChromHMM
 	   }
 	   dloglikeseq += Math.log(dscale); 
 
+           if (bscaleemissions)
+	   {
+	      dloglikeseq += emissionproducts_scale[traindataObservedIndex[0]];
+	   }
+
 	   //forward step
 	   //int numtime_nseq = numtime[nseq];
 	   for (int nt = 1; nt < numtime_nseq; nt++)
@@ -7175,6 +8532,11 @@ public class ChromHMM
               }
 
       	      dloglikeseq += Math.log(dscale);
+
+              if (bscaleemissions)
+	      {
+	         dloglikeseq += emissionproducts_scale[traindataObservedIndex[nt]];
+	      }
 	   }
 	    
 	   //backward step
@@ -7525,6 +8887,19 @@ public class ChromHMM
        //stores the emission probability for the i^th combination of marks in the j^th state
        double[][][] emissionproducts_Pool = new double[numprocessors][nmaxtime][numstates]; //traindataObservedValues.length
 
+       //stores the scale for the emission probability for the i^th combination of marks
+       double[][] emissionproducts_scale_Pool;
+
+       if (bscaleemissions)
+       {
+          emissionproducts_scale_Pool = new double[numprocessors][nmaxtime];
+       }
+       else
+       {
+          emissionproducts_scale_Pool = new double[numprocessors][];
+       }
+
+
        //stores temporary product terms
        double[][] tempproductbetaemiss_Pool = new double[numprocessors][numstates];
 
@@ -7736,7 +9111,8 @@ public class ChromHMM
 					 nsparsecutoff,
 					 nsparsecutofflooser,
 					 dloglikeA,
-					 nincludeindex);
+					 nincludeindex,
+                                         emissionproducts_scale_Pool);
 		   nincludeindex++;
 
 	           new Thread(myNewThreadWithLoad).start();
@@ -7771,6 +9147,11 @@ public class ChromHMM
 	     {
                 dgammainitsum += gammainitstore[nitr][ni];
 	     }
+
+	     if (bpseudo)
+	     {
+		 dgammainitsum++;
+	     }
 	     probinit[ni] = dgammainitsum;
              dsum += dgammainitsum;
 	  }
@@ -7802,6 +9183,12 @@ public class ChromHMM
 	                dsxistoreitr += sxistore[nitr][ni][ntransitionprobsindex_ni_nj];
 		     }
 	          }
+
+		  if (bpseudo)
+		  {
+		      //pseudo-count to avoid divide by zero
+		      dsxistoreitr++;
+		  }
 	          transitionprobs_ni[ntransitionprobsindex_ni_nj] = dsxistoreitr;
 
 	          dsum += dsxistoreitr;
@@ -7897,6 +9284,11 @@ public class ChromHMM
 	                 emissionprobs_ns_nmark[nbucket] += gammaksumstore[nitr][ns][nmark][nbucket];
 		          //}
 	              }
+
+		      if (bpseudo)
+		      {
+			  emissionprobs_ns_nmark[nbucket]++;
+		      }
 		      dgammadenom += emissionprobs_ns_nmark[nbucket];
 		  }
 
@@ -8061,6 +9453,15 @@ public class ChromHMM
        //stores the emission probability for the i^th combination of marks in the j^th state
        double[][] emissionproducts = new double[traindataObservedValues.length][numstates];
 
+
+       //stores the scale for the emission probability for the i^th combination of marks
+       double[] emissionproducts_scale = null;
+
+       if (bscaleemissions)
+       {
+          emissionproducts_scale = new double[traindataObservedValues.length];
+       }
+
        //stores temporary product terms
        double[][] tempproductbetaemiss_Pool = new double[numprocessors][numstates];
 
@@ -8152,58 +9553,125 @@ public class ChromHMM
 	   }
 
 
+           if (bscaleemissions)
+	   {
+	      for (int ni = 0; ni < emissionproducts.length; ni++)
+	      {
+	         //going through each combination of marks
+		 //this signature of marks is observed on the current chromosome so
+	         //updating its emission probabilities
+		 double[] emissionproducts_ni = emissionproducts[ni];
+	         boolean[] traindataObservedValues_ni = traindataObservedValues[ni];
+		 boolean[] traindataNotMissing_ni = traindataNotMissing[ni];
 
-	  for (int ni = 0; ni < emissionproducts.length; ni++)
-          {
-             //going through each combination of marks
-	     //this signature of marks is observed on the current chromosome so
-	     //updating its emission probabilities
-             double[] emissionproducts_ni = emissionproducts[ni];
-	     boolean[] traindataObservedValues_ni = traindataObservedValues[ni];
-	     boolean[] traindataNotMissing_ni = traindataNotMissing[ni];		  
+		 for (int ns = 0; ns < numstates; ns++)
+		 {
+	            emissionproducts_ni[ns] = 1;
+		 }
+		 emissionproducts_scale[ni] = 0;
 
-	     boolean ballzero = true;
+		 for (int nmod = 0; nmod < numdatasets; nmod++)
+		 {
+		    for (int ns = 0; ns < numstates; ns++)
+		    {
+		       if (traindataNotMissing_ni[nmod])
+		       {
+		          //we are include this marks emission probability
+			  if (traindataObservedValues_ni[nmod])
+			  {
+			     emissionproducts_ni[ns] *= emissionprobs[ns][nmod][1];
+			  }
+			  else
+			  {
+			     emissionproducts_ni[ns] *= emissionprobs[ns][nmod][0];
+			  }
+		       }
+		       // otherwise treated as missing omitting from product
+		    }
 
-             for (int ns = 0; ns < numstates; ns++)
-	     {
-                double dproduct = 1;
-	        double[][] emissionprobs_ns = emissionprobs[ns];
+		    double dmaxval = 0;
+		    for (int ns = 0; ns < numstates; ns++)
+		    {
+		       if (emissionproducts_ni[ns] > dmaxval)
+		       {
+			   dmaxval = emissionproducts_ni[ns];
+		       }
+		    }
 
-		for (int nmod = 0; nmod < numdatasets; nmod++)
-	        {
-	     	   if (traindataNotMissing_ni[nmod])
-		   {
-		      //we are include this marks emission probability
-	              if (traindataObservedValues_ni[nmod])
-		      {
-		         //System.out.println("positive\t"+ns+"\t"+nmod+"\t1\t"+emissionprobs_ns[nmod][1]);
-		         dproduct *= emissionprobs_ns[nmod][1];
-		      }
-		      else 
-	              {
-		         ///System.out.println("negative\t"+ns+"\t"+nmod+"\t0\t"+emissionprobs_ns[nmod][0]);
-		         dproduct *= emissionprobs_ns[nmod][0];
-		      }
-		   }
-		   // otherwise treated as missing omitting from product
-		}
-	        //System.out.println(ns+"\t"+dproduct);
-	        emissionproducts_ni[ns] = dproduct;
+		    if (dmaxval <= 0)//EPSILONEMISSIONS)
+		    {
+		       for (int ns = 0; ns < numstates; ns++)
+		       {
+		          emissionproducts_ni[ns] = 1;
+		       }
+		       //approximating log-likelihood
+		       emissionproducts_scale[ni] += Math.log(EPSILONEMISSIONS);
+		    }
+		    else
+		    {
+		       for (int ns = 0; ns < numstates; ns++)
+		       {
+			  emissionproducts_ni[ns]/= dmaxval;
+		       }
+		       emissionproducts_scale[ni] += Math.log(dmaxval);
+		    }
+		 }
+	      }
+	   }
+	   else
+	   {
+	      for (int ni = 0; ni < emissionproducts.length; ni++)
+              {
+                 //going through each combination of marks
+	         //this signature of marks is observed on the current chromosome so
+	         //updating its emission probabilities
+                 double[] emissionproducts_ni = emissionproducts[ni];
+	         boolean[] traindataObservedValues_ni = traindataObservedValues[ni];
+	         boolean[] traindataNotMissing_ni = traindataNotMissing[ni];		  
 
-		if (dproduct >= EPSILONEMISSIONS)
-		{
-	      	   ballzero = false;
-	        }
-	     }
+	         boolean ballzero = true;
 
-	     if (ballzero)
-	     {
-	        for (int ns = 0; ns < numstates; ns++)
-	        {
-	       	   emissionproducts_ni[ns] = EPSILONEMISSIONS;
-	        }
-	     }
-	  }
+                 for (int ns = 0; ns < numstates; ns++)
+	         {
+                    double dproduct = 1;
+	            double[][] emissionprobs_ns = emissionprobs[ns];
+
+		    for (int nmod = 0; nmod < numdatasets; nmod++)
+	            {
+	     	       if (traindataNotMissing_ni[nmod])
+		       {
+		          //we are include this marks emission probability
+	                  if (traindataObservedValues_ni[nmod])
+		          {
+		             //System.out.println("positive\t"+ns+"\t"+nmod+"\t1\t"+emissionprobs_ns[nmod][1]);
+		             dproduct *= emissionprobs_ns[nmod][1];
+		          }
+		          else 
+	                  {
+		             ///System.out.println("negative\t"+ns+"\t"+nmod+"\t0\t"+emissionprobs_ns[nmod][0]);
+		             dproduct *= emissionprobs_ns[nmod][0];
+			  }
+		       }
+		       // otherwise treated as missing omitting from product
+		    }
+	            //System.out.println(ns+"\t"+dproduct);
+	            emissionproducts_ni[ns] = dproduct;
+
+		    if (dproduct >= EPSILONEMISSIONS)
+		    {
+	      	       ballzero = false;
+		    }
+		 }
+
+	         if (ballzero)
+	         {
+	            for (int ns = 0; ns < numstates; ns++)
+	            {
+	       	       emissionproducts_ni[ns] = EPSILONEMISSIONS;
+		    }
+		 }
+	      }
+	   }
 
 
 	  //stores in coltransitionprobs the transpose of transitionprobs
@@ -8228,13 +9696,12 @@ public class ChromHMM
 	      //System.out.println(nseq+"\t"+bincludeseq[nseq]);
 	     if (bincludeseq[nseq])
 	     {
-
-	        double[][] sxi_nseq = sxistore[nseq];
+		double[][] sxi_nseq = sxistore[nincludeindex];//[nseq]; //bug fixed here in v1.15 when using -n option with lowmem
 	        int numtime_nseq = numtime[nseq];
 	        int[] traindataObservedIndex_nseq = traindataObservedIndex[nseq];
 	        boolean[] traindataObservedSeqFlags_nseq = traindataObservedSeqFlags[nseq];
-	        double[][][] gammaksum_nseq = gammaksumstore[nseq];
-	        double[] gammainitstore_nseq = gammainitstore[nseq];
+	        double[][][] gammaksum_nseq = gammaksumstore[nincludeindex];// gammaksumstore[nseq];
+	        double[] gammainitstore_nseq = gammainitstore[nincludeindex];// gammainitstore[nseq];
 
 	        NewThread myNewThread = new NewThread(traindataObservedIndex_nseq,
 					 traindataObservedSeqFlags_nseq,
@@ -8255,7 +9722,8 @@ public class ChromHMM
 					 nsparsecutoff,
 					 nsparsecutofflooser,
 					 dloglikeA,
-					 nincludeindex);
+				   	 nincludeindex,
+                                         emissionproducts_scale);
 						      //nseq);
 		nincludeindex++;
 	        new Thread(myNewThread).start();
@@ -8291,6 +9759,11 @@ public class ChromHMM
                    dgammainitsum += gammainitstore[nitr][ni];
 		}
 	     }
+
+	     if (bpseudo)
+	     {
+		 dgammainitsum++;
+	     }
 	     probinit[ni] = dgammainitsum;
              dsum += dgammainitsum;
 	  }
@@ -8322,6 +9795,12 @@ public class ChromHMM
 	                dsxistoreitr += sxistore[nitr][ni][ntransitionprobsindex_ni_nj];
 		     }
 	          }
+
+		  if (bpseudo)
+		  {
+		      //pseudo-count to avoid divide by zero
+		      dsxistoreitr++;
+		  }
 	          transitionprobs_ni[ntransitionprobsindex_ni_nj] = dsxistoreitr;
 
 	          dsum += dsxistoreitr;
@@ -8417,6 +9896,11 @@ public class ChromHMM
 	                    emissionprobs_ns_nmark[nbucket] += gammaksumstore[nitr][ns][nmark][nbucket];
 			 }
 	              }
+
+		      if (bpseudo)
+		      {
+			  emissionprobs_ns_nmark[nbucket]++;
+		      }
 		      dgammadenom += emissionprobs_ns_nmark[nbucket];
 		  }
 
@@ -8596,7 +10080,7 @@ public class ChromHMM
 	traindataObservedIndex = new int[chromfiles.length][]; //number of columns depends on number of lines in file
         numtime = new int[chromfiles.length];
 
-	HashMap hmObserved = new HashMap(); //maps an observation string to an index and set of flags
+	//HashMap hmObserved = new HashMap(); //maps an observation string to an index and set of flags
  
 	int nobserved = 0;
         //PrintWriter pw = null;
@@ -9181,10 +10665,11 @@ public class ChromHMM
 
 	if (szcommand.equalsIgnoreCase("Version"))
 	{
-	    System.out.println("This is Version 1.14 of ChromHMM (c) Copyright 2008-2012 Massachusetts Institute of Technology");
+	    System.out.println("This is Version 1.15 of ChromHMM (c) Copyright 2008-2012 Massachusetts Institute of Technology");
 	}
         else if ((szcommand.equals("BinarizeBam"))||(szcommand.equalsIgnoreCase("BinarizeBed")))
 	{
+	    boolean bpairend = false;
 	    String szcontroldir=null;
 	    int nflankwidthcontrol = 5;
 	    int nshift = 100;
@@ -9202,6 +10687,8 @@ public class ChromHMM
 	    String szoutputsignaldir = null;
 	    int npseudocountcontrol = 1;
 	    boolean bpeaks = false;
+
+	    boolean bshift = false;
 
 	    int nargindex = 1;
 	    if (args.length <= 4)
@@ -9241,6 +10728,7 @@ public class ChromHMM
 		     else if (args[nargindex].equals("-n"))
 		     {
 		         nshift = Integer.parseInt(args[++nargindex]);
+			 bshift = true;
 		     }
   	  	     else if (args[nargindex].equals("-o"))
 		     {
@@ -9290,6 +10778,10 @@ public class ChromHMM
 		     {
 			 bpeaks = true;
 		     }
+		     else if ((args[nargindex].equals("-paired"))&&(szcommand.equalsIgnoreCase("BinarizeBam")))
+		     {
+			 bpairend = true;
+		     }
 		     else if (args[nargindex].equals("-w"))
 		     {
 		        nflankwidthcontrol = Integer.parseInt(args[++nargindex]);
@@ -9306,6 +10798,11 @@ public class ChromHMM
 	       {
 	          bok = false;
 	       } 	       
+	    }
+
+	    if ((bpairend) && (bcenterinterval||bshift||bpeaks))
+	    {
+		bok = false;
 	    }
 
 	    if ((bok)&&(nargindex == args.length-4))
@@ -9333,7 +10830,7 @@ public class ChromHMM
 						nshift,bcenterinterval, noffsetleft,noffsetright,szoutputsignaldir,
 						szoutputbinarydir,szoutputcontroldir,
 					        dpoissonthresh,dfoldthresh,bcontainsthresh,
-						   npseudocountcontrol,nbinsize,szcolfields,bpeaks, dcountthresh,szcommand.equalsIgnoreCase("BinarizeBam"));	   
+						   npseudocountcontrol,nbinsize,szcolfields,bpeaks, dcountthresh,szcommand.equalsIgnoreCase("BinarizeBam"),bpairend);	   
 	          
 	    }
 	    else
@@ -9353,8 +10850,9 @@ public class ChromHMM
 	       }
 	       else
 	       {
-		   System.out.println("usage BinarizeBam [-b binsize][-c controldir][-center][-e offsetend][-f foldthresh]"+
-                                  "[-g signalthresh][-n shift][-o outputcontroldir][-p poissonthresh][-peaks][-s offsetstart][-strictthresh][-t outputsignaldir]"+
+		   System.out.println("usage BinarizeBam [-b binsize][-c controldir][-e offsetend][-f foldthresh]"+
+                                  "[-g signalthresh][-o outputcontroldir][-p poissonthresh][-paired|[-center][-n shift][-peaks]]"+
+                                  "[-s offsetstart][-strictthresh][-t outputsignaldir]"+
                                   "[-u pseudocountcontrol][-w flankwidthcontrol] "+
 				      "chromosomelengthfile inputbamdir cellmarkfiletable outputbinarydir");
 	       }
@@ -9581,11 +11079,13 @@ public class ChromHMM
 	    boolean breadstatebyline = false;
 	    boolean breadsegment = false;
 	    boolean bprintimage = true;
+            boolean bscaleemissions = false;
 	    String szchromlengthfile = null;
 	    int nbinsize = ChromHMM.DEFAULT_BINSIZEBASEPAIRS;
 	    String szoutfileID = "";
 	    boolean bappend = false;
 	    int nargindex = 1;
+	    boolean blowmem = false;
 
             try
 	    {
@@ -9618,9 +11118,17 @@ public class ChromHMM
 		  {
 		     szoutfileID = args[++nargindex];
 		  }
+		  else if (args[nargindex].equals("-lowmem"))
+		  {
+		      blowmem = true;
+		  }
                   else if (args[nargindex].equals("-append"))
 		  {
 		      bappend = true;
+		  }
+                  else if (args[nargindex].equals("-many"))
+	          {
+		      bscaleemissions = true;
 		  }
                   else if (args[nargindex].equals("-noimage"))
 		  {
@@ -9664,10 +11172,16 @@ public class ChromHMM
 	       {
 		   ChromHMM theHMM = new ChromHMM(szinputdir, szsegmentdir,szinputfilelist,szconfusionfileprefix, 
                                                   szmodelfile, szoutfileID, nbinsize, breadposterior,
-						  breadsegments,breadstatebyline,szinclude,bappend, theColor,bprintimage);
+						  breadsegments,breadstatebyline,szinclude,bappend, theColor,bprintimage,blowmem, bscaleemissions);
 
-
-	          theHMM.makeSegmentationConfusion();
+		  if (blowmem)
+		  {
+	             theHMM.makeSegmentationConfusionWithLoad();
+		  }
+		  else
+		  {
+		      theHMM.makeSegmentationConfusion();
+		  }
 	       }
 
 	    }
@@ -9679,13 +11193,14 @@ public class ChromHMM
 	    if (!bok)
 	    {
 		System.out.println("usage: EvalSubset [-append][-b binsize][-f inputfilelist][-i outfileID]"+
-                                   "[-noimage][-readposterior|-readstatesbyline]"+
+                                   "[-lowmem][-many][-noimage][-readposterior|-readstatesbyline]"+
                                    "  inputmodel inputdir segmentdir outconfusionfileprefix includemarks");
 	    }
         }
 	else if (szcommand.equalsIgnoreCase("MakeSegmentation"))
 	{
 	    String szinputfilelist = null;
+            boolean bscaleemissions = false;
 	    boolean bprintposterior = false;
 	    boolean bprintstatebyline = false;
 	    boolean bnoprintsegment = false;
@@ -9719,6 +11234,10 @@ public class ChromHMM
 		  else if (args[nargindex].equals("-lowmem"))
 		  {
 		      blowmem = true;
+		  }
+                  else if (args[nargindex].equals("-many"))
+	          {
+	             bscaleemissions = true;
 		  }
 		  else if (args[nargindex].equals("-nobed"))
 		  {
@@ -9788,7 +11307,7 @@ public class ChromHMM
 	       {
 
 		   ChromHMM theHMM = new ChromHMM(szinputdir, szinputfilelist,szchromlengthfile, szoutputdir, szmodelfile, szoutfileID, nbinsize, bprintposterior,
-						  bprintsegments,bprintstatebyline, blowmem);
+						  bprintsegments,bprintstatebyline, blowmem,bscaleemissions);
 
 		  if (blowmem)
 		  {
@@ -9811,7 +11330,7 @@ public class ChromHMM
 
 	    if (!bok)
 	    {
-		System.out.println("usage: MakeSegmentation [-b binsize][-f inputfilelist][-i outfileID][-l chromosomelengthfile][-lowmem][-nobed]"+
+		System.out.println("usage: MakeSegmentation [-b binsize][-f inputfilelist][-i outfileID][-l chromosomelengthfile][-lowmem][-many][-nobed]"+
                                    "[-printposterior][-printstatesbyline]"+
                                    "  modelfile inputdir outputdir");
 	    }
@@ -10229,6 +11748,8 @@ public class ChromHMM
 	    boolean bprintenrich = true;
 	    boolean bprintimage = true;
 	    boolean blowmem = false;
+	    boolean bscaleemissions = false;
+	    boolean bpseudo = false;
 
 	    String szinputfilelist = null;
 	    String szchromlengthfile = null;
@@ -10319,6 +11840,10 @@ public class ChromHMM
 		  {
 		     szInitFile = args[++nargindex];
 		  }
+                  else if (args[nargindex].equals("-many"))
+	          {
+		      bscaleemissions = true;
+		  }
 		  else if (args[nargindex].equals("-n"))
 		  {
 		      numincludeseq = Integer.parseInt(args[++nargindex]);
@@ -10343,6 +11868,10 @@ public class ChromHMM
 		  {
 		      bnormalEM = true;
 		      nmaxprocessors = Integer.parseInt(args[++nargindex]);
+		  }
+                  else if (args[nargindex].equals("-pseudo"))
+		  {
+		     bpseudo = true;
 		  }
 		  else if (args[nargindex].equals("-stateordering"))
 		  {
@@ -10479,9 +12008,9 @@ public class ChromHMM
 		  }
  	          ChromHMM theHMM = new ChromHMM(szinputdir, szoutputdir, szinputfilelist,szchromlengthfile,numstates, nseed,ninitmethod,
 						 szInitFile,dloadsmoothemission,dloadsmoothtransition,dinformationsmooth,
-					     nmaxiterations,dconvergediff,nmaxseconds, bprintposterior,bprintsegments,bprintstatebyline,
+					         nmaxiterations,dconvergediff,nmaxseconds, bprintposterior,bprintsegments,bprintstatebyline,
 						 nbinsize,szoutfileID,nstateorder,bordercols,nzerotransitionpower,theColor,bnormalEM, nmaxprocessors, 
-                                                 blowmem,numincludeseq,bprintimage);
+                                                 blowmem,numincludeseq,bprintimage,bscaleemissions, bpseudo);
 	          theHMM.buildModel();
 
 
@@ -10719,8 +12248,8 @@ public class ChromHMM
 	    if (!bok)
 	    {
 		System.out.println("usage: LearnModel [-b binsize][-color r,g,b][-d convergedelta][-e loadsmoothemission][-f inputfilelist][-h informationsmooth]"+
-                                     "[-holdcolumnorder][-i outfileID][-init information|random|load][-l chromosomelengthfile][-lowmem][-m modelinitialfile]"+
-                                    "[-n numseq][-nobed][-nobrowser][-noenrich][-noimage][-p maxprocessors][-printposterior][-printstatebyline][-r maxiterations][-s seed]"+
+                                     "[-holdcolumnorder][-i outfileID][-init information|random|load][-l chromosomelengthfile][-lowmem][-m modelinitialfile][-many]"+
+                                    "[-n numseq][-nobed][-nobrowser][-noenrich][-noimage][-p maxprocessors][-pseudo][-printposterior][-printstatebyline][-r maxiterations][-s seed]"+
                                     "[-stateordering emission|transition]"+
                                    "[-t loadsmoothtransition][-x maxseconds][-z zerotransitionpower] inputdir outputdir numstates assembly");
 	    }

@@ -32,6 +32,11 @@ import org.tc33.jheatchart.HeatChart;
 public class StateAnalysis
 {
 
+    /** 
+     * If total fraction for an annotation is below this an error message is triggered
+     * that there was no state assigment matches
+     */
+    static double EPSILONOVERLAP = 0.00000001;
 
 
     /**
@@ -455,6 +460,12 @@ public class StateAnalysis
 		            {		      						
 			       int nbegin = nintervalstart/nbinsize;
 			       int nend = nintervalend/nbinsize;
+
+			       if (nbegin < 0)
+			       {
+				   nbegin = 0;
+			       }
+
 			       if (nend >= posterior.length)
 			       {
 		                  nend = posterior.length - 1;
@@ -546,6 +557,11 @@ public class StateAnalysis
 	                       else
 	                       {
 			          //allowing duplicate counts
+				  if (nbegin < 0)
+				  {
+				      nbegin = 0;
+				  }
+
 			          if (nend >= posterior.length)
 			          {
 			             nend = posterior.length - 1;
@@ -609,9 +625,10 @@ public class StateAnalysis
 		dsumoverlaplabel[nfile] += tallyoverlaplabel_nfile[nindex];
 	    }
 
-	    if (dsumoverlaplabel[nfile] < 0.00000001)
+	    if (dsumoverlaplabel[nfile] < EPSILONOVERLAP) //0.00000001)
 	    {
-	       throw new IllegalArgumentException("Coordinates in "+files[nfile]+" not assigned to any state");
+	       throw new IllegalArgumentException("Coordinates in "+files[nfile]+" not assigned to any state. Check if chromosome naming in "+files[nfile]+
+                                                  " match those in the posterior files.");
 	    }
 	}
 
@@ -925,6 +942,12 @@ public class StateAnalysis
 		     {		      						
 		        int nbegin = nintervalstart/nbinsize;
 		        int nend = nintervalend/nbinsize;
+
+			if (nbegin < 0)
+		        {
+			   nbegin = 0;
+			}
+
 			if (nend >= labels_nchrom.length)
 			{
 			   nend = labels_nchrom.length - 1;
@@ -1011,6 +1034,12 @@ public class StateAnalysis
 		     }
 	             else
 	             {
+
+			if (nbegin < 0)
+		        {
+			   nbegin = 0;
+			}
+
 		        //using the full interval range
 			//no requirement on uniqueness
 		        if (nend >= labels_nchrom.length)
@@ -1060,9 +1089,10 @@ public class StateAnalysis
 		dsumoverlaplabel[nfile] += tallyoverlaplabel_nfile[nindex];
 	    }
 		
-            if (dsumoverlaplabel[nfile] < 0.00000001)
+            if (dsumoverlaplabel[nfile] < EPSILONOVERLAP) //0.00000001)
 	    {
-	       throw new IllegalArgumentException("Coordinates in "+files[nfile]+" not assigned to any state");
+	       throw new IllegalArgumentException("Coordinates in "+files[nfile]+" not assigned to any state. Check if chromosome naming in "+files[nfile]+
+						  " match those in the segmentation file.");
 	    }
 	}
 
@@ -1278,7 +1308,15 @@ public class StateAnalysis
                   slabel  = (short) (Short.parseShort(szlabel.substring(1)));
 	       }
 
+	       if (nbegin < 0)
+	       {
+		   nbegin = 0;
+	       }
 
+	       if (nend >= labels.length)
+	       {
+		   nend = labels.length - 1;
+	       }
 	       //SegmentRec theSegmentRec = (SegmentRec) alsegments.get(nindex);
 	       //int nbegin = theSegmentRec.nbegin;
 	       //int nend = theSegmentRec.nend;
@@ -1409,6 +1447,12 @@ public class StateAnalysis
 		       {		      						
 		          int nbegin = nintervalstart/nbinsize;
 		          int nend = nintervalend/nbinsize;
+
+			  if (nbegin < 0)
+			  {
+			      nbegin = 0;
+			  }
+
 			  if (nend >= labels.length)
 			  {
 			     nend = labels.length - 1;
@@ -1498,6 +1542,10 @@ public class StateAnalysis
 		       }
 	               else
 	               {
+			  if (nbegin < 0)
+			  {
+			     nbegin = 0;
+			  }
 		          //using the full interval range
 		    	  //no requirement on uniqueness
 		          if (nend >= labels.length)
@@ -1553,9 +1601,10 @@ public class StateAnalysis
               dsumoverlaplabel[nfile] += tallyoverlaplabel_nfile[nindex];
            }
 		
-           if (dsumoverlaplabel[nfile] < 0.00000001)
+           if (dsumoverlaplabel[nfile] < EPSILONOVERLAP) // 0.00000001)
            {
-	      throw new IllegalArgumentException("Coordinates in "+files[nfile]+" not assigned to any state");
+	      throw new IllegalArgumentException("Coordinates in "+files[nfile]+" not assigned to any state. Check if chromosome naming in "+files[nfile]+
+						 " match those in the segmentation file.");
 	   }
 	}
 
@@ -1941,7 +1990,8 @@ public class StateAnalysis
 	    String szchrom = st.nextToken();
             //assumes segments are in standard bed format which to get to 
 	    //0-based inclusive requires substract 1 from the end
-	    int nbegin = Integer.parseInt(st.nextToken())/nbinsize;
+	    //int nbegin = Integer.parseInt(st.nextToken())/nbinsize; 
+	    st.nextToken();
 	    int nend = (Integer.parseInt(st.nextToken())-1)/nbinsize; 
 	    szlabel = st.nextToken();
 	    short slabel;
@@ -1998,7 +2048,7 @@ public class StateAnalysis
 	for (int nchrom = 0; nchrom < numchroms; nchrom++)
 	{
  	   //stores all the segments in the data
-	   ArrayList alsegments = new ArrayList();
+	   //ArrayList alsegments = new ArrayList();
 	   brinputsegment = Util.getBufferedReader(szinputsegmentation);
 	   String szchromwant = (String) alchromindex.get(nchrom);
 	   //System.out.println("processing "+szchromwant);
@@ -2404,6 +2454,10 @@ public class StateAnalysis
 	//posterior here is really signal just using equivalent variable names
 	//list of possible posterior files
 	File posteriordir = new File(szposteriordir);
+	if (!posteriordir.exists())
+	{
+           throw new IllegalArgumentException(szposteriordir+" was not found!");
+	}
 	String[] posteriorfiles = posteriordir.list();
 
 	String szLine;
@@ -2633,6 +2687,10 @@ public class StateAnalysis
 
 	//list of possible posterior files
 	File posteriordir = new File(szposteriordir);
+	if (!posteriordir.exists())
+	{
+           throw new IllegalArgumentException(szposteriordir+" was not found!");
+	}
 	String[] posteriorfiles = posteriordir.list();
 
 	String szLine;

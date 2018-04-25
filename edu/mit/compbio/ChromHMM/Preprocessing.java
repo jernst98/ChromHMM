@@ -88,7 +88,7 @@ public class Preprocessing
     private static void loadGrid(int[][][] grid,boolean[] bpresent, boolean[] bpresentmarks, String[] marks,int nshift, int nbinsize,
                                  boolean bcenterinterval,int noffsetleft,
 				 int noffsetright,HashMap hmfiles, String szcell, String szmarkdir,HashMap hmchrom, 
-                                 int ninitval, String szcolfields,boolean bpeaks,boolean bcontrol, boolean bbinarizebam) throws IOException
+                                 int ninitval, String szcolfields,boolean bpeaks,boolean bcontrol, boolean bbinarizebam, boolean bpairend) throws IOException
     {
 	int nummarks = grid[0][0].length;
 	//initalizes all values in grid to ninitval
@@ -194,75 +194,135 @@ public class Preprocessing
 		     SamReader samReader = srf.open(new File(szmarkdir+"/"+szfile));
 		     SAMRecordIterator iter = samReader.iterator();
 
-		     while (iter.hasNext())
+		     if (bpairend)
 		     {
-			 SAMRecord rec= iter.next();
-			 int nstartorig  = rec.getAlignmentStart()-1;
-			 int nendorig = rec.getAlignmentEnd();
-			 String szchrom = rec.getReferenceName();
-			 boolean bnegstrand = rec.getReadNegativeStrandFlag();
-			 boolean bunmapped = rec.getReadUnmappedFlag();
+		        while (iter.hasNext())
+		        {
+			   SAMRecord rec= iter.next();
 
-			 if (bunmapped)
-			 {
+			   if (!rec.getReadPairedFlag())
+			   {
+			       throw new IllegalArgumentException("The '-paired' option was specified, but found a read that was not paired end in "+szmarkdir+"/"+szfile);
+			   }
+
+			   if ((rec.getProperPairFlag()) && rec.getFirstOfPairFlag()&&(!rec.getReadUnmappedFlag()))
+			   {
+			      int nstartorig  = rec.getAlignmentStart()-1;
+			      int nendorig = rec.getAlignmentEnd();
+			      String szchrom = rec.getReferenceName();
+			      boolean bnegstrand = rec.getReadNegativeStrandFlag();
+			      int ninsertsize = rec.getInferredInsertSize();
+
+		              Integer objInt = (Integer) hmchrom.get(szchrom);
+
+		              //if we don't have the chromosome for the read will ignore it
+	                      if (objInt != null)
+	                      {
+		                 int nchrom = objInt.intValue();
+			         int nbin;
+
+				 //no center mode in paired end
+
+		                 if (bnegstrand) 
+		                 {		   
+				    //"-"   
+				    //was nshift
+		                    nbin = (nendorig-noffsetright+ninsertsize/2)/nbinsize;	
+				    //ninsertsize can be negative so adding
+                                    //removed one from here may need it for backwards consistency		      		       		      	      
+				 }
+				 else
+				 {
+				    //"+"
+				    //was nshift
+		                    nbin = (nstartorig-noffsetleft+ninsertsize/2)/nbinsize; 
+				 }
+				     //}
+		   
+		                 if ((nbin>=0)&&(nbin < grid[nchrom].length))
+	                         {
+		                    //increment bin count if falls into valid interval
+	                            grid[nchrom][nbin][nmark]++;
+		                    //we do have this chromosome
+	                            bpresent[nchrom] = true;			    
+			            bdatafound = true;
+				 }
+			      }
+			   }
+			}			
+		     }
+		     else
+		     {
+		        while (iter.hasNext())
+		        {
+			   SAMRecord rec= iter.next();
+			   int nstartorig  = rec.getAlignmentStart()-1;
+			   int nendorig = rec.getAlignmentEnd();
+			   String szchrom = rec.getReferenceName();
+			   boolean bnegstrand = rec.getReadNegativeStrandFlag();
+			   boolean bunmapped = rec.getReadUnmappedFlag();
+
+			   if (bunmapped)
+			   {
 			     continue;
-			 }
+			   }
 
-		         Integer objInt = (Integer) hmchrom.get(szchrom);
+		           Integer objInt = (Integer) hmchrom.get(szchrom);
 
-		         //if we don't have the chromosome for the read will ignore it
-	                 if (objInt != null)
-	                 {
-		            int nchrom = objInt.intValue();
-			    int nbin;
+		           //if we don't have the chromosome for the read will ignore it
+	                   if (objInt != null)
+	                   {
+		              int nchrom = objInt.intValue();
+			      int nbin;
 
-		            if (bpeaks)
-		            {
-			       int nstart = Math.max(0,(nstartorig-noffsetleft)/nbinsize); 
-			       int nend = Math.min(grid[nchrom].length-1, (nendorig-noffsetright)/nbinsize);		      
+		              if (bpeaks)
+		              {
+			         int nstart = Math.max(0,(nstartorig-noffsetleft)/nbinsize); 
+			         int nend = Math.min(grid[nchrom].length-1, (nendorig-noffsetright)/nbinsize);		      
 
-			       for (nbin = nstart; nbin <= nend; nbin++)
-	                       {
-		                  //increment bin count if falls into valid interval
-	                          grid[nchrom][nbin][nmark]++;
-		                  //we do have this chromosome
-	                          bpresent[nchrom] = true;			    
-			          bdatafound = true;
-			       }
-			    }
-		            else
-		            {
-		                if (bcenterinterval)
-		                {
-		                   //uses the center of the interval which is useful if read is already extended
-		                   nbin = (nstartorig-noffsetleft+nendorig-noffsetright)/(2*nbinsize);
-				}
-		                else
-		                {
-		                   if (bnegstrand) 
-		                   {		   
+			         for (nbin = nstart; nbin <= nend; nbin++)
+	                         {
+		                    //increment bin count if falls into valid interval
+	                            grid[nchrom][nbin][nmark]++;
+		                    //we do have this chromosome
+	                            bpresent[nchrom] = true;			    
+			            bdatafound = true;
+				 }
+			      }
+		              else
+		              {
+		                 if (bcenterinterval)
+		                 {
+		                    //uses the center of the interval which is useful if read is already extended
+		                    nbin = (nstartorig-noffsetleft+nendorig-noffsetright)/(2*nbinsize);
+				 }
+		                 else
+		                 {
+		                    if (bnegstrand) 
+		                    {		   
 				       //"-"   
 		                      nbin = (nendorig-noffsetright-nshift)/nbinsize;	
                                       //removed one from here may need it for backwards consistency		      		       		      	      
-				   }
-				   else
-				   {
+				    }
+				    else
+				    {
 				       //"+"
 		                      nbin = (nstartorig-noffsetleft+nshift)/nbinsize; 
-				   }
-				}
+				    }
+				 }
 		   
-		                if ((nbin>=0)&&(nbin < grid[nchrom].length))
-	                        {
-		                   //increment bin count if falls into valid interval
-	                           grid[nchrom][nbin][nmark]++;
-		                   //we do have this chromosome
-	                           bpresent[nchrom] = true;			    
-			           bdatafound = true;
-				}
-			    }
-			 }
-		     }         		    
+		                 if ((nbin>=0)&&(nbin < grid[nchrom].length))
+	                         {
+		                    //increment bin count if falls into valid interval
+	                            grid[nchrom][nbin][nmark]++;
+		                    //we do have this chromosome
+	                            bpresent[nchrom] = true;			    
+			            bdatafound = true;
+				 }
+			      }
+			   }
+			}
+		     }        		    
 		 }
 		 else
 		 {
@@ -440,12 +500,21 @@ public class Preprocessing
 	     {
 	        if (bcontrol)
 		{
-	           System.out.println("WARNING not able to load any control data for "+szcell+"\t"+marks[nmark]);
+		    System.out.print("WARNING not able to load any control data for "+szcell+"\t"+marks[nmark]);
 		}
 		else
 		{
-	      	   System.out.println("WARNING not able to load any data for "+szcell+"\t"+marks[nmark]);
+	      	   System.out.print("WARNING not able to load any data for "+szcell+"\t"+marks[nmark]);
 	        }
+
+		if (bbinarizebam)
+		{
+		    System.out.println(". Check if the chromosome naming is consistent between the chromosome length files and the bam files.");
+		}
+		else
+		{
+                    System.out.println(". Check if the chromosome naming is consistent between the chromosome length files and the bed files.");
+		}
 	     }
 	  }
        }
@@ -485,7 +554,7 @@ public class Preprocessing
 					     int nshift,  boolean bcenterinterval,int noffsetleft, int noffsetright,
                                              String szoutputsignaldir,String szoutputbinarydir, String szoutputcontroldir, 
 					     double dpoissonthresh, double dfoldthresh,boolean bcontainsthresh, int npseudocountcontrol,int nbinsize,
-					     String szcolfields, boolean bpeaks, double dcountthresh, boolean bbinarizebam
+					     String szcolfields, boolean bpeaks, double dcountthresh, boolean bbinarizebam, boolean bpairend
                                             ) throws IOException
     {
 
@@ -659,7 +728,7 @@ public class Preprocessing
 
 	    //loading data for the cell type
 	    loadGrid(grid,bpresent,bpresentmarks,marks,nshift,nbinsize,bcenterinterval,noffsetleft,
-		     noffsetright,hmfiles,szcell,szmarkdir,hmchrom,0,szcolfields,bpeaks,false,bbinarizebam);
+		     noffsetright,hmfiles,szcell,szmarkdir,hmchrom,0,szcolfields,bpeaks,false,bbinarizebam, bpairend);
 	    if (bcontrolfile)
 	    {
 	       if ((gridcontrol[0] == null)||(gridcontrol[0][0].length !=numcontrolmarks))
@@ -675,7 +744,7 @@ public class Preprocessing
 
 	       //we have control data loading cell type data for that
 	       loadGrid(gridcontrol,bpresentcontrol,bpresentmarkscontrol,marks,nshift,nbinsize,bcenterinterval,noffsetleft,noffsetright,
-                        hmfilescontrol,szcell,szcontroldir,hmchrom,npseudocountcontrol,szcolfields,bpeaks,true,bbinarizebam);
+                        hmfilescontrol,szcell,szcontroldir,hmchrom,npseudocountcontrol,szcolfields,bpeaks,true,bbinarizebam,bpairend);
 	    }
 	    
 
