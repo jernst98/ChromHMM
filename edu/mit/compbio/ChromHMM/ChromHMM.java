@@ -506,6 +506,11 @@ public class ChromHMM
     boolean bpseudo = false;
 
 
+    /**
+     * true if output should be zipped files
+     */
+    boolean bgzip = false;
+
     ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
     /**
      * Stores an integer index and array of boolean flags
@@ -610,7 +615,7 @@ public class ChromHMM
 		     int nmaxiterations,double dcovergediff,int nmaxseconds,boolean bprintposterior,
 		    boolean bprintsegment,boolean bprintstatebyline, int nbinsize,String szoutfileID,int nstateorder,boolean bordercols,int nzerotransitionpower,
 		     Color theColor, boolean bnormalEM, int nmaxprocessors, boolean blowmem, 
-                     int numincludeseq, boolean bprintimage, boolean bscaleemissions, boolean bpseudo) throws IOException
+                     int numincludeseq, boolean bprintimage, boolean bscaleemissions, boolean bpseudo, boolean bgzip) throws IOException
     {
 	this.szinputdir = szinputdir;
         this.szoutputdir = szoutputdir;
@@ -643,6 +648,7 @@ public class ChromHMM
 	this.bprintimage = bprintimage;
 	this.bscaleemissions = bscaleemissions;
 	this.bpseudo = bpseudo;
+	this.bgzip = bgzip;
 
         hmlabelExtend = new HashMap();
         theRandom = new Random(nseed);
@@ -746,7 +752,8 @@ public class ChromHMM
      * Constructor initializes the variable and loads the data used for making segmentation from a model
      */
     public ChromHMM(String szinputdir, String szinputfilelist, String szchromlengthfile, String szoutputdir, String szInitFile, String szoutfileID,
-                    int nbinsize, boolean bprintposterior, boolean bprintsegment,boolean bprintstatebyline, boolean blowmem, boolean bscaleemissions) throws IOException
+                    int nbinsize, boolean bprintposterior, boolean bprintsegment,boolean bprintstatebyline, 
+                    boolean blowmem, boolean bscaleemissions, boolean bgzip) throws IOException
     {
 	this.szinputdir = szinputdir;
 	this.szinputfilelist = szinputfilelist;
@@ -760,6 +767,7 @@ public class ChromHMM
 	this.nbinsize = nbinsize;
 	this.blowmem = blowmem;
 	this.bscaleemissions = bscaleemissions;
+	this.bgzip = bgzip;
         hmlabelExtend = new HashMap();
 
 	if (blowmem)
@@ -4601,62 +4609,149 @@ public class ChromHMM
           }
 	  hsprefix.add(szprefix);
 
+	  GZIPOutputStream pwprobszip = null;
 	  PrintWriter pwprobs = null;
-	  if (bprintposterior)
-	  {
-	      //creates the posterior file
- 
-	      String szposterioroutfilename = szoutputdir+"/POSTERIOR/"+szprefix+"_"+chromSeq[nordered_nseq]+ChromHMM.SZPOSTERIOREXTENSION;
 
-             System.out.println("Writing to file "+szposterioroutfilename);
-	     pwprobs = new PrintWriter(szposterioroutfilename);
-	     pwprobs.println(cellSeq[nordered_nseq]+"\t"+chromSeq[nordered_nseq]);
-	     for (int ni = 0; ni < numstates-1; ni++)
-	     {
-		 pwprobs.print(""+chorder+(ni+1)+"\t");
-	     } 
-	     pwprobs.println(""+chorder+(numstates));
-	  }
-
+	  GZIPOutputStream pwmaxzip = null;
 	  PrintWriter pwmax = null;
-	  if (bprintstatebyline)
-	  {
-	     //creates a file which has the state with the maximum posterior probability
-	     String szmaxoutfilename = szoutputdir+"/STATEBYLINE/"+szprefix+"_"+chromSeq[nordered_nseq]+ChromHMM.SZSTATEBYLINEEXTENSION;
 
-	     System.out.println("Writing to file "+szmaxoutfilename);
-	     pwmax = new PrintWriter(szmaxoutfilename);
-	     pwmax.println(cellSeq[nordered_nseq]+"\t"+chromSeq[nordered_nseq]);
-	     pwmax.println("MaxState "+chorder);
-	  }
-
+          GZIPOutputStream pwbedzip = null;
 	  PrintWriter pwbed = null;
-	  if (bprintsegment)
+
+	  if (bgzip)
 	  {
-	      //creates a file which has the maximum segmentation
-	      //we only have one file per cell type here
-	     pwbed = (PrintWriter) hmcellToFourColPW.get(cellSeq[nordered_nseq]);
-
-	     if (pwbed == null)
+	     //PrintWriter pwprobs = null;
+	     if (bprintposterior)
 	     {
-		 //haven't seen this cell type
-	         String szsegmentoutfilename = szoutputdir+"/" + szprefix+SZSEGMENTEXTENSION;
+	        //creates the posterior file
+ 
+	        String szposterioroutfilename = szoutputdir+"/POSTERIOR/"+szprefix+"_"+chromSeq[nordered_nseq]+ChromHMM.SZPOSTERIOREXTENSION+".gz";
 
-	         pwbed = new PrintWriter(szsegmentoutfilename);
-		 System.out.println("Writing to file "+szsegmentoutfilename);
+                System.out.println("Writing to file "+szposterioroutfilename);
+		pwprobszip = new GZIPOutputStream(new FileOutputStream(szposterioroutfilename));
+	        //pwprobs = new PrintWriter(szposterioroutfilename);
+		String szout = cellSeq[nordered_nseq]+"\t"+chromSeq[nordered_nseq]+"\n";
 
-	         hmcellToFourColPW.put(cellSeq[nordered_nseq],pwbed);    
+		byte[] btformat = szout.getBytes();
+		pwprobszip.write(btformat,0,btformat.length);
+
+		StringBuffer sbout = new StringBuffer();
+	        //pwprobs.println(cellSeq[nordered_nseq]+"\t"+chromSeq[nordered_nseq]);
+	        for (int ni = 0; ni < numstates-1; ni++)
+	        {
+		   sbout.append(""+chorder+(ni+1)+"\t");
+		   //pwprobs.print(""+chorder+(ni+1)+"\t");
+	        } 
+		sbout.append(""+chorder+(numstates)+"\n");
+	        //pwprobs.println(""+chorder+(numstates));
+
+		btformat = sbout.toString().getBytes();
+                pwprobszip.write(btformat,0,btformat.length);
+	     }
+
+	     //PrintWriter pwmax = null;
+
+
+	     if (bprintstatebyline)
+	     {
+	        //creates a file which has the state with the maximum posterior probability
+	        String szmaxoutfilename = szoutputdir+"/STATEBYLINE/"+szprefix+"_"+chromSeq[nordered_nseq]+ChromHMM.SZSTATEBYLINEEXTENSION+".gz";
+
+	        System.out.println("Writing to file "+szmaxoutfilename);
+	        //pwmax = new PrintWriter(szmaxoutfilename);
+		pwmaxzip = new GZIPOutputStream(new FileOutputStream(szmaxoutfilename));
+
+		String szout = cellSeq[nordered_nseq]+"\t"+chromSeq[nordered_nseq]+"\n";
+                byte[] btformat = szout.getBytes();
+                pwprobszip.write(btformat,0,btformat.length);
+	        //pwmax.println(cellSeq[nordered_nseq]+"\t"+chromSeq[nordered_nseq]);
+
+		szout = "MaxState "+chorder+"\n";
+		btformat = szout.getBytes();
+                pwprobszip.write(btformat,0,btformat.length);
+	        //pwmax.println("MaxState "+chorder);
+	     }
+
+	     //PrintWriter pwbed = null;
+	     //GZIPOutputStream pwbedzip = null;
+
+	     if (bprintsegment)
+	     {
+	        //creates a file which has the maximum segmentation
+	        //we only have one file per cell type here
+	        pwbedzip = (GZIPOutputStream) hmcellToFourColPW.get(cellSeq[nordered_nseq]);
+		// (PrintWriter) hmcellToFourColPW.get(cellSeq[nordered_nseq]);
+
+	        if (pwbedzip == null)
+	        {
+		   //haven't seen this cell type
+	           String szsegmentoutfilename = szoutputdir+"/" + szprefix+SZSEGMENTEXTENSION+".gz";
+
+		   pwbedzip = new GZIPOutputStream(new FileOutputStream(szsegmentoutfilename));
+	           //pwbed = new PrintWriter(szsegmentoutfilename);
+		   System.out.println("Writing to file "+szsegmentoutfilename);
+
+	           hmcellToFourColPW.put(cellSeq[nordered_nseq],pwbedzip);    
+		}
+	     }
+	  }
+	  else
+	  {
+
+	     if (bprintposterior)
+	     {
+	        //creates the posterior file
+ 
+	        String szposterioroutfilename = szoutputdir+"/POSTERIOR/"+szprefix+"_"+chromSeq[nordered_nseq]+ChromHMM.SZPOSTERIOREXTENSION;
+
+                System.out.println("Writing to file "+szposterioroutfilename);
+	        pwprobs = new PrintWriter(szposterioroutfilename);
+	        pwprobs.println(cellSeq[nordered_nseq]+"\t"+chromSeq[nordered_nseq]);
+	        for (int ni = 0; ni < numstates-1; ni++)
+	        {
+		   pwprobs.print(""+chorder+(ni+1)+"\t");
+	        } 
+	        pwprobs.println(""+chorder+(numstates));
+	     }
+
+	     if (bprintstatebyline)
+	     {
+	        //creates a file which has the state with the maximum posterior probability
+	        String szmaxoutfilename = szoutputdir+"/STATEBYLINE/"+szprefix+"_"+chromSeq[nordered_nseq]+ChromHMM.SZSTATEBYLINEEXTENSION;
+
+	        System.out.println("Writing to file "+szmaxoutfilename);
+	        pwmax = new PrintWriter(szmaxoutfilename);
+	        pwmax.println(cellSeq[nordered_nseq]+"\t"+chromSeq[nordered_nseq]);
+	        pwmax.println("MaxState "+chorder);
+	     }
+
+	     //PrintWriter pwbed = null;
+	     if (bprintsegment)
+	     {
+	        //creates a file which has the maximum segmentation
+	        //we only have one file per cell type here
+	        pwbed = (PrintWriter) hmcellToFourColPW.get(cellSeq[nordered_nseq]);
+
+	        if (pwbed == null)
+	        {
+		   //haven't seen this cell type
+	           String szsegmentoutfilename = szoutputdir+"/" + szprefix+SZSEGMENTEXTENSION;
+
+	           pwbed = new PrintWriter(szsegmentoutfilename);
+		   System.out.println("Writing to file "+szsegmentoutfilename);
+
+	           hmcellToFourColPW.put(cellSeq[nordered_nseq],pwbed);    
+		}
 	     }
 	  }
 
 
-
           if (bscaleemissions)
-	  {
+  	  {
 	     for (int ni = 0; ni < nobserved; ni++)
 	     {
 	        //going through each combination of marks
-		//if (traindataObservedSeqFlags_nseq[ni])
+	        //if (traindataObservedSeqFlags_nseq[ni])
 	        //{
 		//this signature of marks is observed on the current chromosome so
 		//updating its emission probabilities
@@ -4966,70 +5061,34 @@ public class ChromHMM
 	  double dmaxval = 0;
           int nmaxstate = 0;
 
-	  //handling the first line
-          for (int ns = 0; ns < gamma_nt.length; ns++)
-          {	   	
-	      int nmappedstate = stateordering[ns]; //maps new state to old
-	      double dprob = gamma_nt[nmappedstate];
-	      if (bprintposterior)
-	      {
-	         if (ns > 0)
-	         {
-		     //print with tab if not the first
-                    pwprobs.print("\t"+nf.format(dprob));
-	         }
-                 else
-                 {
-                    pwprobs.print(nf.format(dprob));
-		 }
-	      }
-
-	      if (dprob > dmaxval)
-	      {
-		  //best one found so far 
-	         dmaxval = dprob;
-	         nmaxstate = ns;
-	      }
-	  }
-
-	  if (bprintposterior)
+	  if (bgzip)
 	  {
-	     pwprobs.println();
-	  }
-
-	  if (bprintstatebyline)
-	  {
-	      pwmax.println(""+(nmaxstate+1));
-	  }
-
-	  //this contains the best state of the previous interval
-	  int nmaxstateprev = nmaxstate;  	
-
-          for (int nt = 1; nt < numtime_nseq; nt++)
-          {
-             gamma_nt = gamma[nt];
-
-	     dmaxval = 0;
-	     nmaxstate = 0;
+	     //handling the first line
              for (int ns = 0; ns < gamma_nt.length; ns++)
              {	   	
-		 int nmappedstate = stateordering[ns]; //maps new state to old
-		double dprob = gamma_nt[nmappedstate];
- 	        if (bprintposterior)
+	        int nmappedstate = stateordering[ns]; //maps new state to old
+	        double dprob = gamma_nt[nmappedstate];
+	        if (bprintposterior)
 	        {
+		   String szout;
 	           if (ns > 0)
 	           {
-		       //print with tab the first time
-                      pwprobs.print("\t"+nf.format(dprob));
+		      //print with tab if not the first
+		      szout = "\t"+nf.format(dprob);
+                      //pwprobs.print("\t"+nf.format(dprob));
+	           }
+                   else
+                   {
+		      szout = nf.format(dprob);
+		       //pwprobs.print(nf.format(dprob));
 		   }
-	           else
-	           {
-                      pwprobs.print(nf.format(dprob));
-		   }
+		   byte[] btformat = szout.getBytes();
+		   pwprobszip.write(btformat,0,btformat.length);
 		}
 
 	        if (dprob > dmaxval)
 	        {
+		   //best one found so far 
 	           dmaxval = dprob;
 	           nmaxstate = ns;
 		}
@@ -5037,64 +5096,271 @@ public class ChromHMM
 
 	     if (bprintposterior)
 	     {
-	        pwprobs.println();
+		 String szout = "\n";
+		 byte[] btformat = szout.getBytes();
+		 pwprobszip.write(btformat,0,btformat.length);
+		 //pwprobs.println();
 	     }
 
-             if (bprintstatebyline)
+	     if (bprintstatebyline)
 	     {
-		 pwmax.println(""+(nmaxstate+1));  	
-	     }	     
+                 String szout = (nmaxstate+1)+"\n";
+                 byte[] btformat = szout.getBytes();
+                 pwmaxzip.write(btformat,0,btformat.length);
+		 //pwmax.println(""+(nmaxstate+1));
+	     }
+
+	     //this contains the best state of the previous interval
+	     int nmaxstateprev = nmaxstate;  	
+
+             for (int nt = 1; nt < numtime_nseq; nt++)
+             {
+                gamma_nt = gamma[nt];
+
+	        dmaxval = 0;
+	        nmaxstate = 0;
+                for (int ns = 0; ns < gamma_nt.length; ns++)
+                {	   	
+		   int nmappedstate = stateordering[ns]; //maps new state to old
+		   double dprob = gamma_nt[nmappedstate];
+ 	           if (bprintposterior)
+	           {
+		      String szout;
+	              if (ns > 0)
+	              {
+		         //print with tab the first time
+			 szout = "\t"+nf.format(dprob);
+                         //pwprobs.print("\t"+nf.format(dprob));
+		      }
+	              else
+	              {
+			 szout = nf.format(dprob);
+                         //pwprobs.print(nf.format(dprob));
+		      }
+		      byte[] btformat = szout.getBytes();
+		      pwprobszip.write(btformat,0,btformat.length);
+		   }
+
+	           if (dprob > dmaxval)
+	           {
+	              dmaxval = dprob;
+	              nmaxstate = ns;
+		   }
+	        }
+
+	        if (bprintposterior)
+	        {
+		   String szout = "\n";
+		   byte[] btformat = szout.getBytes();
+		   pwprobszip.write(btformat,0,btformat.length);
+		    //pwprobs.println();
+	        }
+
+                if (bprintstatebyline)
+	        {
+		   String szout =""+(nmaxstate+1)+"\n";
+		   byte[] btformat = szout.getBytes();
+		   pwmaxzip.write(btformat,0,btformat.length);
+		   //pwmax.println(""+(nmaxstate+1));  	
+	        }	     
 	     
-	     if (bprintsegment&&(nmaxstateprev != nmaxstate))
+	        if (bprintsegment&&(nmaxstateprev != nmaxstate))
+	        {
+		   //print out last segment we are done with
+		   //pwbed.println(chromSeq[nordered_nseq]+"\t"+(nstart*nbinsize)+"\t"+(nt*nbinsize)+"\t"+chorder+(nmaxstateprev+1));		 
+		   String szout = chromSeq[nordered_nseq]+"\t"+(nstart*nbinsize)+"\t"+(nt*nbinsize)+"\t"+chorder+(nmaxstateprev+1)+"\n";
+                   byte[] btformat = szout.getBytes();
+                   pwbedzip.write(btformat,0,btformat.length);
+		   //start a new segment now
+		   nstart = nt;
+		   nmaxstateprev = nmaxstate;
+		}	     
+	     }
+
+	     if (bprintsegment)
 	     {
-		 //print out last segment we are done with
-		 pwbed.println(chromSeq[nordered_nseq]+"\t"+(nstart*nbinsize)+"\t"+(nt*nbinsize)+"\t"+chorder+(nmaxstateprev+1));		 
-		 //start a new segment now
-		 nstart = nt;
-		 nmaxstateprev = nmaxstate;
-	     } 
-	  }
+	        int nlastcoordinate;
+	        Integer objMaxCoord = null;
+	        if (hmMaxCoord != null)
+	        {
+		   objMaxCoord = ((Integer) hmMaxCoord.get(chromSeq[nordered_nseq]));
+	        }
 
-	  if (bprintsegment)
+	        if (objMaxCoord != null)
+	        {
+		   nlastcoordinate = Math.min(numtime_nseq*nbinsize,((Integer) objMaxCoord).intValue());
+	        }
+	        else
+	        {
+		   nlastcoordinate = numtime_nseq*nbinsize;
+	        }
+
+		String szout = chromSeq[nordered_nseq]+"\t"+(nstart*nbinsize)+"\t"+nlastcoordinate+"\t"+chorder+(nmaxstateprev+1)+"\n";
+		byte[] btformat = szout.getBytes();
+		pwbedzip.write(btformat,0,btformat.length);
+
+	        //pwbed.println(chromSeq[nordered_nseq]+"\t"+(nstart*nbinsize)+"\t"+nlastcoordinate+"\t"+chorder+(nmaxstateprev+1));
+	     }
+
+	     //close out the max state file if that was requested
+	     if (bprintstatebyline)
+	     {
+		pwmaxzip.finish();
+	        pwmaxzip.close();
+	     }
+	     //close out the posterior state file if that was requested
+	     if (bprintposterior)
+	     {
+		pwprobszip.finish();
+	        pwprobszip.close();    
+	     }
+	  
+             //if segment print was requested then we are going to go close those printwriters
+             if (bprintsegment)
+             {
+                Iterator itr =  hmcellToFourColPW.values().iterator();
+                while (itr.hasNext())
+                {
+		   GZIPOutputStream pwzip = (GZIPOutputStream) itr.next();
+	           //PrintWriter pw = (PrintWriter) itr.next();
+		   pwzip.finish();
+		   pwzip.close();
+	           //pw.close();
+		}
+	     }
+	  }
+	  else
 	  {
-	      int nlastcoordinate;
-	      Integer objMaxCoord = null;
-	      if (hmMaxCoord != null)
-	      {
-		  objMaxCoord = ((Integer) hmMaxCoord.get(chromSeq[nordered_nseq]));
-	      }
+	     //handling the first line
+             for (int ns = 0; ns < gamma_nt.length; ns++)
+             {	   	
+	        int nmappedstate = stateordering[ns]; //maps new state to old
+	        double dprob = gamma_nt[nmappedstate];
 
-	      if (objMaxCoord != null)
-	      {
-		  nlastcoordinate = Math.min(numtime_nseq*nbinsize,((Integer) objMaxCoord).intValue());
-	      }
-	      else
-	      {
-		  nlastcoordinate = numtime_nseq*nbinsize;
-	      }
-	      pwbed.println(chromSeq[nordered_nseq]+"\t"+(nstart*nbinsize)+"\t"+nlastcoordinate+"\t"+chorder+(nmaxstateprev+1));
-	  }
+	        if (bprintposterior)
+	        {
+	           if (ns > 0)
+	           {
+                      pwprobs.print("\t"+nf.format(dprob));
+	           }
+                   else
+                   {
+                      pwprobs.print(nf.format(dprob));
+		   }
+		}
 
-	  //close out the max state file if that was requested
-	  if (bprintstatebyline)
-	  {
-	     pwmax.close();
-	  }
-	  //close out the posterior state file if that was requested
-	  if (bprintposterior)
-	  {
-	     pwprobs.close();    
-	  }
-       }
+	        if (dprob > dmaxval)
+	        {
+		   //best one found so far 
+	           dmaxval = dprob;
+	           nmaxstate = ns;
+		}
+	     }
 
-       //if segment print was requested then we are going to go close those printwriters
-       if (bprintsegment)
-       {
-          Iterator itr =  hmcellToFourColPW.values().iterator();
-          while (itr.hasNext())
-          {
-	     PrintWriter pw = (PrintWriter) itr.next();
-	     pw.close();
+	     if (bprintposterior)
+	     {
+                pwprobs.println();
+	     }
+
+	     if (bprintstatebyline)
+	     {
+	        pwmax.println(""+(nmaxstate+1));
+	     }
+
+	     //this contains the best state of the previous interval
+	     int nmaxstateprev = nmaxstate;  	
+
+             for (int nt = 1; nt < numtime_nseq; nt++)
+             {
+                gamma_nt = gamma[nt];
+
+	        dmaxval = 0;
+	        nmaxstate = 0;
+                for (int ns = 0; ns < gamma_nt.length; ns++)
+                {	   	
+		   int nmappedstate = stateordering[ns]; //maps new state to old
+		   double dprob = gamma_nt[nmappedstate];
+ 	           if (bprintposterior)
+	           {
+	              if (ns > 0)
+	              {
+		         //print with tab the first time
+                         pwprobs.print("\t"+nf.format(dprob));
+		      }
+	              else
+	              {
+                         pwprobs.print(nf.format(dprob));
+		      }
+		   }
+
+	           if (dprob > dmaxval)
+	           {
+	              dmaxval = dprob;
+	              nmaxstate = ns;
+		   }
+	        }
+
+	        if (bprintposterior)
+	        {
+	           pwprobs.println();
+	        }
+
+                if (bprintstatebyline)
+	        {
+		   pwmax.println(""+(nmaxstate+1));  	
+	        }	     
+	     
+	        if (bprintsegment&&(nmaxstateprev != nmaxstate))
+	        {
+		   //print out last segment we are done with
+		   pwbed.println(chromSeq[nordered_nseq]+"\t"+(nstart*nbinsize)+"\t"+(nt*nbinsize)+"\t"+chorder+(nmaxstateprev+1));		 
+		   //start a new segment now
+		   nstart = nt;
+		   nmaxstateprev = nmaxstate;
+		}	     
+	     }
+
+	     if (bprintsegment)
+	     {
+	        int nlastcoordinate;
+	        Integer objMaxCoord = null;
+	        if (hmMaxCoord != null)
+	        {
+		   objMaxCoord = ((Integer) hmMaxCoord.get(chromSeq[nordered_nseq]));
+	        }
+
+	        if (objMaxCoord != null)
+	        {
+		   nlastcoordinate = Math.min(numtime_nseq*nbinsize,((Integer) objMaxCoord).intValue());
+	        }
+	        else
+	        {
+		   nlastcoordinate = numtime_nseq*nbinsize;
+	        }
+	        pwbed.println(chromSeq[nordered_nseq]+"\t"+(nstart*nbinsize)+"\t"+nlastcoordinate+"\t"+chorder+(nmaxstateprev+1));
+	     }
+
+	     //close out the max state file if that was requested
+	     if (bprintstatebyline)
+	     {
+	        pwmax.close();
+	     }
+	     //close out the posterior state file if that was requested
+	     if (bprintposterior)
+	     {
+	        pwprobs.close();    
+	     }
+	  
+             //if segment print was requested then we are going to go close those printwriters
+             if (bprintsegment)
+             {
+                Iterator itr =  hmcellToFourColPW.values().iterator();
+                while (itr.hasNext())
+                {
+	           PrintWriter pw = (PrintWriter) itr.next();
+	           pw.close();
+		}
+	     }
 	  }
        }
     }
@@ -5209,51 +5475,125 @@ public class ChromHMM
           }
 	  hsprefix.add(szprefix);
 
+
+	  GZIPOutputStream pwprobszip = null;
+	  GZIPOutputStream pwmaxzip = null;
+	  GZIPOutputStream pwbedzip = null;
 	  PrintWriter pwprobs = null;
-	  if (bprintposterior)
-	  {
-	      //creates the posterior file
- 
-	      String szposterioroutfilename = szoutputdir+"/POSTERIOR/"+szprefix+"_"+chromSeq[nordered_nseq]+ChromHMM.SZPOSTERIOREXTENSION;
-
-             System.out.println("Writing to file "+szposterioroutfilename);
-	     pwprobs = new PrintWriter(szposterioroutfilename);
-	     pwprobs.println(cellSeq[nordered_nseq]+"\t"+chromSeq[nordered_nseq]);
-	     for (int ni = 0; ni < numstates-1; ni++)
-	     {
-		 pwprobs.print(""+chorder+(ni+1)+"\t");
-	     } 
-	     pwprobs.println(""+chorder+(numstates));
-	  }
-
 	  PrintWriter pwmax = null;
-	  if (bprintstatebyline)
-	  {
-	     //creates a file which has the state with the maximum posterior probability
-	     String szmaxoutfilename = szoutputdir+"/STATEBYLINE/"+szprefix+"_"+chromSeq[nordered_nseq]+ChromHMM.SZSTATEBYLINEEXTENSION;
-
-	     System.out.println("Writing to file "+szmaxoutfilename);
-	     pwmax = new PrintWriter(szmaxoutfilename);
-	     pwmax.println(cellSeq[nordered_nseq]+"\t"+chromSeq[nordered_nseq]);
-	     pwmax.println("MaxState "+chorder);
-	  }
-
 	  PrintWriter pwbed = null;
-	  if (bprintsegment)
+
+	  if (bgzip)
 	  {
-	      //creates a file which has the maximum segmentation
-	      //we only have one file per cell type here
-	     pwbed = (PrintWriter) hmcellToFourColPW.get(cellSeq[nordered_nseq]);
-
-	     if (pwbed == null)
+	     if (bprintposterior)
 	     {
-		 //haven't seen this cell type
-	         String szsegmentoutfilename = szoutputdir+"/" + szprefix+SZSEGMENTEXTENSION;
+	        //creates the posterior file
+ 
+	        String szposterioroutfilename = szoutputdir+"/POSTERIOR/"+szprefix+"_"+chromSeq[nordered_nseq]+ChromHMM.SZPOSTERIOREXTENSION+".gz";
 
-	         pwbed = new PrintWriter(szsegmentoutfilename);
-		 System.out.println("Writing to file "+szsegmentoutfilename);
+                System.out.println("Writing to file "+szposterioroutfilename);
+	        //pwprobs = new PrintWriter(szposterioroutfilename);
+		pwprobszip = new GZIPOutputStream(new FileOutputStream(szposterioroutfilename));
+		String szout = cellSeq[nordered_nseq]+"\t"+chromSeq[nordered_nseq]+"\n";
 
-	         hmcellToFourColPW.put(cellSeq[nordered_nseq],pwbed);    
+		byte[] btformat = szout.getBytes();
+		pwprobszip.write(btformat,0,btformat.length);
+
+	        //pwprobs.println(cellSeq[nordered_nseq]+"\t"+chromSeq[nordered_nseq]);
+		StringBuffer sbout = new StringBuffer();
+	        for (int ni = 0; ni < numstates-1; ni++)
+	        {
+		   sbout.append(""+chorder+(ni+1)+"\t");
+		   //pwprobs.print(""+chorder+(ni+1)+"\t");
+	        } 
+		sbout.append(""+chorder+(numstates)+"\n");
+
+		btformat = sbout.toString().getBytes();
+                pwprobszip.write(btformat,0,btformat.length);
+	        //pwprobs.println(""+chorder+(numstates));
+	     }
+
+	     if (bprintstatebyline)
+	     {
+	        //creates a file which has the state with the maximum posterior probability
+	        String szmaxoutfilename = szoutputdir+"/STATEBYLINE/"+szprefix+"_"+chromSeq[nordered_nseq]+ChromHMM.SZSTATEBYLINEEXTENSION+".gz";
+	        System.out.println("Writing to file "+szmaxoutfilename);
+		pwmaxzip = new GZIPOutputStream(new FileOutputStream(szmaxoutfilename));
+	        //pwmax = new PrintWriter(szmaxoutfilename);
+		String szout = cellSeq[nordered_nseq]+"\t"+chromSeq[nordered_nseq] +"\n";
+                byte[] btformat = szout.getBytes();
+                pwmaxzip.write(btformat,0,btformat.length);
+
+		szout = "MaxState "+chorder+"\n";
+
+		btformat = szout.getBytes();
+                pwmaxzip.write(btformat,0,btformat.length);
+	        //pwmax.println(cellSeq[nordered_nseq]+"\t"+chromSeq[nordered_nseq]);
+	        //pwmax.println("MaxState "+chorder);
+	     }
+
+	     if (bprintsegment)
+	     {
+	        //creates a file which has the maximum segmentation
+	        //we only have one file per cell type here
+	        pwbedzip = (GZIPOutputStream) hmcellToFourColPW.get(cellSeq[nordered_nseq]);
+
+	        if (pwbedzip == null)
+	        {
+		   //haven't seen this cell type
+	           String szsegmentoutfilename = szoutputdir+"/" + szprefix+SZSEGMENTEXTENSION+".gz";
+
+		   pwbedzip = new GZIPOutputStream(new FileOutputStream(szsegmentoutfilename));
+		   //pwbed = new PrintWriter(szsegmentoutfilename);
+		   System.out.println("Writing to file "+szsegmentoutfilename);
+	           hmcellToFourColPW.put(cellSeq[nordered_nseq],pwbedzip);    
+		}
+	     }
+	  }
+	  else
+	  {
+	     if (bprintposterior)
+	     {
+	        //creates the posterior file
+ 
+	        String szposterioroutfilename = szoutputdir+"/POSTERIOR/"+szprefix+"_"+chromSeq[nordered_nseq]+ChromHMM.SZPOSTERIOREXTENSION;
+
+                System.out.println("Writing to file "+szposterioroutfilename);
+	        pwprobs = new PrintWriter(szposterioroutfilename);
+	        pwprobs.println(cellSeq[nordered_nseq]+"\t"+chromSeq[nordered_nseq]);
+	        for (int ni = 0; ni < numstates-1; ni++)
+	        {
+		   pwprobs.print(""+chorder+(ni+1)+"\t");
+	        } 
+	        pwprobs.println(""+chorder+(numstates));
+	     }
+
+	     if (bprintstatebyline)
+	     {
+	        //creates a file which has the state with the maximum posterior probability
+	        String szmaxoutfilename = szoutputdir+"/STATEBYLINE/"+szprefix+"_"+chromSeq[nordered_nseq]+ChromHMM.SZSTATEBYLINEEXTENSION;
+	        System.out.println("Writing to file "+szmaxoutfilename);
+	        pwmax = new PrintWriter(szmaxoutfilename);
+	        pwmax.println(cellSeq[nordered_nseq]+"\t"+chromSeq[nordered_nseq]);
+	        pwmax.println("MaxState "+chorder);
+	     }
+
+	     //PrintWriter pwbed = null;
+	     if (bprintsegment)
+	     {
+	        //creates a file which has the maximum segmentation
+	        //we only have one file per cell type here
+	        pwbed = (PrintWriter) hmcellToFourColPW.get(cellSeq[nordered_nseq]);
+
+	        if (pwbed == null)
+	        {
+		   //haven't seen this cell type
+	           String szsegmentoutfilename = szoutputdir+"/" + szprefix+SZSEGMENTEXTENSION;
+
+	           pwbed = new PrintWriter(szsegmentoutfilename);
+		   System.out.println("Writing to file "+szsegmentoutfilename);
+	           hmcellToFourColPW.put(cellSeq[nordered_nseq],pwbed);    
+		}
 	     }
 	  }
 
@@ -5572,70 +5912,197 @@ public class ChromHMM
 	  double dmaxval = 0;
           int nmaxstate = 0;
 
-	  //handling the first line
-          for (int ns = 0; ns < gamma_nt.length; ns++)
-          {	   	
-	      int nmappedstate = stateordering[ns]; //maps new state to old
-	      double dprob = gamma_nt[nmappedstate];
-	      if (bprintposterior)
-	      {
-	         if (ns > 0)
-	         {
-		     //print with tab if not the first
-                    pwprobs.print("\t"+nf.format(dprob));
-	         }
-                 else
-                 {
-                    pwprobs.print(nf.format(dprob));
-		 }
-	      }
-
-	      if (dprob > dmaxval)
-	      {
-		  //best one found so far 
-	         dmaxval = dprob;
-	         nmaxstate = ns;
-	      }
-	  }
-
-	  if (bprintposterior)
+	  if (bgzip)
 	  {
-	     pwprobs.println();
-	  }
-
-	  if (bprintstatebyline)
-	  {
-	      pwmax.println(""+(nmaxstate+1));
-	  }
-
-	  //this contains the best state of the previous interval
-	  int nmaxstateprev = nmaxstate;  	
-
-          for (int nt = 1; nt < numtime_nseq; nt++)
-          {
-             gamma_nt = gamma[nt];
-
-	     dmaxval = 0;
-	     nmaxstate = 0;
+	     //handling the first line
              for (int ns = 0; ns < gamma_nt.length; ns++)
              {	   	
-		 int nmappedstate = stateordering[ns]; //maps new state to old
-		double dprob = gamma_nt[nmappedstate];
- 	        if (bprintposterior)
+	        int nmappedstate = stateordering[ns]; //maps new state to old
+	        double dprob = gamma_nt[nmappedstate];
+	        if (bprintposterior)
+	        {
+		   String szout;
+	           if (ns > 0)
+	           {
+		      szout = "\t"+nf.format(dprob);
+		      //print with tab if not the first
+                      //pwprobs.print("\t"+nf.format(dprob));
+	           }
+                   else
+                   {
+		      szout = nf.format(dprob);
+                      //pwprobs.print(nf.format(dprob));
+		   }
+
+		   byte[] btformat = szout.getBytes();
+		   pwprobszip.write(btformat,0,btformat.length);
+		}
+
+	        if (dprob > dmaxval)
+	        {
+		   //best one found so far 
+	           dmaxval = dprob;
+	           nmaxstate = ns;
+		}
+	     }
+
+	     if (bprintposterior)
+	     {
+		String szout = "\n";
+		byte[] btformat = szout.getBytes();
+		pwprobszip.write(btformat,0,btformat.length);
+	        //pwprobs.println();
+	     }
+
+	     if (bprintstatebyline)
+	     {
+	        String szout = ""+(nmaxstate+1)+"\n";
+	        byte[] btformat = szout.getBytes();
+		pwmaxzip.write(btformat,0,btformat.length);
+	        //pwmax.println(""+(nmaxstate+1));
+	     }
+
+	     //this contains the best state of the previous interval
+	     int nmaxstateprev = nmaxstate;  	
+
+             for (int nt = 1; nt < numtime_nseq; nt++)
+             { 
+                gamma_nt = gamma[nt];
+
+	        dmaxval = 0;
+	        nmaxstate = 0;
+                for (int ns = 0; ns < gamma_nt.length; ns++)
+                {	   	
+		   int nmappedstate = stateordering[ns]; //maps new state to old
+		   double dprob = gamma_nt[nmappedstate];
+ 	           if (bprintposterior)
+	           {
+		      String szout;
+	              if (ns > 0)
+	              {
+			 szout = "\t"+nf.format(dprob);
+		         //print with tab the first time
+                         //pwprobs.print("\t"+nf.format(dprob));
+		      }
+	              else
+	              {
+			 szout = nf.format(dprob);
+                         //pwprobs.print(nf.format(dprob));
+		      }
+		      byte[] btformat = szout.getBytes();
+		      pwprobszip.write(btformat,0,btformat.length);
+		   }
+
+	           if (dprob > dmaxval)
+	           {
+	              dmaxval = dprob;
+	              nmaxstate = ns;
+		   }
+		}
+
+	        if (bprintposterior)
+	        {
+		    //pwprobs.println();
+		   String szout = "\n";
+		   byte[] btformat = szout.getBytes();
+		   pwprobszip.write(btformat,0,btformat.length);
+		}
+
+                if (bprintstatebyline)
+	        {
+		   String szout = (nmaxstate+1)+"\n";
+		   byte[] btformat = szout.getBytes();
+		   pwmaxzip.write(btformat,0,btformat.length);
+		   //pwmax.println(""+(nmaxstate+1));  	
+		}	     
+	     
+	        if (bprintsegment&&(nmaxstateprev != nmaxstate))
+	        {
+		   //print out last segment we are done with
+		   String szout = chromSeq[nordered_nseq]+"\t"+(nstart*nbinsize)+"\t"+(nt*nbinsize)+"\t"+chorder+(nmaxstateprev+1) +"\n";
+		    //pwbed.println(chromSeq[nordered_nseq]+"\t"+(nstart*nbinsize)+"\t"+(nt*nbinsize)+"\t"+chorder+(nmaxstateprev+1));	
+                   byte[] btformat = szout.getBytes();
+		   pwbedzip.write(btformat,0,btformat.length);
+	 
+		   //start a new segment now
+		   nstart = nt;
+		   nmaxstateprev = nmaxstate;
+		}
+	     }
+
+	     if (bprintsegment)
+	     {
+	        int nlastcoordinate;
+	        Integer objMaxCoord = null;
+	        if (hmMaxCoord != null)
+	        {
+		   objMaxCoord = ((Integer) hmMaxCoord.get(chromSeq[nordered_nseq]));
+	        }
+
+	        if (objMaxCoord != null)
+	        {
+		   nlastcoordinate = Math.min(numtime_nseq*nbinsize,((Integer) objMaxCoord).intValue());
+	        }
+	        else
+	        {
+		   nlastcoordinate = numtime_nseq*nbinsize;
+	        }
+	        //pwbed.println(chromSeq[nordered_nseq]+"\t"+(nstart*nbinsize)+"\t"+nlastcoordinate+"\t"+chorder+(nmaxstateprev+1));
+
+		String szout = chromSeq[nordered_nseq]+"\t"+(nstart*nbinsize)+"\t"+nlastcoordinate+"\t"+chorder+(nmaxstateprev+1)+"\n";
+		byte[] btformat = szout.getBytes();
+		pwbedzip.write(btformat,0,btformat.length);
+
+	     }
+	  
+	     //close out the max state file if that was requested
+	     if (bprintstatebyline)
+	     {
+	        pwmaxzip.finish();
+	        pwmaxzip.close();
+	     }
+	     //close out the posterior state file if that was requested
+	     if (bprintposterior)
+	     {
+	        pwprobszip.finish();
+	        pwprobszip.close();    
+	     }	  
+       
+             //if segment print was requested then we are going to go close those printwriters
+             if (bprintsegment)
+             {
+                Iterator itr =  hmcellToFourColPW.values().iterator();
+                while (itr.hasNext())
+                {
+	           GZIPOutputStream pwzip = (GZIPOutputStream) itr.next();
+		   pwzip.finish();
+	           pwzip.close();
+		}
+	     }
+	  }
+	  else
+	  {
+	     //handling the first line
+             for (int ns = 0; ns < gamma_nt.length; ns++)
+             {	   	
+	        int nmappedstate = stateordering[ns]; //maps new state to old
+	        double dprob = gamma_nt[nmappedstate];
+	        if (bprintposterior)
 	        {
 	           if (ns > 0)
 	           {
-		       //print with tab the first time
+		      //print with tab if not the first
                       pwprobs.print("\t"+nf.format(dprob));
-		   }
-	           else
-	           {
+	           }
+                   else
+                   {
                       pwprobs.print(nf.format(dprob));
 		   }
 		}
 
 	        if (dprob > dmaxval)
 	        {
+		   //best one found so far 
 	           dmaxval = dprob;
 	           nmaxstate = ns;
 		}
@@ -5646,61 +6113,105 @@ public class ChromHMM
 	        pwprobs.println();
 	     }
 
-             if (bprintstatebyline)
+	     if (bprintstatebyline)
 	     {
-		 pwmax.println(""+(nmaxstate+1));  	
-	     }	     
+	        pwmax.println(""+(nmaxstate+1));
+	     }
+
+	     //this contains the best state of the previous interval
+	     int nmaxstateprev = nmaxstate;  	
+
+             for (int nt = 1; nt < numtime_nseq; nt++)
+             { 
+                gamma_nt = gamma[nt];
+
+	        dmaxval = 0;
+	        nmaxstate = 0;
+                for (int ns = 0; ns < gamma_nt.length; ns++)
+                {	   	
+		   int nmappedstate = stateordering[ns]; //maps new state to old
+		   double dprob = gamma_nt[nmappedstate];
+ 	           if (bprintposterior)
+	           {
+	              if (ns > 0)
+	              {
+		         //print with tab the first time
+                         pwprobs.print("\t"+nf.format(dprob));
+		      }
+	              else
+	              {
+                         pwprobs.print(nf.format(dprob));
+		      }
+		   }
+
+	           if (dprob > dmaxval)
+	           {
+	              dmaxval = dprob;
+	              nmaxstate = ns;
+		   }
+		}
+
+	        if (bprintposterior)
+	        {
+	           pwprobs.println();
+		}
+
+                if (bprintstatebyline)
+	        {
+		   pwmax.println(""+(nmaxstate+1));  	
+		}	     
 	     
-	     if (bprintsegment&&(nmaxstateprev != nmaxstate))
+	        if (bprintsegment&&(nmaxstateprev != nmaxstate))
+	        {
+		   //print out last segment we are done with
+		   pwbed.println(chromSeq[nordered_nseq]+"\t"+(nstart*nbinsize)+"\t"+(nt*nbinsize)+"\t"+chorder+(nmaxstateprev+1));		 
+		   //start a new segment now
+		   nstart = nt;
+		   nmaxstateprev = nmaxstate;
+		}
+	     }
+
+	     if (bprintsegment)
 	     {
-		 //print out last segment we are done with
-		 pwbed.println(chromSeq[nordered_nseq]+"\t"+(nstart*nbinsize)+"\t"+(nt*nbinsize)+"\t"+chorder+(nmaxstateprev+1));		 
-		 //start a new segment now
-		 nstart = nt;
-		 nmaxstateprev = nmaxstate;
-	     } 
-	  }
+	        int nlastcoordinate;
+	        Integer objMaxCoord = null;
+	        if (hmMaxCoord != null)
+	        {
+		   objMaxCoord = ((Integer) hmMaxCoord.get(chromSeq[nordered_nseq]));
+	        }
 
-	  if (bprintsegment)
-	  {
-	      int nlastcoordinate;
-	      Integer objMaxCoord = null;
-	      if (hmMaxCoord != null)
-	      {
-		  objMaxCoord = ((Integer) hmMaxCoord.get(chromSeq[nordered_nseq]));
-	      }
-
-	      if (objMaxCoord != null)
-	      {
-		  nlastcoordinate = Math.min(numtime_nseq*nbinsize,((Integer) objMaxCoord).intValue());
-	      }
-	      else
-	      {
-		  nlastcoordinate = numtime_nseq*nbinsize;
-	      }
-	      pwbed.println(chromSeq[nordered_nseq]+"\t"+(nstart*nbinsize)+"\t"+nlastcoordinate+"\t"+chorder+(nmaxstateprev+1));
-	  }
-
-	  //close out the max state file if that was requested
-	  if (bprintstatebyline)
-	  {
-	     pwmax.close();
-	  }
-	  //close out the posterior state file if that was requested
-	  if (bprintposterior)
-	  {
-	     pwprobs.close();    
-	  }
-       }
-
-       //if segment print was requested then we are going to go close those printwriters
-       if (bprintsegment)
-       {
-          Iterator itr =  hmcellToFourColPW.values().iterator();
-          while (itr.hasNext())
-          {
-	     PrintWriter pw = (PrintWriter) itr.next();
-	     pw.close();
+	        if (objMaxCoord != null)
+	        {
+		   nlastcoordinate = Math.min(numtime_nseq*nbinsize,((Integer) objMaxCoord).intValue());
+	        }
+	        else
+	        {
+		   nlastcoordinate = numtime_nseq*nbinsize;
+	        }
+	        pwbed.println(chromSeq[nordered_nseq]+"\t"+(nstart*nbinsize)+"\t"+nlastcoordinate+"\t"+chorder+(nmaxstateprev+1));
+	     }
+	  
+	     //close out the max state file if that was requested
+	     if (bprintstatebyline)
+	     {
+	        pwmax.close();
+	     }
+	     //close out the posterior state file if that was requested
+	     if (bprintposterior)
+	     {
+	        pwprobs.close();    
+	     }	  
+       
+             //if segment print was requested then we are going to go close those printwriters
+             if (bprintsegment)
+             {
+                Iterator itr =  hmcellToFourColPW.values().iterator();
+                while (itr.hasNext())
+                {
+	           PrintWriter pw = (PrintWriter) itr.next();
+	           pw.close();
+		}
+	     }
 	  }
        }
     }
@@ -10665,10 +11176,11 @@ public class ChromHMM
 
 	if (szcommand.equalsIgnoreCase("Version"))
 	{
-	    System.out.println("This is Version 1.15 of ChromHMM (c) Copyright 2008-2012 Massachusetts Institute of Technology");
+	    System.out.println("This is Version 1.16 of ChromHMM (c) Copyright 2008-2012 Massachusetts Institute of Technology");
 	}
         else if ((szcommand.equals("BinarizeBam"))||(szcommand.equalsIgnoreCase("BinarizeBed")))
 	{
+	    boolean bgzip = false;
 	    boolean bpairend = false;
 	    String szcontroldir=null;
 	    int nflankwidthcontrol = 5;
@@ -10724,6 +11236,10 @@ public class ChromHMM
                      else if (args[nargindex].equals("-g"))
 		     {
 		        dcountthresh = Double.parseDouble(args[++nargindex]);
+		     }
+                     else if (args[nargindex].equals("-gzip"))
+		     {
+		         bgzip = true;
 		     }
 		     else if (args[nargindex].equals("-n"))
 		     {
@@ -10830,7 +11346,7 @@ public class ChromHMM
 						nshift,bcenterinterval, noffsetleft,noffsetright,szoutputsignaldir,
 						szoutputbinarydir,szoutputcontroldir,
 					        dpoissonthresh,dfoldthresh,bcontainsthresh,
-						   npseudocountcontrol,nbinsize,szcolfields,bpeaks, dcountthresh,szcommand.equalsIgnoreCase("BinarizeBam"),bpairend);	   
+						   npseudocountcontrol,nbinsize,szcolfields,bpeaks, dcountthresh,szcommand.equalsIgnoreCase("BinarizeBam"),bpairend, bgzip);	   
 	          
 	    }
 	    else
@@ -10844,14 +11360,14 @@ public class ChromHMM
 	       if (szcommand.equalsIgnoreCase("BinarizeBed"))
 	       {
                   System.out.println("usage BinarizeBed [-b binsize][-c controldir][-center][-colfields chromosome,start,end[,strand]][-e offsetend][-f foldthresh]"+
-                                  "[-g signalthresh][-n shift][-o outputcontroldir][-p poissonthresh][-peaks][-s offsetstart][-strictthresh][-t outputsignaldir]"+
+                                  "[-g signalthresh][-gzip][-n shift][-o outputcontroldir][-p poissonthresh][-peaks][-s offsetstart][-strictthresh][-t outputsignaldir]"+
                                   "[-u pseudocountcontrol][-w flankwidthcontrol] "+
                                   "chromosomelengthfile inputbeddir cellmarkfiletable outputbinarydir");
 	       }
 	       else
 	       {
 		   System.out.println("usage BinarizeBam [-b binsize][-c controldir][-e offsetend][-f foldthresh]"+
-                                  "[-g signalthresh][-o outputcontroldir][-p poissonthresh][-paired|[-center][-n shift][-peaks]]"+
+                                  "[-g signalthresh][-gzip][-o outputcontroldir][-p poissonthresh][-paired|[-center][-n shift][-peaks]]"+
                                   "[-s offsetstart][-strictthresh][-t outputsignaldir]"+
                                   "[-u pseudocountcontrol][-w flankwidthcontrol] "+
 				      "chromosomelengthfile inputbamdir cellmarkfiletable outputbinarydir");
@@ -10861,6 +11377,7 @@ public class ChromHMM
 	else if (szcommand.equalsIgnoreCase("BinarizeSignal"))
 	{
 	    boolean bcontainsthresh = true;
+	    boolean bgzip = false;
 	    double dfoldthresh = 0;
 	    double dcountthresh = 0;
 	    double dpoissonthresh = 0.0001;
@@ -10893,6 +11410,10 @@ public class ChromHMM
                      else if (args[nargindex].equals("-g"))
 		     {
 		        dcountthresh = Double.parseDouble(args[++nargindex]);
+		     }
+                     else if (args[nargindex].equals("-gzip"))
+		     {
+		        bgzip = true;
 		     }
 		     else if (args[nargindex].equals("-p"))
 		     {
@@ -10940,11 +11461,13 @@ public class ChromHMM
 	          if (szcontroldir!=null)
 	          {
                      Preprocessing.makeBinaryDataFromSignalAgainstControl(szsignaldir,szcontroldir, szoutputdir,
-									  dpoissonthresh, dfoldthresh,bcontainsthresh, nflankwidthcontrol,npseudocountcontrol, dcountthresh);
+								   dpoissonthresh, dfoldthresh,bcontainsthresh, 
+									  nflankwidthcontrol,npseudocountcontrol, dcountthresh,bgzip);
 	          }
 	          else
 	          {
-		      Preprocessing.makeBinaryDataFromSignalUniform(szsignaldir, szoutputdir, dpoissonthresh, dfoldthresh, bcontainsthresh,dcountthresh);
+		      Preprocessing.makeBinaryDataFromSignalUniform(szsignaldir, szoutputdir, dpoissonthresh, 
+                                                                    dfoldthresh, bcontainsthresh,dcountthresh,bgzip);
 	          }
 	       }
 	       else
@@ -10955,7 +11478,7 @@ public class ChromHMM
 
 	    if (!bok)
             {
-               System.out.println("usage BinarizeSignal [-c controldir][-f foldthresh][-g signalthresh][-p poissonthresh][-strictthresh][-u pseudocountcontrol][-w flankwidth] signaldir outputdir");
+               System.out.println("usage BinarizeSignal [-c controldir][-f foldthresh][-g signalthresh][-gzip][-p poissonthresh][-strictthresh][-u pseudocountcontrol][-w flankwidth] signaldir outputdir");
             }	       
 	    
 	}
@@ -11208,7 +11731,7 @@ public class ChromHMM
 	    int nbinsize = ChromHMM.DEFAULT_BINSIZEBASEPAIRS;
 	    String szoutfileID = "";
 	    boolean blowmem = false;
-
+	    boolean bgzip = false;
 	    int nargindex = 1;
 
             try
@@ -11222,6 +11745,10 @@ public class ChromHMM
 		  else if (args[nargindex].equals("-f"))
 		  {
 		     szinputfilelist = args[++nargindex];
+		  }
+                  else if (args[nargindex].equals("-gzip"))
+		  {
+		      bgzip = true;
 		  }
 		  else if (args[nargindex].equals("-i"))
 		  {
@@ -11307,7 +11834,7 @@ public class ChromHMM
 	       {
 
 		   ChromHMM theHMM = new ChromHMM(szinputdir, szinputfilelist,szchromlengthfile, szoutputdir, szmodelfile, szoutfileID, nbinsize, bprintposterior,
-						  bprintsegments,bprintstatebyline, blowmem,bscaleemissions);
+						  bprintsegments,bprintstatebyline, blowmem,bscaleemissions, bgzip);
 
 		  if (blowmem)
 		  {
@@ -11330,7 +11857,7 @@ public class ChromHMM
 
 	    if (!bok)
 	    {
-		System.out.println("usage: MakeSegmentation [-b binsize][-f inputfilelist][-i outfileID][-l chromosomelengthfile][-lowmem][-many][-nobed]"+
+		System.out.println("usage: MakeSegmentation [-b binsize][-f inputfilelist][-gzip][-i outfileID][-l chromosomelengthfile][-lowmem][-many][-nobed]"+
                                    "[-printposterior][-printstatesbyline]"+
                                    "  modelfile inputdir outputdir");
 	    }
@@ -11339,6 +11866,7 @@ public class ChromHMM
 	{
 	    String szcolormapping = null;
 	    String szlabelmapping = null;
+	    boolean bgzip = false;
 	    
 	    int nargindex = 1;
 	    int numstates = -1;           
@@ -11348,6 +11876,10 @@ public class ChromHMM
 	       if (args[nargindex].equals("-c"))
 	       {
 		   szcolormapping = args[++nargindex];
+	       }
+	       else if (args[nargindex].equals("-gzip"))
+	       {
+		   bgzip = true;
 	       }
 	       else if ((args[nargindex].equals("-l"))||(args[nargindex].equals("-m")))
 	       {
@@ -11372,7 +11904,7 @@ public class ChromHMM
 	       String szsegmentationname = args[nargindex++];
 	       String szoutputfileprefix =args[nargindex];
 	       BrowserOutput theBrowserOutput = new BrowserOutput(szsegmentfile,szcolormapping,szlabelmapping,
-                                                                  szsegmentationname, szoutputfileprefix,numstates);
+                                                                  szsegmentationname, szoutputfileprefix,numstates,bgzip);
 	       theBrowserOutput.makebrowserdense();
 	       theBrowserOutput.makebrowserexpanded();
 	    }
@@ -11383,7 +11915,7 @@ public class ChromHMM
 	    
 	    if (!bok)
 	    {
-		System.out.println("usage: MakeBrowserFiles [-c colormappingfile][-m labelmappingfile][-n numstates] segmentfile segmentationname outputfileprefix");
+		System.out.println("usage: MakeBrowserFiles [-c colormappingfile][-gzip][-m labelmappingfile][-n numstates] segmentfile segmentationname outputfileprefix");
 	    }
 	}
 	else if (szcommand.equalsIgnoreCase("OverlapEnrichment"))
@@ -11729,6 +12261,10 @@ public class ChromHMM
 	    String path = ChromHMM.class.getProtectionDomain().getCodeSource().getLocation().getPath();
 	    String decodedPath = URLDecoder.decode(path, "UTF-8");
 	    String szprefixpath = decodedPath.substring(0, decodedPath.lastIndexOf("/") + 1); 
+	    //String szfullprefixpathchromsizedir = szprefixpath+"/"+CHROMSIZESDIR;
+	    String szfullprefixpathcoorddir = szprefixpath+"/"+COORDDIR;
+	    String szfullprefixpathanchorfiledir = szprefixpath+"/"+ANCHORFILEDIR;
+
 	    //System.out.println("prefix path is "+szprefixpath);
 
 
@@ -11750,6 +12286,7 @@ public class ChromHMM
 	    boolean blowmem = false;
 	    boolean bscaleemissions = false;
 	    boolean bpseudo = false;
+	    boolean bgzip = false;
 
 	    String szinputfilelist = null;
 	    String szchromlengthfile = null;
@@ -11801,6 +12338,10 @@ public class ChromHMM
 		  else if (args[nargindex].equals("-f"))
 		  {
 		     szinputfilelist = args[++nargindex];
+		  }
+                  else if (args[nargindex].equals("-gzip"))
+		  {
+	       	     bgzip = true;
 		  }
 		  else if (args[nargindex].equals("-h"))
 		  {
@@ -11918,6 +12459,18 @@ public class ChromHMM
 		  {
 		      bprintstatebyline = true;
 		  }
+		  //else if (args[nargindex].equals("-u"))
+		  //{
+		  //    szfullprefixpathchromsizedir = args[++nargindex];
+		  //}
+		  else if (args[nargindex].equals("-u"))
+		  {
+		      szfullprefixpathcoorddir = args[++nargindex];
+		  }
+                  else if (args[nargindex].equals("-v"))
+		  {
+	       	     szfullprefixpathanchorfiledir = args[++nargindex];
+		  }
 		  else if (args[nargindex].equals("-x"))
 		  {
 		      nmaxseconds = Integer.parseInt(args[++nargindex]);
@@ -12000,9 +12553,12 @@ public class ChromHMM
 
 		  if (szchromlengthfile == null)
 		  {
+		      //updated v.1.16
 		      File flength = new File(szprefixpath+"/"+CHROMSIZESDIR+"/"+szassembly+".txt");
+		      //File flength = new File(szfullprefixpathchromsizedir+"/"+szassembly+".txt");
 		      if (flength.exists())
 		      {
+			  //szchromlengthfile = szfullprefixpathchromsizedir+"/"+szassembly+".txt";
 			  szchromlengthfile = szprefixpath+"/"+CHROMSIZESDIR+"/"+szassembly+".txt";
 		      }
 		  }
@@ -12010,7 +12566,7 @@ public class ChromHMM
 						 szInitFile,dloadsmoothemission,dloadsmoothtransition,dinformationsmooth,
 					         nmaxiterations,dconvergediff,nmaxseconds, bprintposterior,bprintsegments,bprintstatebyline,
 						 nbinsize,szoutfileID,nstateorder,bordercols,nzerotransitionpower,theColor,bnormalEM, nmaxprocessors, 
-                                                 blowmem,numincludeseq,bprintimage,bscaleemissions, bpseudo);
+                                                 blowmem,numincludeseq,bprintimage,bscaleemissions, bpseudo, bgzip);
 	          theHMM.buildModel();
 
 
@@ -12083,7 +12639,15 @@ public class ChromHMM
 
 			for (int nfile = 0; nfile < prefixes.length; nfile++)
 			{
-			   String szsegmentfile = prefixes[nfile]+ChromHMM.SZSEGMENTEXTENSION;
+			   String szsegmentfile;
+			   if (bgzip)
+			   {
+                              szsegmentfile = prefixes[nfile]+ChromHMM.SZSEGMENTEXTENSION+".gz";
+			   }
+			   else
+			   {
+                              szsegmentfile = prefixes[nfile]+ChromHMM.SZSEGMENTEXTENSION;
+			   }
 			   pwweb.println("<li><a href=\""+szsegmentfile+"\">"+prefixes[nfile]+" Segmentation File (Four Column Bed File)</a><br>");
 			}
 
@@ -12107,17 +12671,33 @@ public class ChromHMM
 			    {
 			      String szprefix = prefixes[nprefixindex];
 
-			      String szsegmentfile = szoutputdir+"/"+szprefix+ChromHMM.SZSEGMENTEXTENSION;
+			      String szsegmentfile;
+			      if (bgzip)
+			      {
+				  szsegmentfile = szoutputdir+"/"+szprefix+ChromHMM.SZSEGMENTEXTENSION+".gz";
+			      }
+			      else
+			      {
+			         szsegmentfile = szoutputdir+"/"+szprefix+ChromHMM.SZSEGMENTEXTENSION;
+			      }
+
 
 			      BrowserOutput theBrowserOutput = new BrowserOutput(szsegmentfile,null,null,
-							      szprefix,szoutputdir+"/"+szprefix,numstates);
+										 szprefix,szoutputdir+"/"+szprefix,numstates,bgzip);
 
 			      theBrowserOutput.makebrowserdense();
 			      theBrowserOutput.makebrowserexpanded();
 
-			      pwweb.println("<li><a href="+szprefix+ChromHMM.SZBROWSERDENSEEXTENSION+".bed>"+szprefix+" Browser Custom Track Dense File</a> <br>");
-			      pwweb.println("<li><a href="+szprefix+ChromHMM.SZBROWSEREXPANDEDEXTENSION+".bed>"+szprefix+" Browser Custom Track Expanded File</a><br>");
-			      
+			      if (bgzip)
+			      {
+			         pwweb.println("<li><a href="+szprefix+ChromHMM.SZBROWSERDENSEEXTENSION+".bed.gz>"+szprefix+" Browser Custom Track Dense File</a> <br>");
+			         pwweb.println("<li><a href="+szprefix+ChromHMM.SZBROWSEREXPANDEDEXTENSION+".bed.gz>"+szprefix+" Browser Custom Track Expanded File</a><br>");
+			      }
+			      else
+			      {
+			         pwweb.println("<li><a href="+szprefix+ChromHMM.SZBROWSERDENSEEXTENSION+".bed>"+szprefix+" Browser Custom Track Dense File</a> <br>");
+			         pwweb.println("<li><a href="+szprefix+ChromHMM.SZBROWSEREXPANDEDEXTENSION+".bed>"+szprefix+" Browser Custom Track Expanded File</a><br>");
+			      }
 			   }
 			}
 
@@ -12130,13 +12710,22 @@ public class ChromHMM
 			    {
 			       String szprefix = prefixes[nprefixindex];
 			       pwweb.println("<h2>"+szprefix+" Enrichments</h2>");
-			       String szsegmentfile = szoutputdir+"/"+szprefix+ChromHMM.SZSEGMENTEXTENSION;
-			       File fcoordassembly = new File(szprefixpath+"/"+COORDDIR+"/"+szassembly);
+			       String szsegmentfile;
+			       if (bgzip)
+			       {
+			          szsegmentfile = szoutputdir+"/"+szprefix+ChromHMM.SZSEGMENTEXTENSION+".gz";
+			       }
+			       else
+			       {
+				  szsegmentfile = szoutputdir+"/"+szprefix+ChromHMM.SZSEGMENTEXTENSION;
+			       }
+			       //File fcoordassembly = new File(szprefixpath+"/"+COORDDIR+"/"+szassembly);
+			       File fcoordassembly = new File(szfullprefixpathcoorddir+"/"+szassembly);
 		               if (fcoordassembly.exists())
 			       {
 				  if (blowmem)
 			          {
-			             StateAnalysis.enrichmentMaxLowMem(szsegmentfile,szprefixpath+"/"+COORDDIR+"/"+szassembly,null,//szinputcoordlist,
+			             StateAnalysis.enrichmentMaxLowMem(szsegmentfile,szfullprefixpathcoorddir+"/"+szassembly,null,//szinputcoordlist,
                                                           ChromHMM.DEFAULT_OVERLAPENRICHMENT_NOFFSETLEFT,
                                                           ChromHMM.DEFAULT_OVERLAPENRICHMENT_NOFFSETRIGHT,nbinsize,  
 							  ChromHMM.DEFAULT_OVERLAPENRICHMENT_BCENTER, !ChromHMM.DEFAULT_OVERLAPENRICHMENT_BCOUNTMULTI, 
@@ -12146,7 +12735,9 @@ public class ChromHMM
 				  }
 				  else
 				  {
-			             StateAnalysis.enrichmentMax(szsegmentfile,szprefixpath+"/"+COORDDIR+"/"+szassembly,null,//szinputcoordlist,
+				      //update v.1.16
+				      //StateAnalysis.enrichmentMax(szsegmentfile,szprefixpath+"/"+COORDDIR+"/"+szassembly,null,//szinputcoordlist,
+			             StateAnalysis.enrichmentMax(szsegmentfile,szfullprefixpathcoorddir+"/"+szassembly,null,//szinputcoordlist,
                                                           ChromHMM.DEFAULT_OVERLAPENRICHMENT_NOFFSETLEFT,
                                                           ChromHMM.DEFAULT_OVERLAPENRICHMENT_NOFFSETRIGHT,nbinsize,  
 							  ChromHMM.DEFAULT_OVERLAPENRICHMENT_BCENTER, !ChromHMM.DEFAULT_OVERLAPENRICHMENT_BCOUNTMULTI, 
@@ -12165,10 +12756,12 @@ public class ChromHMM
 			       }
 			       else
 			       {
-			          System.out.println("Warning: No coordinate directory found for assembly "+szassembly+" in "+szprefixpath+"/"+COORDDIR);
+				   System.out.println("Warning: No coordinate directory found for assembly "+szassembly+" in "+szfullprefixpathcoorddir);//szprefixpath+"/"+COORDDIR);
 			       }
 
-			       File fanchorassembly = new File(szprefixpath+"/"+ANCHORFILEDIR+"/"+szassembly);
+                               //szfullprefixpathanchorfiledir
+			       //File fanchorassembly = new File(szprefixpath+"/"+ANCHORFILEDIR+"/"+szassembly);
+			       File fanchorassembly = new File(szfullprefixpathanchorfiledir+"/"+szassembly);
 			       if (fanchorassembly.exists())
 			       {
                                   String[] dir = fanchorassembly.list();
@@ -12194,8 +12787,8 @@ public class ChromHMM
 
 				     if (blowmem)
 				     {
-			                StateAnalysis.neighborhoodMaxLowMem(szsegmentfile,szprefixpath+"/"+
-                                                                 ANCHORFILEDIR+"/"+szassembly+"/"+dir[nfile],nbinsize,ChromHMM.DEFAULT_NEIGHBORHOOD_NUMLEFT,
+			                StateAnalysis.neighborhoodMaxLowMem(szsegmentfile,
+                                                                 szfullprefixpathanchorfiledir+"/"+szassembly+"/"+dir[nfile],nbinsize,ChromHMM.DEFAULT_NEIGHBORHOOD_NUMLEFT,
 							     ChromHMM.DEFAULT_NEIGHBORHOOD_NUMRIGHT, nbinsize,//nspacing
                                            ChromHMM.DEFAULT_NEIGHBORHOOD_BUSESTRAND,ChromHMM.DEFAULT_NEIGHBORHOOD_BUSESIGNAL,null,//szcolfields,
                                            ChromHMM.DEFAULT_NEIGHBORHOOD_NOFFSETANCHOR,szoutputdir+"/"+szprefix+"_"+szanchorname+"_neighborhood",
@@ -12203,8 +12796,8 @@ public class ChromHMM
 				     }
 				     else
 				     {
-			                StateAnalysis.neighborhoodMax(szsegmentfile,szprefixpath+"/"+
-                                                                 ANCHORFILEDIR+"/"+szassembly+"/"+dir[nfile],nbinsize,ChromHMM.DEFAULT_NEIGHBORHOOD_NUMLEFT,
+			                StateAnalysis.neighborhoodMax(szsegmentfile,
+                                                                 szfullprefixpathanchorfiledir+"/"+szassembly+"/"+dir[nfile],nbinsize,ChromHMM.DEFAULT_NEIGHBORHOOD_NUMLEFT,
 							     ChromHMM.DEFAULT_NEIGHBORHOOD_NUMRIGHT, nbinsize,//nspacing
                                            ChromHMM.DEFAULT_NEIGHBORHOOD_BUSESTRAND,ChromHMM.DEFAULT_NEIGHBORHOOD_BUSESIGNAL,null,//szcolfields,
                                            ChromHMM.DEFAULT_NEIGHBORHOOD_NOFFSETANCHOR,szoutputdir+"/"+szprefix+"_"+szanchorname+"_neighborhood",
@@ -12222,7 +12815,7 @@ public class ChromHMM
 			       }
 			       else
 			       {
-			          System.out.println("Warning: No coordinate directory found for assembly "+szassembly+" in "+szprefixpath+"/"+ANCHORFILEDIR);
+			          System.out.println("Warning: No coordinate directory found for assembly "+szassembly+" in "+szfullprefixpathanchorfiledir);
 			       }
 			   }
 			}
@@ -12247,11 +12840,11 @@ public class ChromHMM
 
 	    if (!bok)
 	    {
-		System.out.println("usage: LearnModel [-b binsize][-color r,g,b][-d convergedelta][-e loadsmoothemission][-f inputfilelist][-h informationsmooth]"+
+		System.out.println("usage: LearnModel [-b binsize][-color r,g,b][-d convergedelta][-e loadsmoothemission][-f inputfilelist][-gzip][-h informationsmooth]"+
                                      "[-holdcolumnorder][-i outfileID][-init information|random|load][-l chromosomelengthfile][-lowmem][-m modelinitialfile][-many]"+
                                     "[-n numseq][-nobed][-nobrowser][-noenrich][-noimage][-p maxprocessors][-pseudo][-printposterior][-printstatebyline][-r maxiterations][-s seed]"+
                                     "[-stateordering emission|transition]"+
-                                   "[-t loadsmoothtransition][-x maxseconds][-z zerotransitionpower] inputdir outputdir numstates assembly");
+                                   "[-t loadsmoothtransition][-u coorddir][-v anchorfiledir][-x maxseconds][-z zerotransitionpower] inputdir outputdir numstates assembly");
 	    }
 	} 
 	else if (szcommand.equalsIgnoreCase("Reorder"))
@@ -12380,12 +12973,124 @@ public class ChromHMM
                                    "[-m labelmappingfile][-noimage][-o stateorderingfile][-stateordering emission|transition] inputmodel outputdir");
 
 	    }
+	}
+        else if (szcommand.equalsIgnoreCase("ConvertGeneTable"))
+	{
+            String path = ChromHMM.class.getProtectionDomain().getCodeSource().getLocation().getPath();
+            String decodedPath = URLDecoder.decode(path, "UTF-8");
+            String szprefixpath = decodedPath.substring(0, decodedPath.lastIndexOf("/") + 1);
+            //String szfullprefixpathchromsizedir = szprefixpath+"/"+CHROMSIZESDIR;
+            String szfullprefixpathcoorddir = szprefixpath+"/"+COORDDIR;
+            String szfullprefixpathanchorfiledir = szprefixpath+"/"+ANCHORFILEDIR;
+	    String szchromlengthfile = null;
+            int nargindex = 1;
+	    int npromoterwindow = 2000;
+	    boolean bgzip = false;
+	    String szcoorddir;
+	    String szanchordir;
 
+            try
+	    {
+	       while (nargindex < args.length-3)
+	       {
+                  //else if (args[nargindex].equals("-u"))
+		  //    {
+		  //	  szfullprefixpathchromsizedir = args[++nargindex];
+		  //    }
+                  if (args[nargindex].equals("-gzip"))
+		  {
+	       	     bgzip = true;
+		  }
+                  else if (args[nargindex].equals("-l"))
+		  {
+		     szchromlengthfile = args[++nargindex];
+	          }
+                  else if (args[nargindex].equals("-u"))
+		  {
+		     szfullprefixpathcoorddir = args[++nargindex];
+		  }
+                  else if (args[nargindex].equals("-v"))
+		  {
+		     szfullprefixpathanchorfiledir = args[++nargindex];
+	          }
+	          else if (args[nargindex].equals("-w"))
+		  {
+		      npromoterwindow = Integer.parseInt(args[++nargindex]);
+		  }
+		  else
+		  {
+		     bok = false;
+		  }
+                  nargindex++;
+	       }
+	    }
+            catch (NumberFormatException ex)
+	    {
+	       bok = false;
+	    }
+
+            if (bok && (nargindex==args.length-3))
+	    {
+	       String sztable = args[nargindex++];
+	       //String szchromlengths = args[nargindex++];
+               String szprefix = args[nargindex++];
+	       String szassembly = args[nargindex++];
+
+	       szcoorddir = szfullprefixpathcoorddir + "/" + szassembly;
+	       szanchordir = szfullprefixpathanchorfiledir + "/" + szassembly;
+
+	       File f = new File(szcoorddir);
+	       if (!f.exists())
+	       {
+	          if (!f.mkdirs())
+	          {
+	             throw new IllegalArgumentException(szcoorddir+" does not exist and could not be created!");
+	          }
+	       }
+
+	       f = new File(szanchordir);
+	       if (!f.exists())
+	       {
+	          if (!f.mkdirs())
+	          {
+	             throw new IllegalArgumentException(szanchordir+" does not exist and could not be created!");
+	          }
+	       }
+
+	       if (szchromlengthfile == null)
+	       {
+		  //updated v.1.16
+		  String szdefaultlengthfile = szprefixpath+"/"+CHROMSIZESDIR+"/"+szassembly+".txt";
+		  File flength = new File(szdefaultlengthfile);
+		  //File flength = new File(szfullprefixpathchromsizedir+"/"+szassembly+".txt");
+		  if (flength.exists())
+		  {
+		      //szchromlengthfile = szfullprefixpathchromsizedir+"/"+szassembly+".txt";
+		      szchromlengthfile = szdefaultlengthfile;
+		  }
+		  else
+		  {
+		      throw new IllegalArgumentException("chromosome length file not specified and default "+szdefaultlengthfile+" not found");
+		  }
+	       }
+
+
+	       ConvertGeneTable.convertGeneTableToAnnotations(sztable, szprefix, szassembly, szcoorddir, szanchordir, szchromlengthfile, npromoterwindow, bgzip);
+	    }
+	    else
+	    {
+		bok = false;
+	    }
+
+	    if (!bok)
+	    {
+                System.out.println("usage: ConvertGeneTable [-gzip][-l chromosomelengthfile][-u coorddir][-v anchordir][-w promoterwindow] inputgenetable prefix assembly");
+	    }
 
 	}
 	else
 	{
-	    System.out.println("Need to specify the mode BinarizeBam|BinarizeBed|BinarizeSignal|CompareModels|EvalSubset|LearnModel|MakeBrowserFiles"+
+	    System.out.println("Need to specify the mode BinarizeBam|BinarizeBed|BinarizeSignal|CompareModels|ConvertGeneTable|EvalSubset|LearnModel|MakeBrowserFiles"+
                                "|MakeSegmentation|NeighborhoodEnrichment|StatePruning|OverlapEnrichment|Reorder|Version");
 
 	}

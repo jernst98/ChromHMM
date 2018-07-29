@@ -19,6 +19,7 @@ package edu.mit.compbio.ChromHMM;
 
 import java.io.*;
 import java.util.*;
+import java.util.zip.GZIPOutputStream;
 
 /**
  * This class handles generating the browser output.
@@ -119,9 +120,14 @@ public class BrowserOutput
      */
     int numstates;
 
+    /**
+     * True if files should be in gzip format
+     */
+    boolean bgzip;
+
 
     public BrowserOutput(String szsegmentfile, String szcolormapping,String szidlabelmapping, 
-			 String szsegmentationname, String szoutputfileprefix, int numstates) throws IOException
+			 String szsegmentationname, String szoutputfileprefix, int numstates, boolean bgzip) throws IOException
     {
 	this.szsegmentfile = szsegmentfile;
 	this.szcolormapping =szcolormapping;
@@ -129,6 +135,7 @@ public class BrowserOutput
 	this.szsegmentationname = szsegmentationname;
 	this.szoutputfileprefix = szoutputfileprefix;
 	this.numstates = numstates;
+	this.bgzip = bgzip;
 
         hmcolor = new HashMap();
         hmlabelExtend = new HashMap();
@@ -358,43 +365,95 @@ public class BrowserOutput
      */
     public void makebrowserdense() throws IOException
     {
-       System.out.println("Writing to file "+szoutputfileprefix+ChromHMM.SZBROWSERDENSEEXTENSION+".bed");
-       PrintWriter pw = new PrintWriter(new FileWriter(szoutputfileprefix+ChromHMM.SZBROWSERDENSEEXTENSION+".bed"));
-
-       BufferedReader brsegment =  Util.getBufferedReader(szsegmentfile);
-       String szLine;
-       boolean bfirst = true;
-
-       while ((szLine =brsegment.readLine())!=null)
+       if (bgzip)
        {
-	   StringTokenizer st = new StringTokenizer(szLine,"\t");
-	   String szcurrchrom = st.nextToken();
-	   int nbegin = Integer.parseInt(st.nextToken());
-	   int nend = Integer.parseInt(st.nextToken());
-	   String szFullID = st.nextToken();
-	   String szID = szFullID.substring(1); //this removes ordering type
-	   if (bfirst)
-	   {
-	       pw.println("track name=\""+szsegmentationname+"\" description=\" "+szsegmentationname+" ("+ChromHMM.convertCharOrderToStringOrder(szFullID.charAt(0))
+          System.out.println("Writing to file "+szoutputfileprefix+ChromHMM.SZBROWSERDENSEEXTENSION+".bed.gz");
+          //PrintWriter pwzip = new PrintWriter(new FileWriter(szoutputfileprefix+ChromHMM.SZBROWSERDENSEEXTENSION+".bed.gz"));
+	  GZIPOutputStream pwzip = new GZIPOutputStream(new FileOutputStream(szoutputfileprefix+ChromHMM.SZBROWSERDENSEEXTENSION+".bed.gz"));
+
+          BufferedReader brsegment =  Util.getBufferedReader(szsegmentfile);
+          String szLine;
+          boolean bfirst = true;
+
+          while ((szLine =brsegment.readLine())!=null)
+          {
+	     StringTokenizer st = new StringTokenizer(szLine,"\t");
+	     String szcurrchrom = st.nextToken();
+	     int nbegin = Integer.parseInt(st.nextToken());
+	     int nend = Integer.parseInt(st.nextToken());
+	     String szFullID = st.nextToken();
+	     String szID = szFullID.substring(1); //this removes ordering type
+	     if (bfirst)
+	     {
+		 String szout = "track name=\""+szsegmentationname+"\" description=\" "+szsegmentationname+" ("+ChromHMM.convertCharOrderToStringOrder(szFullID.charAt(0))
+		     +" ordered)"+"\" visibility=1 itemRgb=\"On\""+"\n";
+		 byte[] btformat = szout.getBytes();
+		 pwzip.write(btformat,0,btformat.length);
+		 //pw.println("track name=\""+szsegmentationname+"\" description=\" "+szsegmentationname+" ("+ChromHMM.convertCharOrderToStringOrder(szFullID.charAt(0))
+		 //       +" ordered)"+"\" visibility=1 itemRgb=\"On\"");
+	        bfirst = false;
+	     }
+	     String szColor = (String) hmcolor.get(szID);
+ 	     if (szColor == null)
+             {
+                throw new IllegalArgumentException("Color not given for "+szID);
+             }
+
+	     String szsuffix;
+             if ((szsuffix = (String) hmlabelExtend.get(szFullID))!=null)
+	     {
+                szID = szID+"_"+szsuffix;
+	     }
+
+	     String szout = szcurrchrom+"\t"+nbegin+"\t"+nend+"\t"+szID+"\t0\t.\t"+nbegin+"\t"+nend+"\t"+szColor +"\n";
+	     //pw.println(szcurrchrom+"\t"+nbegin+"\t"+nend+"\t"+szID+"\t0\t.\t"+nbegin+"\t"+nend+"\t"+szColor);
+	     byte[] btformat = szout.getBytes();
+	     pwzip.write(btformat,0,btformat.length);
+	  }
+          brsegment.close();
+	  pwzip.finish();
+          pwzip.close();      
+       }
+       else
+       {
+          System.out.println("Writing to file "+szoutputfileprefix+ChromHMM.SZBROWSERDENSEEXTENSION+".bed");
+          PrintWriter pw = new PrintWriter(new FileWriter(szoutputfileprefix+ChromHMM.SZBROWSERDENSEEXTENSION+".bed"));
+
+          BufferedReader brsegment =  Util.getBufferedReader(szsegmentfile);
+          String szLine;
+          boolean bfirst = true;
+
+          while ((szLine =brsegment.readLine())!=null)
+          {
+	     StringTokenizer st = new StringTokenizer(szLine,"\t");
+	     String szcurrchrom = st.nextToken();
+	     int nbegin = Integer.parseInt(st.nextToken());
+	     int nend = Integer.parseInt(st.nextToken());
+	     String szFullID = st.nextToken();
+	     String szID = szFullID.substring(1); //this removes ordering type
+	     if (bfirst)
+	     {
+	        pw.println("track name=\""+szsegmentationname+"\" description=\" "+szsegmentationname+" ("+ChromHMM.convertCharOrderToStringOrder(szFullID.charAt(0))
                           +" ordered)"+"\" visibility=1 itemRgb=\"On\"");
-	       bfirst = false;
-	   }
-	   String szColor = (String) hmcolor.get(szID);
- 	   if (szColor == null)
-           {
-              throw new IllegalArgumentException("Color not given for "+szID);
-           }
+	        bfirst = false;
+	     }
+	     String szColor = (String) hmcolor.get(szID);
+ 	     if (szColor == null)
+             {
+                throw new IllegalArgumentException("Color not given for "+szID);
+             }
 
-	   String szsuffix;
-           if ((szsuffix = (String) hmlabelExtend.get(szFullID))!=null)
-	   {
-              szID = szID+"_"+szsuffix;
-	   }
+	     String szsuffix;
+             if ((szsuffix = (String) hmlabelExtend.get(szFullID))!=null)
+	     {
+                szID = szID+"_"+szsuffix;
+	     }
 
-	   pw.println(szcurrchrom+"\t"+nbegin+"\t"+nend+"\t"+szID+"\t0\t.\t"+nbegin+"\t"+nend+"\t"+szColor);
-        }
-        brsegment.close();
-        pw.close();      
+	     pw.println(szcurrchrom+"\t"+nbegin+"\t"+nend+"\t"+szID+"\t0\t.\t"+nbegin+"\t"+nend+"\t"+szColor);
+	  }
+          brsegment.close();
+          pw.close();      
+       }
     }
 
 
@@ -407,8 +466,14 @@ public class BrowserOutput
      */
     public void makebrowserexpanded() throws IOException
     {
-       System.out.println("Writing to file "+szoutputfileprefix+ChromHMM.SZBROWSEREXPANDEDEXTENSION+".bed");
-       PrintWriter pw = new PrintWriter(new FileWriter(szoutputfileprefix+ChromHMM.SZBROWSEREXPANDEDEXTENSION+".bed"));
+       if (bgzip)
+       {
+          System.out.println("Writing to file "+szoutputfileprefix+ChromHMM.SZBROWSEREXPANDEDEXTENSION+".bed.gz");
+       }
+       else
+       {
+          System.out.println("Writing to file "+szoutputfileprefix+ChromHMM.SZBROWSEREXPANDEDEXTENSION+".bed");
+       }
 
        String szLine;
 
@@ -491,62 +556,148 @@ public class BrowserOutput
        }
        Arrays.sort(szChroms);
 
-       pw.println("track name=\"Expanded_"+szsegmentationname+"\" description=\" "+szsegmentationname+" ("+ChromHMM.convertCharOrderToStringOrder(szLabelFull.charAt(0))
-                          +" ordered)"+"\" visibility=2 itemRgb=\"On\"");
-       int nbrowserend = (int) (((Integer)hmchromMax.get(szChroms[0])).intValue()*.001)+1;
-       pw.println("browser position "+szChroms[0]+":1-"+nbrowserend);
-
-       for (int nlabel = szLabels.length-1; nlabel >=0; nlabel--)
+       if (bgzip)
        {
-	   //UCSC browser seems to reverse the ordering of browser track files
-	   String szcolor =  (String) hmcolor.get(""+szLabels[nlabel]);
-	   for (int nchrom = 0; nchrom < szChroms.length; nchrom++)
-	   {
-	       //omits those segment labels not observed at all on chromosome
-	       ArrayList alRecs  = (ArrayList) hmcoords.get(szChroms[nchrom]+"\t"+szLabels[nlabel]);
-	       if (alRecs == null) continue;
+	  GZIPOutputStream pwzip = new GZIPOutputStream(new FileOutputStream(szoutputfileprefix+ChromHMM.SZBROWSEREXPANDEDEXTENSION+".bed.gz"));
+	  String szout = "track name=\"Expanded_"+szsegmentationname+"\" description=\" "+szsegmentationname+" ("+ChromHMM.convertCharOrderToStringOrder(szLabelFull.charAt(0))
+	      +" ordered)"+"\" visibility=2 itemRgb=\"On\""+"\n";
+	  byte[] btformat = szout.getBytes();
+	  pwzip.write(btformat,0,btformat.length);
 
-               int nmax = ((Integer) hmchromMax.get(szChroms[nchrom])).intValue();
+          //pw.println("track name=\"Expanded_"+szsegmentationname+"\" description=\" "+szsegmentationname+" ("+ChromHMM.convertCharOrderToStringOrder(szLabelFull.charAt(0))
+	  //               +" ordered)"+"\" visibility=2 itemRgb=\"On\"");
+          int nbrowserend = (int) (((Integer)hmchromMax.get(szChroms[0])).intValue()*.001)+1;
 
-	       //this forces browser to display segment until the end of the chromosome
-	       alRecs.add(new BeginEndRec(nmax-1,nmax));
+	  szout = "browser position "+szChroms[0]+":1-"+nbrowserend+"\n";
+	  btformat = szout.getBytes();
+          pwzip.write(btformat,0,btformat.length);
+          //pwzip.println("browser position "+szChroms[0]+":1-"+nbrowserend);
 
-	       int nsize = alRecs.size();
-	       int nmin = ((BeginEndRec) alRecs.get(0)).nbegin;
-	       int nfinalend = nmax;
+          for (int nlabel = szLabels.length-1; nlabel >=0; nlabel--)
+          {
+	      //UCSC browser seems to reverse the ordering of browser track files
+	      String szcolor =  (String) hmcolor.get(""+szLabels[nlabel]);
+	      for (int nchrom = 0; nchrom < szChroms.length; nchrom++)
+	      {
+	         //omits those segment labels not observed at all on chromosome
+	         ArrayList alRecs  = (ArrayList) hmcoords.get(szChroms[nchrom]+"\t"+szLabels[nlabel]);
+	         if (alRecs == null) continue;
 
-	       String szoutlabel;
-	       String szsuffix;
-	       if ((szsuffix = (String) hmlabelExtend.get((String) hmlabelToFull.get(szLabels[nlabel])))!=null)
-	       {
-		   szoutlabel = szLabels[nlabel]+"_"+szsuffix;
-	       }
-	       else
-	       {
-		   szoutlabel = szLabels[nlabel];
-	       }
+                 int nmax = ((Integer) hmchromMax.get(szChroms[nchrom])).intValue();
 
-	       pw.print(szChroms[nchrom]+"\t"+0+"\t"+nfinalend+"\t"+szoutlabel+"\t0\t.\t"+nmin+"\t"+nfinalend+"\t"+szcolor+"\t"+(nsize+1)+"\t");
-	       pw.print(0); //forcing the display to start at the beginning of the chromosome
-  	       for (int ni = 0; ni < nsize; ni++)
-	       {
-		   BeginEndRec theBeginEndRec = (BeginEndRec) alRecs.get(ni);
-        	   int ndiff = theBeginEndRec.nend - theBeginEndRec.nbegin;
-	           pw.print(",");
-	           pw.print(ndiff);
-	       }
-	       pw.print("\t");
-	       pw.print(0);
-	       for (int ni = 0; ni < nsize; ni++)
-               {
-		   int nloc = ((BeginEndRec) alRecs.get(ni)).nbegin;
-		   pw.print(",");
-		   pw.print(nloc);
-	       }
-	       pw.println();
-	   }
+	         //this forces browser to display segment until the end of the chromosome
+	         alRecs.add(new BeginEndRec(nmax-1,nmax));
+
+	         int nsize = alRecs.size();
+	         int nmin = ((BeginEndRec) alRecs.get(0)).nbegin;
+	         int nfinalend = nmax;
+
+	         String szoutlabel;
+	         String szsuffix;
+	         if ((szsuffix = (String) hmlabelExtend.get((String) hmlabelToFull.get(szLabels[nlabel])))!=null)
+	         {
+		    szoutlabel = szLabels[nlabel]+"_"+szsuffix;
+	         }
+	         else
+	         {
+		    szoutlabel = szLabels[nlabel];
+	         }
+
+		 StringBuffer sbout = new StringBuffer();
+		 sbout.append(szChroms[nchrom]+"\t"+0+"\t"+nfinalend+"\t"+szoutlabel+"\t0\t.\t"+nmin+"\t"+nfinalend+"\t"+szcolor+"\t"+(nsize+1)+"\t");
+	         //pw.print(szChroms[nchrom]+"\t"+0+"\t"+nfinalend+"\t"+szoutlabel+"\t0\t.\t"+nmin+"\t"+nfinalend+"\t"+szcolor+"\t"+(nsize+1)+"\t");
+	         //pw.print(0); //forcing the display to start at the beginning of the chromosome
+		 sbout.append(0);
+  	         for (int ni = 0; ni < nsize; ni++)
+	         {
+		    BeginEndRec theBeginEndRec = (BeginEndRec) alRecs.get(ni);
+        	    int ndiff = theBeginEndRec.nend - theBeginEndRec.nbegin;
+		    sbout.append(",");
+		    sbout.append(ndiff);
+	            //pw.print(",");
+	            //pw.print(ndiff);
+	          }
+		  sbout.append("\t");
+		  sbout.append(0);
+	          //pw.print("\t");
+	          //pw.print(0);
+	          for (int ni = 0; ni < nsize; ni++)
+                  {
+		     int nloc = ((BeginEndRec) alRecs.get(ni)).nbegin;
+		     sbout.append(",");
+		     sbout.append(nloc);
+		     //pw.print(",");
+		     //pw.print(nloc);
+	           }
+		  sbout.append("\n");
+	          // pw.println();
+		  btformat = sbout.toString().getBytes();
+		  pwzip.write(btformat,0,btformat.length);
+	      }
+	  }
+	  pwzip.finish();
+	  pwzip.close();
        }
-       pw.close();
+       else
+       {
+	  PrintWriter pw = new PrintWriter(new FileWriter(szoutputfileprefix+ChromHMM.SZBROWSEREXPANDEDEXTENSION+".bed"));
+          pw.println("track name=\"Expanded_"+szsegmentationname+"\" description=\" "+szsegmentationname+" ("+ChromHMM.convertCharOrderToStringOrder(szLabelFull.charAt(0))
+                          +" ordered)"+"\" visibility=2 itemRgb=\"On\"");
+          int nbrowserend = (int) (((Integer)hmchromMax.get(szChroms[0])).intValue()*.001)+1;
+          pw.println("browser position "+szChroms[0]+":1-"+nbrowserend);
+
+          for (int nlabel = szLabels.length-1; nlabel >=0; nlabel--)
+          {
+	      //UCSC browser seems to reverse the ordering of browser track files
+	      String szcolor =  (String) hmcolor.get(""+szLabels[nlabel]);
+	      for (int nchrom = 0; nchrom < szChroms.length; nchrom++)
+	      {
+	         //omits those segment labels not observed at all on chromosome
+	         ArrayList alRecs  = (ArrayList) hmcoords.get(szChroms[nchrom]+"\t"+szLabels[nlabel]);
+	         if (alRecs == null) continue;
+
+                 int nmax = ((Integer) hmchromMax.get(szChroms[nchrom])).intValue();
+
+	         //this forces browser to display segment until the end of the chromosome
+	         alRecs.add(new BeginEndRec(nmax-1,nmax));
+
+	         int nsize = alRecs.size();
+	         int nmin = ((BeginEndRec) alRecs.get(0)).nbegin;
+	         int nfinalend = nmax;
+
+	         String szoutlabel;
+	         String szsuffix;
+	         if ((szsuffix = (String) hmlabelExtend.get((String) hmlabelToFull.get(szLabels[nlabel])))!=null)
+	         {
+		    szoutlabel = szLabels[nlabel]+"_"+szsuffix;
+	         }
+	         else
+	         {
+		    szoutlabel = szLabels[nlabel];
+	         }
+
+	         pw.print(szChroms[nchrom]+"\t"+0+"\t"+nfinalend+"\t"+szoutlabel+"\t0\t.\t"+nmin+"\t"+nfinalend+"\t"+szcolor+"\t"+(nsize+1)+"\t");
+	         pw.print(0); //forcing the display to start at the beginning of the chromosome
+  	         for (int ni = 0; ni < nsize; ni++)
+	         {
+		    BeginEndRec theBeginEndRec = (BeginEndRec) alRecs.get(ni);
+        	    int ndiff = theBeginEndRec.nend - theBeginEndRec.nbegin;
+	            pw.print(",");
+	            pw.print(ndiff);
+	          }
+	          pw.print("\t");
+	          pw.print(0);
+	          for (int ni = 0; ni < nsize; ni++)
+                  {
+		     int nloc = ((BeginEndRec) alRecs.get(ni)).nbegin;
+		     pw.print(",");
+		     pw.print(nloc);
+	           }
+	           pw.println();
+	      }
+	  }
+	  pw.close();
+       }
     }
 }
 
