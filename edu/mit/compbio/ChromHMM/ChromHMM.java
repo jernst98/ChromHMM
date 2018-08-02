@@ -5213,21 +5213,7 @@ public class ChromHMM
 	     {
 		pwprobszip.finish();
 	        pwprobszip.close();    
-	     }
-	  
-             //if segment print was requested then we are going to go close those printwriters
-             if (bprintsegment)
-             {
-                Iterator itr =  hmcellToFourColPW.values().iterator();
-                while (itr.hasNext())
-                {
-		   GZIPOutputStream pwzip = (GZIPOutputStream) itr.next();
-	           //PrintWriter pw = (PrintWriter) itr.next();
-		   pwzip.finish();
-		   pwzip.close();
-	           //pw.close();
-		}
-	     }
+	     }	  
 	  }
 	  else
 	  {
@@ -5350,19 +5336,33 @@ public class ChromHMM
 	     {
 	        pwprobs.close();    
 	     }
-	  
-             //if segment print was requested then we are going to go close those printwriters
-             if (bprintsegment)
-             {
-                Iterator itr =  hmcellToFourColPW.values().iterator();
-                while (itr.hasNext())
-                {
-	           PrintWriter pw = (PrintWriter) itr.next();
-	           pw.close();
-		}
-	     }
 	  }
        }
+	
+       //if segment print was requested then we are going to go close those printwriters
+       if (bprintsegment)
+       {
+          Iterator itr =  hmcellToFourColPW.values().iterator();
+	  if (bgzip)
+	  {
+             while (itr.hasNext())
+             {
+	        GZIPOutputStream pwzip = (GZIPOutputStream) itr.next();
+	        //PrintWriter pw = (PrintWriter) itr.next();
+	        pwzip.finish();
+	        pwzip.close();
+	           //pw.close();
+	     }
+	  }
+	  else
+	  {
+             while (itr.hasNext())
+             {
+                PrintWriter pw = (PrintWriter) itr.next();
+	        pw.close();
+	     }
+	  }
+       }	        
     }
 
 
@@ -6068,17 +6068,6 @@ public class ChromHMM
 	        pwprobszip.close();    
 	     }	  
        
-             //if segment print was requested then we are going to go close those printwriters
-             if (bprintsegment)
-             {
-                Iterator itr =  hmcellToFourColPW.values().iterator();
-                while (itr.hasNext())
-                {
-	           GZIPOutputStream pwzip = (GZIPOutputStream) itr.next();
-		   pwzip.finish();
-	           pwzip.close();
-		}
-	     }
 	  }
 	  else
 	  {
@@ -6201,18 +6190,31 @@ public class ChromHMM
 	     {
 	        pwprobs.close();    
 	     }	  
-       
-             //if segment print was requested then we are going to go close those printwriters
-             if (bprintsegment)
+	  }
+       }
+
+       //if segment print was requested then we are going to go close those printwriters
+       if (bprintsegment)
+       {
+          Iterator itr =  hmcellToFourColPW.values().iterator();
+	  if (bgzip)
+	  {
+             while (itr.hasNext())
              {
-                Iterator itr =  hmcellToFourColPW.values().iterator();
-                while (itr.hasNext())
-                {
-	           PrintWriter pw = (PrintWriter) itr.next();
-	           pw.close();
-		}
+	        GZIPOutputStream pwzip = (GZIPOutputStream) itr.next();
+       	        pwzip.finish();
+	        pwzip.close();
 	     }
 	  }
+	  else 
+          {
+             //if segment print was requested then we are going to go close those printwriters
+             while (itr.hasNext())
+             {
+	        PrintWriter pw = (PrintWriter) itr.next();
+	        pw.close();
+	     }	     
+	  }	 
        }
     }
 
@@ -11176,7 +11178,7 @@ public class ChromHMM
 
 	if (szcommand.equalsIgnoreCase("Version"))
 	{
-	    System.out.println("This is Version 1.16 of ChromHMM (c) Copyright 2008-2012 Massachusetts Institute of Technology");
+	    System.out.println("This is Version 1.17 of ChromHMM (c) Copyright 2008-2012 Massachusetts Institute of Technology");
 	}
         else if ((szcommand.equals("BinarizeBam"))||(szcommand.equalsIgnoreCase("BinarizeBed")))
 	{
