@@ -196,7 +196,20 @@ public class ConvertGeneTable
 		throw new IllegalArgumentException("invalid strand\t"+szstrand);
 	    }
 
-	    int nchromlength =((Integer) hmlengths.get(szchrom)).intValue();
+	    //updated in 1.18 to give better error message if chromosome not found
+	    Integer objchromlength = ((Integer) hmlengths.get(szchrom));
+	    int nchromlength = -1;
+
+	    if (objchromlength != null)
+	    {
+		nchromlength = objchromlength.intValue();
+	    }
+	    else
+	    {
+                throw new IllegalArgumentException("did not find length in chromosome file for chromosome: "+szchrom);
+		// =((Integer) hmlengths.get(szchrom)).intValue();
+	    }
+
 	    String sztssOut = szchrom+"\t"+ntss+"\t"+(ntss+1);
 	    String sztesOut = szchrom+"\t"+ntes+"\t"+(ntes+1);
 	    String sztss2kbOut = szchrom+"\t"+Math.max((ntss-npromoterwindow),0)+"\t"+Math.min(ntss+npromoterwindow+1,nchromlength);

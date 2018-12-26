@@ -521,6 +521,284 @@ public class Preprocessing
        }
     }
 
+
+    //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    public static void makeBinaryDataFromPeaksSplit(String szchromlengthfile, String szmarkdir, String szoutputbinarydir, String szcellmarkfiletable, 
+						    int nbinsize, boolean bgzip, int numsplitbins, int nsplit, int noffsetleft, int noffsetright) throws IOException
+    {
+	//reads in the chromosome length information file
+	//the first column of this file is the chromosome and the second is the chromsome length
+	BufferedReader brchrom = Util.getBufferedReader(szchromlengthfile);
+	String szLine;
+	ArrayList allines = new ArrayList();
+	while ((szLine = brchrom.readLine())!=null)
+	{
+	   allines.add(szLine);
+	}
+	brchrom.close();
+
+	String[] chroms = new String[allines.size()]; //stores the chromosome name
+	int[] lengthbins = new int[chroms.length]; //stores the chromosome length
+	//HashMap hmchrom = new HashMap(); //stores a mapping of chromomsome to chromosome index
+	for (int ni = 0; ni < chroms.length; ni++)
+	{
+	    StringTokenizer st = new StringTokenizer((String) allines.get(ni),"\t ");
+	    if (!st.hasMoreTokens())
+	    {
+		throw new IllegalArgumentException("empty line found in "+szchromlengthfile);
+	    }
+	    chroms[ni] = st.nextToken();
+
+	    if (!st.hasMoreTokens())
+	    {
+		throw new IllegalArgumentException("missing chromosome length for "+allines.get(ni)+" in "+szchromlengthfile);
+	    }
+	    int nlength = Integer.parseInt(st.nextToken());
+            int numbins = nlength/nbinsize;
+            //if (nlength % nbinsize !=0)  //removed pre 1.18 to be consistent from binarizing directly
+            //    numbins++;
+
+
+	    lengthbins[ni] = numbins;
+	}
+
+	BufferedReader brcellmark = Util.getBufferedReader(szcellmarkfiletable);
+	HashSet hscells = new HashSet(); //contains the names of all cell types
+	HashSet hsmarks = new HashSet(); //contains the names of all marks
+	HashMap hmfiles = new HashMap(); //contains a mapping from (cell type, mark) to the regular data file
+
+	while ((szLine = brcellmark.readLine())!=null)
+	{
+	    if (szLine.trim().equals("")) continue;
+	    StringTokenizer st = new StringTokenizer(szLine,"\t");
+	    if (st.countTokens() != 3)
+	    {
+		throw new IllegalArgumentException("In "+szcellmarkfiletable+" "+szLine+" does not have 3 columns, "+
+                                                    "expecting 3 columns since peaks was specified");
+	    }
+	    String szcell = st.nextToken();
+	    String szmark = st.nextToken();
+	    String szfile = st.nextToken();
+
+	    hscells.add(szcell);
+	    hsmarks.add(szmark);
+
+	    ArrayList alfiles = (ArrayList) hmfiles.get(szcell+"\t"+szmark);
+	    if (alfiles == null)
+	    {
+		alfiles = new ArrayList();
+	        hmfiles.put(szcell+"\t"+szmark,alfiles);
+	    }
+	    alfiles.add(szfile);
+	}
+	brcellmark.close();
+	
+	//loads all the marks in hsmarks into the array marks and then sorts it
+	int nummarks = hsmarks.size();
+	String[] marks = new String[nummarks];
+	int nmarkindex = 0;
+	Iterator itrmarks = hsmarks.iterator();
+	while (itrmarks.hasNext())
+	{
+	    marks[nmarkindex] = (String) itrmarks.next();
+	    nmarkindex++;
+	}
+	Arrays.sort(marks);	
+
+	boolean[][] grid = new boolean[nummarks][numsplitbins];//[numfeatures];
+	Iterator itrcells = hscells.iterator();
+	while (itrcells.hasNext())
+	{
+	   //going through each declared cell type
+	   String szcell = (String) itrcells.next();
+
+	   for (int nchrom = 0; nchrom < chroms.length; nchrom++)
+	   {
+
+	      for (int nmark = 0; nmark < grid.length; nmark++)
+	      {
+		  boolean[] grid_nmark = grid[nmark];
+		  for (int nbin = 0; nbin < grid_nmark.length; nbin++)
+		  {
+		      grid_nmark[nbin] = false;
+		  }
+	      }
+
+	         //String szcurrchrom = "chr"+chroms[nchrom];
+	      String szcurrchrom = chroms[nchrom];
+	      int nlengthbin = lengthbins[nchrom];// ((Integer) hm.get(szcurrchrom)).intValue();
+	      int nremainder = 0;
+	      int numsegments = nlengthbin/numsplitbins;
+	      if (nlengthbin % numsplitbins != 0)
+	      {
+		  nremainder = nlengthbin % numsplitbins;
+		  numsegments++;
+	      }
+
+	      if (nsplit >= numsegments)
+       	        continue;
+
+	      //this split doesn't apply for this chromosome
+
+	      //int noffset = numsplitbins*nsplit;
+	      int nstartinterval = numsplitbins*nsplit;
+	      int nendinterval = nstartinterval + numsplitbins;
+
+	      for (int nmark = 0; nmark < marks.length; nmark++)
+	      {
+	         ArrayList alfiles = (ArrayList) hmfiles.get(szcell+"\t"+marks[nmark]);
+		 boolean[] grid_nmark = grid[nmark];
+	         for (int nfile = 0; nfile < alfiles.size(); nfile++)
+	         {
+		    BufferedReader br = Util.getBufferedReader(szmarkdir+"/"+alfiles.get(nfile));
+
+		    while ((szLine = br.readLine())!=null)
+	  	    {
+		       StringTokenizer st = new StringTokenizer(szLine,"\t");
+		       if (st.countTokens() == 0) continue;
+		       String szchrom = st.nextToken();
+		       if (szchrom.equals(szcurrchrom))
+		       {
+			  int nbegin = (Integer.parseInt(st.nextToken())-noffsetleft)/nbinsize;
+			  int nend = (Integer.parseInt(st.nextToken())-noffsetright)/nbinsize; //updated -1 from pre-release 1.18
+
+			  //need to update
+			  int nactualbegin = nbegin;
+			  int nactualend = nend;
+
+			  if (nactualbegin < nstartinterval) //nstartinterval)
+			  {
+			      nactualbegin = nstartinterval;// nstartinterval;
+			  }
+
+			  if (nactualend >= nendinterval)
+			  {
+			     nactualend = nendinterval-1;
+			  }
+
+			  nactualbegin -= nstartinterval;
+			  nactualend -= nstartinterval;
+			  for (int nk = nactualbegin; nk <= nactualend; nk++) //updated to <= from pre-release 1.18
+		          {
+			     grid_nmark[nk] = true;
+			  }
+		       }
+		    }
+		    br.close();
+		 }
+	      }
+
+
+	      int ncurrnumlines = numsplitbins;
+	      if ((nsplit == numsegments-1) && (nremainder >0)) //updated from pre-release 1.18
+	      {
+	         ncurrnumlines = nremainder;
+	      }
+
+	      if (bgzip)
+	      {	      
+	         GZIPOutputStream pwzip = new GZIPOutputStream(new FileOutputStream(szoutputbinarydir+"/"+szcell+"_"+szcurrchrom
+											  +"."+nsplit+"_binary.txt.gz"));
+	         StringBuffer sb = new StringBuffer(szcell+"\t"+szcurrchrom+"."+nsplit+"\n");
+	         byte[] btformat = sb.toString().getBytes();
+	         pwzip.write(btformat,0,btformat.length);
+
+	         sb = new StringBuffer();
+	         for (int nmark = 0; nmark < nummarks; nmark++)
+	         {
+                    sb.append(marks[nmark]);
+
+		    if (nmark < nummarks - 1)
+		    {
+		       sb.append("\t");
+		    }
+		    else
+		    {
+		       sb.append("\n");
+		    }
+		 }
+	         btformat = sb.toString().getBytes();
+	         pwzip.write(btformat,0,btformat.length);
+
+	         for (int nline = 0; nline < ncurrnumlines; nline++)
+	         {
+	            sb = new StringBuffer();
+		    for (int nmark = 0; nmark < nummarks; nmark++)
+		    {
+		       if (grid[nmark][nline])
+		       {
+		          sb.append("1");
+		       }
+		       else
+		       {
+		          sb.append("0");
+		       }
+
+		       if (nmark < nummarks - 1)
+		       {
+		          sb.append("\t");
+		       }
+		       else
+		       {
+		          sb.append("\n");
+		       }
+		    }
+
+		    btformat = sb.toString().getBytes();
+		    pwzip.write(btformat,0,btformat.length);
+		 }
+		 pwzip.finish();
+		 pwzip.close();
+	      }
+	      else
+	      {
+	         PrintWriter pwout = new PrintWriter(new FileWriter(szoutputbinarydir+"/"+szcell+"_"+szcurrchrom
+											  +"."+nsplit+"_binary.txt"));
+	         pwout.println(szcell+"\t"+szcurrchrom+"."+nsplit);
+
+	         for (int nmark = 0; nmark < nummarks; nmark++)
+	         {
+                    pwout.print(marks[nmark]);
+
+		    if (nmark < nummarks - 1)
+		    {
+		       pwout.print("\t");
+		    }
+		    else
+		    {
+		       pwout.println();
+		    }
+		 }
+
+	         for (int nline = 0; nline < ncurrnumlines; nline++)
+	         {
+		    for (int nmark = 0; nmark < nummarks; nmark++)
+		    {
+		       if (grid[nmark][nline])
+		       {
+		          pwout.print("1");
+		       }
+		       else
+		       {
+		          pwout.print("0");
+		       }
+
+		       if (nmark < nummarks - 1)
+		       {
+		          pwout.print("\t");
+		       }
+		       else
+		       {
+		          pwout.println();
+		       }
+		    }
+		 }
+		 pwout.close();
+	      }
+	   }
+	}
+    }
+
     ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     /**
@@ -556,7 +834,7 @@ public class Preprocessing
                                              String szoutputsignaldir,String szoutputbinarydir, String szoutputcontroldir, 
 					     double dpoissonthresh, double dfoldthresh,boolean bcontainsthresh, int npseudocountcontrol,int nbinsize,
 					     String szcolfields, boolean bpeaks, double dcountthresh, boolean bbinarizebam, boolean bpairend,
-					     boolean bgzip
+					     boolean bgzip, boolean bsplit, int numsplitbins
                                             ) throws IOException
     {
 
@@ -700,6 +978,12 @@ public class Preprocessing
 	Iterator itrcells = hscells.iterator();
 	while (itrcells.hasNext())
 	{
+
+	    //added in v1.18 to consistently reset chroms considered
+	    for (int nchromindex = 0; nchromindex < chroms.length; nchromindex++)
+	    {
+		bpresent[nchromindex] =  false;
+	    }
 	    //going through each declared cell type
 	    String szcell = (String) itrcells.next();
 	    HashSet hscellcontrol = (HashSet) hmfilescellcontrol.get(szcell);
@@ -760,78 +1044,173 @@ public class Preprocessing
 		      //we have signal for this chromosome
 		      if (bgzip)
 		      {
-                         String szfile = szoutputsignaldir+"/"+szcell+"_"+chroms[nchrom]+"_signal.txt.gz";
-			 System.out.println("Writing to file "+szfile);
+			 if (bsplit)
+			 {
+		            //outputs mark signal data
+		            int[][] grid_nchrom = grid[nchrom];
+			    int nsplit = 0;
+			    GZIPOutputStream pwzip = null;
+ 	                    for (int nbin = 0; nbin < grid_nchrom.length; nbin++)
+                            { 
+			       if (nbin % numsplitbins == 0)
+			       {
+                                  String szfile = szoutputsignaldir+"/"+szcell+"_"+chroms[nchrom]+"."+nsplit+"_signal.txt.gz";
+			          System.out.println("Writing to file "+szfile);
 
-			 GZIPOutputStream pwzip = new GZIPOutputStream(new FileOutputStream(szfile));
+			          pwzip = new GZIPOutputStream(new FileOutputStream(szfile));
 
-		         //PrintWriter pw = new PrintWriter(szfile);
-			 String szout = szcell+"\t"+chroms[nchrom] +"\n";
-			 byte[] btformat = szout.getBytes();
-			 pwzip.write(btformat,0,btformat.length);
-		         //pw.println(szcell+"\t"+chroms[nchrom]);
+		                  //PrintWriter pw = new PrintWriter(szfile);
+			          String szout = szcell+"\t"+chroms[nchrom]+"."+nsplit +"\n";
+			          byte[] btformat = szout.getBytes();
+			          pwzip.write(btformat,0,btformat.length);
+		                  //pw.println(szcell+"\t"+chroms[nchrom]);
 
-		         //outputs mark header
-			 StringBuffer sbout = new StringBuffer();
-                         for (int nmark = 0; nmark < marks.length-1; nmark++)
-                         {
-			    sbout.append(marks[nmark]+"\t");
-			     //pw.print(marks[nmark]+"\t");
-		         }
-			 sbout.append(marks[marks.length-1]+"\n");
-                         btformat = sbout.toString().getBytes();
-                         pwzip.write(btformat,0,btformat.length);
+		                  //outputs mark header
+			          StringBuffer sbout = new StringBuffer();
+                                  for (int nmark = 0; nmark < marks.length-1; nmark++)
+                                  {
+			             sbout.append(marks[nmark]+"\t");
+			            //pw.print(marks[nmark]+"\t");
+		                  }
+			          sbout.append(marks[marks.length-1]+"\n");
+                                  btformat = sbout.toString().getBytes();
+                                  pwzip.write(btformat,0,btformat.length);
+				  nsplit++;
+			       }
 
-		         //pw.println(marks[marks.length-1]);
+		               //pw.println(marks[marks.length-1]);
+			       int[] grid_nchrom_nbin = grid_nchrom[nbin];
 
-		         //outputs mark signal data
-		         int[][] grid_nchrom = grid[nchrom];
- 	                 for (int nbin = 0; nbin < grid_nchrom.length; nbin++)
-                         { 
-			    int[] grid_nchrom_nbin = grid_nchrom[nbin];
-
-			    sbout = new StringBuffer();
-	                    for (int nmark = 0; nmark < grid_nchrom_nbin.length-1; nmark++)
-	                    {
-			       sbout.append(grid_nchrom_nbin[nmark]+"\t");
-	                       //pw.print(grid_nchrom_nbin[nmark]+"\t");
-		            }
-			    sbout.append(grid_nchrom_nbin[marks.length-1]+"\n");
-			    btformat = sbout.toString().getBytes();
-			    pwzip.write(btformat,0,btformat.length);
-
+			       StringBuffer sbout = new StringBuffer();
+	                       for (int nmark = 0; nmark < grid_nchrom_nbin.length-1; nmark++)
+	                       {
+			          sbout.append(grid_nchrom_nbin[nmark]+"\t");
+	                          //pw.print(grid_nchrom_nbin[nmark]+"\t");
+		               }
+			       sbout.append(grid_nchrom_nbin[marks.length-1]+"\n");
+			       byte[] btformat = sbout.toString().getBytes();
+			       pwzip.write(btformat,0,btformat.length);
 		            //pw.println(grid_nchrom_nbin[marks.length-1]);
 
+			       if (((nbin + 1) == grid_nchrom.length)||((nbin+1) % numsplitbins == 0))
+			       {
+			          pwzip.finish();
+		                  pwzip.close();
+			       }	     
+		            }
+			 }
+			 else
+			 {
+		            //outputs mark signal data
+
+                            String szfile = szoutputsignaldir+"/"+szcell+"_"+chroms[nchrom]+"_signal.txt.gz";
+			    System.out.println("Writing to file "+szfile);
+
+			    GZIPOutputStream pwzip = new GZIPOutputStream(new FileOutputStream(szfile));
+
+		            //PrintWriter pw = new PrintWriter(szfile);
+			    String szout = szcell+"\t"+chroms[nchrom]+"\n";
+			    byte[] btformat = szout.getBytes();
+			    pwzip.write(btformat,0,btformat.length);
+		            //pw.println(szcell+"\t"+chroms[nchrom]);
+
+		            //outputs mark header
+			    StringBuffer sbout = new StringBuffer();
+                            for (int nmark = 0; nmark < marks.length-1; nmark++)
+                            {
+		               sbout.append(marks[nmark]+"\t");
+			          //pw.print(marks[nmark]+"\t");
+		            }
+			    sbout.append(marks[marks.length-1]+"\n");
+                            btformat = sbout.toString().getBytes();
+                            pwzip.write(btformat,0,btformat.length);				 
+			       
+		                //pw.println(marks[marks.length-1]);
+		            int[][] grid_nchrom = grid[nchrom];
+ 	                    for (int nbin = 0; nbin < grid_nchrom.length; nbin++)
+                            { 
+			       int[] grid_nchrom_nbin = grid_nchrom[nbin];
+			       sbout = new StringBuffer();
+	                       for (int nmark = 0; nmark < grid_nchrom_nbin.length-1; nmark++)
+	                       {
+			          sbout.append(grid_nchrom_nbin[nmark]+"\t");
+	                          //pw.print(grid_nchrom_nbin[nmark]+"\t");
+		               }
+			       sbout.append(grid_nchrom_nbin[marks.length-1]+"\n");
+			       btformat = sbout.toString().getBytes();
+			       pwzip.write(btformat,0,btformat.length);
+		            //pw.println(grid_nchrom_nbin[marks.length-1]);
+			    }  
+			    pwzip.finish();
+		            pwzip.close();			       			    	    
 		         }
-			 pwzip.finish();
-		         pwzip.close();	     
 		      }
 		      else
 		      {
-			 String szfile = szoutputsignaldir+"/"+szcell+"_"+chroms[nchrom]+"_signal.txt";
-		         PrintWriter pw = new PrintWriter(szfile);
-		         pw.println(szcell+"\t"+chroms[nchrom]);
-		         //outputs mark header
+			 if (bsplit)
+			 {
+		            int[][] grid_nchrom = grid[nchrom];
+			    int nsplit = 0;
+			    PrintWriter pw = null;
+ 	                    for (int nbin = 0; nbin < grid_nchrom.length; nbin++)
+                            {  
+		               if (nbin % numsplitbins == 0)
+			       {
+		                  String szfile = szoutputsignaldir+"/"+szcell+"_"+chroms[nchrom]+"."+nsplit+"_signal.txt";
+		                  pw = new PrintWriter(szfile);
+		                  pw.println(szcell+"\t"+chroms[nchrom]+"."+nsplit);
+		                  //outputs mark header
 
-                         for (int nmark = 0; nmark < marks.length-1; nmark++)
-                         {
-		            pw.print(marks[nmark]+"\t");
-		         }
-		         pw.println(marks[marks.length-1]);
+                                  for (int nmark = 0; nmark < marks.length-1; nmark++)
+                                  {
+		                     pw.print(marks[nmark]+"\t");
+		                  }
+		                  pw.println(marks[marks.length-1]);
 
-		         //outputs mark signal data
-		         int[][] grid_nchrom = grid[nchrom];
- 	                 for (int nbin = 0; nbin < grid_nchrom.length; nbin++)
-                         { 
-			    int[] grid_nchrom_nbin = grid_nchrom[nbin];
-	                    for (int nmark = 0; nmark < grid_nchrom_nbin.length-1; nmark++)
-	                    {
-	                       pw.print(grid_nchrom_nbin[nmark]+"\t");
+				  nsplit++;
+			       }
+		                  //outputs mark signal data
+
+			       int[] grid_nchrom_nbin = grid_nchrom[nbin];
+	                       for (int nmark = 0; nmark < grid_nchrom_nbin.length-1; nmark++)
+	                       {
+	                          pw.print(grid_nchrom_nbin[nmark]+"\t");
+		               }
+		               pw.println(grid_nchrom_nbin[marks.length-1]);
+
+                               if (((nbin + 1) == grid_nchrom.length)||((nbin+1) % numsplitbins == 0))
+			       {
+				   pw.close();	       
+			       }
 		            }
-		            pw.println(grid_nchrom_nbin[marks.length-1]);
-		         }
-		         pw.close();	     
-		      }  
+			 }
+			 else
+			 {
+		            String szfile = szoutputsignaldir+"/"+szcell+"_"+chroms[nchrom]+"_signal.txt";
+		            PrintWriter pw = new PrintWriter(szfile);
+		            pw.println(szcell+"\t"+chroms[nchrom]);
+		            //outputs mark header
+
+                            for (int nmark = 0; nmark < marks.length-1; nmark++)
+                            {
+		               pw.print(marks[nmark]+"\t");
+		            }
+		            pw.println(marks[marks.length-1]);
+
+		            //outputs mark signal data
+		            int[][] grid_nchrom = grid[nchrom];
+ 	                    for (int nbin = 0; nbin < grid_nchrom.length; nbin++)
+                            {  
+			       int[] grid_nchrom_nbin = grid_nchrom[nbin];
+	                       for (int nmark = 0; nmark < grid_nchrom_nbin.length-1; nmark++)
+	                       {
+	                          pw.print(grid_nchrom_nbin[nmark]+"\t");
+		               }
+		               pw.println(grid_nchrom_nbin[marks.length-1]);
+		            }
+		            pw.close();	       
+			 }
+		      }
 		  }
 	       }
 	    }
@@ -846,112 +1225,321 @@ public class Preprocessing
 	          {
 		     if (bgzip)
 		     {
-	                //we have signal for this chromosome
-		        String szfile = szoutputcontroldir+"/"+szcell+"_"+chroms[nchrom]+"_controlsignal.txt.gz";
-		        System.out.println("Writing to file "+szfile);
-			GZIPOutputStream pwzip = new GZIPOutputStream(new FileOutputStream(szfile));
-	                //PrintWriter pw = new PrintWriter(szfile);
-			String szout = szcell+"\t"+chroms[nchrom]+"\n";
-			byte[] btformat = szout.getBytes();
-			pwzip.write(btformat,0,btformat.length);
+		        if (bsplit)
+			{
+		           //outputs mark signal data
+		           int[][] gridcontrol_nchrom = gridcontrol[nchrom];
+			   int nsplit = 0;
+			   GZIPOutputStream pwzip = null;
+ 	                   for (int nbin = 0; nbin < gridcontrol_nchrom.length; nbin++)
+                           {  
+			      if (nbin % numsplitbins == 0)
+			      {
+	                         //we have signal for this chromosome
+		                 String szfile = szoutputcontroldir+"/"+szcell+"_"+chroms[nchrom]+"."+nsplit+"_controlsignal.txt.gz";
+		                 System.out.println("Writing to file "+szfile);
+		  	         pwzip = new GZIPOutputStream(new FileOutputStream(szfile));
+	                         //PrintWriter pw = new PrintWriter(szfile);
+			         String szout = szcell+"\t"+chroms[nchrom]+"."+nsplit+"\n";
+			         byte[] btformat = szout.getBytes();
+			         pwzip.write(btformat,0,btformat.length);
 
-		        //pw.println(szcell+"\t"+chroms[nchrom]);
-	                //outputs mark header
-		        if (numcontrolmarks == 1)
-		        {
-			    szout = "Control\n";//szcell+"\t"+chroms[nchrom]+"\n";
-			    btformat = szout.getBytes();
-			    pwzip.write(btformat,0,btformat.length);
-			    //pw.println("Control");
-		        }
-		        else
-		        {
-			   StringBuffer sbout = new StringBuffer();
-                           for (int nmark = 0; nmark < marks.length-1; nmark++)
-                           {
-			      sbout.append(marks[nmark]+"\t");
-       	                      //pw.print(marks[nmark]+"\t");
-	                   }
-			   sbout.append(marks[marks.length-1]+"\n");
-	       	           //pw.println(marks[marks.length-1]);
+		                 //pw.println(szcell+"\t"+chroms[nchrom]);
+	                         //outputs mark header
+		                 if (numcontrolmarks == 1)
+		                 {
+			            szout = "Control\n";//szcell+"\t"+chroms[nchrom]+"\n";
+			            btformat = szout.getBytes();
+			            pwzip.write(btformat,0,btformat.length);
+			            //pw.println("Control");
+				 }
+		                 else
+		                 {
+			            StringBuffer sbout = new StringBuffer();
+                                    for (int nmark = 0; nmark < marks.length-1; nmark++)
+                                    {
+			               sbout.append(marks[nmark]+"\t");
+       	                               //pw.print(marks[nmark]+"\t");
+				    }
+			            sbout.append(marks[marks.length-1]+"\n");
+	       	                    //pw.println(marks[marks.length-1]);
+				    btformat = sbout.toString().getBytes();
+				    pwzip.write(btformat,0,btformat.length);
+				 }
+				 nsplit++;
+			      }
 
-			   btformat = sbout.toString().getBytes();
-			   pwzip.write(btformat,0,btformat.length);
-		        }
+	                      int[] gridcontrol_nchrom_nbin = gridcontrol_nchrom[nbin];
+		              if (gridcontrol_nchrom_nbin.length == 1)
+		              {
+			         String szout = (gridcontrol_nchrom_nbin[0]-npseudocountcontrol)+"\n";
 
-		        //outputs mark signal data
-		        int[][] gridcontrol_nchrom = gridcontrol[nchrom];
-
- 	                for (int nbin = 0; nbin < gridcontrol[nchrom].length; nbin++)
-                        {  
-	                   int[] gridcontrol_nchrom_nbin = gridcontrol_nchrom[nbin];
-		           if (gridcontrol_nchrom_nbin.length == 1)
-		           {
-			      szout = (gridcontrol_nchrom_nbin[0]-npseudocountcontrol)+"\n";
-
-                              btformat = szout.getBytes();
-                              pwzip.write(btformat,0,btformat.length);
-
-			       //pw.println(gridcontrol_nchrom_nbin[0]-npseudocountcontrol);
-		           }
-		           else
-		           {
-			      StringBuffer sbout = new StringBuffer();
-	                      for (int nmark = 0; nmark < gridcontrol_nchrom_nbin.length-1; nmark++)
-	                      {
-				 sbout.append((gridcontrol_nchrom_nbin[nmark]-npseudocountcontrol)+"\t");
-		      	         //pw.print((gridcontrol_nchrom_nbin[nmark]-npseudocountcontrol)+"\t");
-		              }
-			      sbout.append((gridcontrol_nchrom_nbin[marks.length-1]-npseudocountcontrol)+"\n");
-			      btformat = sbout.toString().getBytes();
-			      pwzip.write(btformat,0,btformat.length);
-
-		              //pw.println(gridcontrol_nchrom_nbin[marks.length-1]-npseudocountcontrol);
+                                 byte[] btformat = szout.getBytes();
+                                 pwzip.write(btformat,0,btformat.length);
+			         //pw.println(gridcontrol_nchrom_nbin[0]-npseudocountcontrol);
+			      }
+		              else
+		              {
+			         StringBuffer sbout = new StringBuffer();
+	                         for (int nmark = 0; nmark < gridcontrol_nchrom_nbin.length-1; nmark++)
+	                         {
+				    sbout.append((gridcontrol_nchrom_nbin[nmark]-npseudocountcontrol)+"\t");
+		      	            //pw.print((gridcontrol_nchrom_nbin[nmark]-npseudocountcontrol)+"\t");
+		                 }
+			         sbout.append((gridcontrol_nchrom_nbin[marks.length-1]-npseudocountcontrol)+"\n");
+			         byte[] btformat = sbout.toString().getBytes();
+			         pwzip.write(btformat,0,btformat.length);
+		                //pw.println(gridcontrol_nchrom_nbin[marks.length-1]-npseudocountcontrol);
+		 	      }
+			   
+			      if (((nbin + 1) == gridcontrol_nchrom.length)||((nbin+1) % numsplitbins == 0))
+			      {
+			         pwzip.finish();
+		                 pwzip.close();	 
+			      }      		   
 			   }
 			}
-			pwzip.finish();
-		        pwzip.close();	       		     
+			else
+			{
+			   if (bsplit)
+			   {
+		              //outputs mark signal data
+		              int[][] gridcontrol_nchrom = gridcontrol[nchrom];
+			      int nsplit = 0;
+			      GZIPOutputStream pwzip = null;
+ 	                      for (int nbin = 0; nbin < gridcontrol_nchrom.length; nbin++)
+                              {  
+				 if (nbin % numsplitbins == 0)
+				 {
+	                            //we have signal for this chromosome
+	  	                    String szfile = szoutputcontroldir+"/"+szcell+"_"+chroms[nchrom]+"."+nsplit+"_controlsignal.txt.gz";
+		                    System.out.println("Writing to file "+szfile);
+		     	            pwzip = new GZIPOutputStream(new FileOutputStream(szfile));
+	                            //PrintWriter pw = new PrintWriter(szfile);
+			            String szout = szcell+"\t"+chroms[nchrom]+"."+nsplit+"\n";
+			            byte[] btformat = szout.getBytes();
+			            pwzip.write(btformat,0,btformat.length);
+
+		                    //pw.println(szcell+"\t"+chroms[nchrom]);
+	                            //outputs mark header
+		                    if (numcontrolmarks == 1)
+		                    {
+			               szout = "Control\n";//szcell+"\t"+chroms[nchrom]+"\n";
+			               btformat = szout.getBytes();
+			               pwzip.write(btformat,0,btformat.length);
+			               //pw.println("Control");
+			            }
+		                    else
+		                    {
+			               StringBuffer sbout = new StringBuffer();
+                                       for (int nmark = 0; nmark < marks.length-1; nmark++)
+                                       {
+			                  sbout.append(marks[nmark]+"\t");
+       	                                  //pw.print(marks[nmark]+"\t");
+	                               }
+			               sbout.append(marks[marks.length-1]+"\n");
+	       	                       //pw.println(marks[marks.length-1]);
+
+			               btformat = sbout.toString().getBytes();
+			               pwzip.write(btformat,0,btformat.length);
+				    }
+				    nsplit++;
+				 }		   
+
+
+	                         int[] gridcontrol_nchrom_nbin = gridcontrol_nchrom[nbin];
+		                 if (gridcontrol_nchrom_nbin.length == 1)
+		                 {
+			            String szout = (gridcontrol_nchrom_nbin[0]-npseudocountcontrol)+"\n";
+
+                                    byte[] btformat = szout.getBytes();
+                                    pwzip.write(btformat,0,btformat.length);
+			            //pw.println(gridcontrol_nchrom_nbin[0]-npseudocountcontrol);
+			         }
+		                 else
+		                 {
+			            StringBuffer sbout = new StringBuffer();
+	                            for (int nmark = 0; nmark < gridcontrol_nchrom_nbin.length-1; nmark++)
+	                            {
+				       sbout.append((gridcontrol_nchrom_nbin[nmark]-npseudocountcontrol)+"\t");
+		      	               //pw.print((gridcontrol_nchrom_nbin[nmark]-npseudocountcontrol)+"\t");
+		                    }
+			            sbout.append((gridcontrol_nchrom_nbin[marks.length-1]-npseudocountcontrol)+"\n");
+			            byte[] btformat = sbout.toString().getBytes();
+			            pwzip.write(btformat,0,btformat.length);
+		                    //pw.println(gridcontrol_nchrom_nbin[marks.length-1]-npseudocountcontrol);
+				 }
+
+				 if (((nbin + 1) == gridcontrol_nchrom.length)||((nbin+1) % numsplitbins == 0))
+				 {			      
+			            pwzip.finish();
+		                    pwzip.close();
+				 }	       		     
+			      }
+			   }
+			   else
+			   {
+	                      //we have signal for this chromosome
+	  	              String szfile = szoutputcontroldir+"/"+szcell+"_"+chroms[nchrom]+"_controlsignal.txt.gz";
+		              System.out.println("Writing to file "+szfile);
+		     	      GZIPOutputStream pwzip = new GZIPOutputStream(new FileOutputStream(szfile));
+	                      //PrintWriter pw = new PrintWriter(szfile);
+			      String szout = szcell+"\t"+chroms[nchrom]+"\n";
+			      byte[] btformat = szout.getBytes();
+			      pwzip.write(btformat,0,btformat.length);
+
+		              //pw.println(szcell+"\t"+chroms[nchrom]);
+	                      //outputs mark header
+		              if (numcontrolmarks == 1)
+		              {
+			         szout = "Control\n";//szcell+"\t"+chroms[nchrom]+"\n";
+			         btformat = szout.getBytes();
+			         pwzip.write(btformat,0,btformat.length);
+			         //pw.println("Control");
+			      }
+		              else
+		              {
+			         StringBuffer sbout = new StringBuffer();
+                                 for (int nmark = 0; nmark < marks.length-1; nmark++)
+                                 {
+			            sbout.append(marks[nmark]+"\t");
+       	                            //pw.print(marks[nmark]+"\t");
+	                         }
+			         sbout.append(marks[marks.length-1]+"\n");
+	       	                 //pw.println(marks[marks.length-1]);
+
+			         btformat = sbout.toString().getBytes();
+			         pwzip.write(btformat,0,btformat.length);
+			      }			   
+
+		              //outputs mark signal data
+		              int[][] gridcontrol_nchrom = gridcontrol[nchrom];
+
+ 	                      for (int nbin = 0; nbin < gridcontrol_nchrom.length; nbin++)
+                              {  
+	                         int[] gridcontrol_nchrom_nbin = gridcontrol_nchrom[nbin];
+		                 if (gridcontrol_nchrom_nbin.length == 1)
+		                 {
+			            szout = (gridcontrol_nchrom_nbin[0]-npseudocountcontrol)+"\n";
+
+                                    btformat = szout.getBytes();
+                                    pwzip.write(btformat,0,btformat.length);
+			            //pw.println(gridcontrol_nchrom_nbin[0]-npseudocountcontrol);
+			         }
+		                 else
+		                 {
+			            StringBuffer sbout = new StringBuffer();
+	                            for (int nmark = 0; nmark < gridcontrol_nchrom_nbin.length-1; nmark++)
+	                            {
+				       sbout.append((gridcontrol_nchrom_nbin[nmark]-npseudocountcontrol)+"\t");
+		      	               //pw.print((gridcontrol_nchrom_nbin[nmark]-npseudocountcontrol)+"\t");
+		                    }
+			            sbout.append((gridcontrol_nchrom_nbin[marks.length-1]-npseudocountcontrol)+"\n");
+			            btformat = sbout.toString().getBytes();
+			            pwzip.write(btformat,0,btformat.length);
+		                    //pw.println(gridcontrol_nchrom_nbin[marks.length-1]-npseudocountcontrol);
+				 }
+			      }
+			      pwzip.finish();
+		              pwzip.close();	       		     
+			   }
+			}
 		     }
 		     else
 		     {
-	                //we have signal for this chromosome
-		        String szfile = szoutputcontroldir+"/"+szcell+"_"+chroms[nchrom]+"_controlsignal.txt";
-		        System.out.println("Writing to file "+szfile);
-	                PrintWriter pw = new PrintWriter(szfile);
-		        pw.println(szcell+"\t"+chroms[nchrom]);
-	                //outputs mark header
-		        if (numcontrolmarks == 1)
-		        {
-		           pw.println("Control");
-		        }
-		        else
-		        {
-                           for (int nmark = 0; nmark < marks.length-1; nmark++)
-                           {
-       	                      pw.print(marks[nmark]+"\t");
-	                   }
-	       	           pw.println(marks[marks.length-1]);
-		        }
+		        if (bsplit)
+			{
+		           //outputs mark signal data
+		           int[][] gridcontrol_nchrom = gridcontrol[nchrom];
+			   int nsplit = 0;
+			   PrintWriter pw = null;
+ 	                   for (int nbin = 0; nbin < gridcontrol_nchrom.length; nbin++)
+                           {  
+			      if (nbin % numsplitbins == 0)
+			      {
+	                         //we have signal for this chromosome
+		                 String szfile = szoutputcontroldir+"/"+szcell+"_"+chroms[nchrom]+"."+nsplit+"_controlsignal.txt";
+		                 System.out.println("Writing to file "+szfile);
+	                         pw = new PrintWriter(szfile);
+		                 pw.println(szcell+"\t"+chroms[nchrom]+"."+nsplit);
+	                         //outputs mark header
+		                 if (numcontrolmarks == 1)
+		                 {
+		                    pw.println("Control");
+		                 }
+		                 else
+		                 {
+                                    for (int nmark = 0; nmark < marks.length-1; nmark++)
+                                    {
+       	                               pw.print(marks[nmark]+"\t");
+	                            }
+	       	                    pw.println(marks[marks.length-1]);
+				 }
 
-		        //outputs mark signal data
-		        int[][] gridcontrol_nchrom = gridcontrol[nchrom];
- 	                for (int nbin = 0; nbin < gridcontrol[nchrom].length; nbin++)
-                        {  
-	                   int[] gridcontrol_nchrom_nbin = gridcontrol_nchrom[nbin];
-		           if (gridcontrol_nchrom_nbin.length == 1)
+				 nsplit++;
+			      }
+
+	                      int[] gridcontrol_nchrom_nbin = gridcontrol_nchrom[nbin];
+		              if (gridcontrol_nchrom_nbin.length == 1)
+		              {
+	                         pw.println(gridcontrol_nchrom_nbin[0]-npseudocountcontrol);
+		              }
+		              else
+		              {
+	                         for (int nmark = 0; nmark < gridcontrol_nchrom_nbin.length-1; nmark++)
+	                         {
+		      	            pw.print((gridcontrol_nchrom_nbin[nmark]-npseudocountcontrol)+"\t");
+		                 }
+		                 pw.println(gridcontrol_nchrom_nbin[marks.length-1]-npseudocountcontrol);
+			      }
+			      
+			      if (((nbin + 1) == gridcontrol_nchrom.length)||((nbin+1) % numsplitbins == 0))
+			      {
+		                 pw.close();
+			      }
+			   }
+			}
+			else
+			{
+	                   //we have signal for this chromosome
+		           String szfile = szoutputcontroldir+"/"+szcell+"_"+chroms[nchrom]+"_controlsignal.txt";
+		           System.out.println("Writing to file "+szfile);
+	                   PrintWriter pw = new PrintWriter(szfile);
+		           pw.println(szcell+"\t"+chroms[nchrom]);
+	                   //outputs mark header
+		           if (numcontrolmarks == 1)
 		           {
-	                      pw.println(gridcontrol_nchrom_nbin[0]-npseudocountcontrol);
+		              pw.println("Control");
 		           }
 		           else
 		           {
-	                      for (int nmark = 0; nmark < gridcontrol_nchrom_nbin.length-1; nmark++)
-	                      {
-		      	         pw.print((gridcontrol_nchrom_nbin[nmark]-npseudocountcontrol)+"\t");
-		              }
-		              pw.println(gridcontrol_nchrom_nbin[marks.length-1]-npseudocountcontrol);
+                              for (int nmark = 0; nmark < marks.length-1; nmark++)
+                              {
+       	                         pw.print(marks[nmark]+"\t");
+	                      }
+	       	              pw.println(marks[marks.length-1]);
 			   }
-			}
-		        pw.close();	       		     
+
+		           //outputs mark signal data
+		           int[][] gridcontrol_nchrom = gridcontrol[nchrom];
+ 	                   for (int nbin = 0; nbin < gridcontrol_nchrom.length; nbin++)
+                           {  
+	                      int[] gridcontrol_nchrom_nbin = gridcontrol_nchrom[nbin];
+		              if (gridcontrol_nchrom_nbin.length == 1)
+		              {
+	                         pw.println(gridcontrol_nchrom_nbin[0]-npseudocountcontrol);
+		              }
+		              else
+		              {
+	                         for (int nmark = 0; nmark < gridcontrol_nchrom_nbin.length-1; nmark++)
+	                         {
+		      	            pw.print((gridcontrol_nchrom_nbin[nmark]-npseudocountcontrol)+"\t");
+		                 }
+		                 pw.println(gridcontrol_nchrom_nbin[marks.length-1]-npseudocountcontrol);
+			      }
+			   }
+		           pw.close();
+			}	       		     
 		     }
 		  }		  
 	       }
@@ -982,174 +1570,370 @@ public class Preprocessing
 
 		     if (bgzip)
 		     {
-		        String szfile = szoutputbinarydir+"/"+szcell+"_"+chroms[nchrom]+"_binary.txt.gz";
-		        System.out.println("Writing to file "+szfile);
-                        GZIPOutputStream pwzip = new GZIPOutputStream(new FileOutputStream(szfile));
-		        //PrintWriter pw = new PrintWriter(szfile);
-	       	        //we have both primary and control data for the mark
-			String szout = szcell+"\t"+chroms[nchrom] +"\n";
-                        byte[] btformat = szout.getBytes();
-                        pwzip.write(btformat,0,btformat.length);
+			if (bsplit)
+			{
+		           int[][] grid_nchrom = grid[nchrom];
+	      	           int[][] sumgridcontrol_nchrom = sumgridcontrol[nchrom];
+			   int nsplit = 0;
+			   GZIPOutputStream pwzip = null;
 
-		        //pw.println(szcell+"\t"+chroms[nchrom]);
-			StringBuffer sbout = new StringBuffer();
-                        for (int nmark = 0; nmark < nummarks_m1; nmark++)
-		        {
-			   sbout.append(marks[nmark]+"\t");
-			    //pw.print(marks[nmark]+"\t");
-	                }
-			sbout.append(marks[nummarks_m1]+"\n");
-	                //pw.println(marks[nummarks_m1]);
+ 	                   for (int nbin = 0; nbin < grid_nchrom.length; nbin++)
+                           {  
+			      if (nbin % numsplitbins == 0)
+			      {
+		                 String szfile = szoutputbinarydir+"/"+szcell+"_"+chroms[nchrom]+"."+nsplit+"_binary.txt.gz";
+		                 System.out.println("Writing to file "+szfile);
+                                 pwzip = new GZIPOutputStream(new FileOutputStream(szfile));
+		                 //PrintWriter pw = new PrintWriter(szfile);
+	       	                 //we have both primary and control data for the mark
+			         String szout = szcell+"\t"+chroms[nchrom]+"."+nsplit +"\n";
+                                 byte[] btformat = szout.getBytes();
+                                 pwzip.write(btformat,0,btformat.length);
 
-                        btformat = sbout.toString().getBytes();
-                        pwzip.write(btformat,0,btformat.length);
+		                 //pw.println(szcell+"\t"+chroms[nchrom]);
+			         StringBuffer sbout = new StringBuffer();
+                                 for (int nmark = 0; nmark < nummarks_m1; nmark++)
+		                 {
+			            sbout.append(marks[nmark]+"\t");
+			            //pw.print(marks[nmark]+"\t");
+	                         }
+	 	 	         sbout.append(marks[nummarks_m1]+"\n");
+	                         //pw.println(marks[nummarks_m1]);
+
+                                 btformat = sbout.toString().getBytes();
+                                 pwzip.write(btformat,0,btformat.length);
+				 nsplit++;
+			      }
 		     
-		        int[][] grid_nchrom = grid[nchrom];
-	      	        int[][] sumgridcontrol_nchrom = sumgridcontrol[nchrom];
- 	                for (int nbin = 0; nbin < grid_nchrom.length; nbin++)
-                        {  
-	                   int[] grid_nchrom_nbin = grid_nchrom[nbin];
-			   int[] sumgrid_nchrom_nbin = sumgridcontrol_nchrom[nbin];
 
-			   sbout = new StringBuffer();
+	                      int[] grid_nchrom_nbin = grid_nchrom[nbin];
+			      int[] sumgrid_nchrom_nbin = sumgridcontrol_nchrom[nbin];
 
-	                   for (int nmark = 0; nmark < nummarks_m1; nmark++)
-	                   {
+			      StringBuffer sbout = new StringBuffer();
+
+	                      for (int nmark = 0; nmark < nummarks_m1; nmark++)
+	                      {
+			         int ncontrolval;
+			         if (numcontrolmarks == 1)
+			         {
+			            ncontrolval = sumgrid_nchrom_nbin[0];
+			         }
+			         else
+			         {
+			            ncontrolval = sumgrid_nchrom_nbin[nmark];
+			         }
+	      		         //printing one if count exceeds background threshold
+
+			         if (!bpresentmarks[nmark])
+			         {
+			            sbout.append("2\t");
+				    //pw.print("2\t");
+			         }
+		                 else if ((bpeaks&&(grid_nchrom_nbin[nmark]>=1)) ||(!bpeaks&&(thresholds[nmark][ncontrolval] <= grid_nchrom_nbin[nmark])))
+		                 {
+				    sbout.append("1\t");
+	                            //pw.print("1\t");
+	      	                 }
+		                 else
+		                 {
+				    sbout.append("0\t");
+	                            //pw.print("0\t");
+		                 }
+			      }
+			   
 			      int ncontrolval;
-			      if (numcontrolmarks == 1)
-			      {
-			         ncontrolval = sumgrid_nchrom_nbin[0];
-			      }
-			      else
-			      {
-			         ncontrolval = sumgrid_nchrom_nbin[nmark];
-			      }
-	      		      //printing one if count exceeds background threshold
-
-			      if (!bpresentmarks[nmark])
-			      {
-			         sbout.append("2\t");
-				  //pw.print("2\t");
-			      }
-		              else if ((bpeaks&&(grid_nchrom_nbin[nmark]>=1)) ||(!bpeaks&&(thresholds[nmark][ncontrolval] <= grid_nchrom_nbin[nmark])))
+		              if (numcontrolmarks == 1)
 		              {
-				 sbout.append("1\t");
-	                         //pw.print("1\t");
-	      	              }
+			         ncontrolval = sumgrid_nchrom_nbin[0];
+		              }
 		              else
 		              {
-				 sbout.append("0\t");
-	                         //pw.print("0\t");
+		       	         ncontrolval = sumgrid_nchrom_nbin[nummarks_m1];
+			      }
+
+			      if (!bpresentmarks[nummarks_m1])
+		              {
+			         sbout.append("2\n");
+	                         //pw.println("2");
+			      }
+		              else if ((bpeaks&&(grid_nchrom_nbin[nummarks_m1]>=1))||(!bpeaks&&(thresholds[nummarks_m1][ncontrolval] <= grid_nchrom_nbin[nummarks_m1])))
+	                      {
+			         sbout.append("1\n");
+	                         //pw.println("1");
+	      	              }
+		              else
+	                      {
+			         sbout.append("0\n");
+	      	                 //pw.println("0");
 		              }
+
+			      byte[] btformat = sbout.toString().getBytes();
+			      pwzip.write(btformat,0,btformat.length);
+			   
+                              if (((nbin + 1) == grid_nchrom.length)||((nbin+1) % numsplitbins == 0))
+			      {		        
+			         pwzip.finish();
+		                 pwzip.close();
+			      }
 			   }
+			}
+			else
+			{
+		           String szfile = szoutputbinarydir+"/"+szcell+"_"+chroms[nchrom]+"_binary.txt.gz";
+		           System.out.println("Writing to file "+szfile);
+                           GZIPOutputStream pwzip = new GZIPOutputStream(new FileOutputStream(szfile));
+		           //PrintWriter pw = new PrintWriter(szfile);
+	       	           //we have both primary and control data for the mark
+			   String szout = szcell+"\t"+chroms[nchrom] +"\n";
+                           byte[] btformat = szout.getBytes();
+                           pwzip.write(btformat,0,btformat.length);
 
-			   int ncontrolval;
-		           if (numcontrolmarks == 1)
+		           //pw.println(szcell+"\t"+chroms[nchrom]);
+			   StringBuffer sbout = new StringBuffer();
+                           for (int nmark = 0; nmark < nummarks_m1; nmark++)
 		           {
-			      ncontrolval = sumgrid_nchrom_nbin[0];
-		           }
-		           else
-		           {
-		       	      ncontrolval = sumgrid_nchrom_nbin[nummarks_m1];
-		           }
+			      sbout.append(marks[nmark]+"\t");
+			      //pw.print(marks[nmark]+"\t");
+	                   }
+			   sbout.append(marks[nummarks_m1]+"\n");
+	                   //pw.println(marks[nummarks_m1]);
 
+                           btformat = sbout.toString().getBytes();
+                           pwzip.write(btformat,0,btformat.length);
+		     
+		           int[][] grid_nchrom = grid[nchrom];
+	      	           int[][] sumgridcontrol_nchrom = sumgridcontrol[nchrom];
+ 	                   for (int nbin = 0; nbin < grid_nchrom.length; nbin++)
+                           {  
+	                      int[] grid_nchrom_nbin = grid_nchrom[nbin];
+			      int[] sumgrid_nchrom_nbin = sumgridcontrol_nchrom[nbin];
 
-			   if (!bpresentmarks[nummarks_m1])
-		           {
-			      sbout.append("2\n");
-	                      //pw.println("2");
+			      sbout = new StringBuffer();
+
+	                      for (int nmark = 0; nmark < nummarks_m1; nmark++)
+	                      {
+			         int ncontrolval;
+			         if (numcontrolmarks == 1)
+			         {
+			            ncontrolval = sumgrid_nchrom_nbin[0];
+			         }
+			         else
+			         {
+			            ncontrolval = sumgrid_nchrom_nbin[nmark];
+			         }
+	      		         //printing one if count exceeds background threshold
+
+			         if (!bpresentmarks[nmark])
+			         {
+			            sbout.append("2\t");
+				    //pw.print("2\t");
+			         }
+		                 else if ((bpeaks&&(grid_nchrom_nbin[nmark]>=1)) ||(!bpeaks&&(thresholds[nmark][ncontrolval] <= grid_nchrom_nbin[nmark])))
+		                 {
+				    sbout.append("1\t");
+	                            //pw.print("1\t");
+	      	                 }
+		                 else
+		                 {
+				    sbout.append("0\t");
+	                            //pw.print("0\t");
+		                 }
+			      }
+			   
+			      int ncontrolval;
+		              if (numcontrolmarks == 1)
+		              {
+			         ncontrolval = sumgrid_nchrom_nbin[0];
+		              }
+		              else
+		              {
+		       	         ncontrolval = sumgrid_nchrom_nbin[nummarks_m1];
+			      }
+
+			      if (!bpresentmarks[nummarks_m1])
+		              {
+			         sbout.append("2\n");
+	                         //pw.println("2");
+			      }
+		              else if ((bpeaks&&(grid_nchrom_nbin[nummarks_m1]>=1))||(!bpeaks&&(thresholds[nummarks_m1][ncontrolval] <= grid_nchrom_nbin[nummarks_m1])))
+	                      {
+			         sbout.append("1\n");
+	                         //pw.println("1");
+	      	              }
+		              else
+	                      {
+			         sbout.append("0\n");
+	      	                 //pw.println("0");
+		              }
+
+			      btformat = sbout.toString().getBytes();
+			      pwzip.write(btformat,0,btformat.length);
 			   }
-		           else if ((bpeaks&&(grid_nchrom_nbin[nummarks_m1]>=1))||(!bpeaks&&(thresholds[nummarks_m1][ncontrolval] <= grid_nchrom_nbin[nummarks_m1])))
-	                   {
-			      sbout.append("1\n");
-	                      //pw.println("1");
-	      	           }
-		           else
-	                   {
-			      sbout.append("0\n");
-	      	              //pw.println("0");
-		           }
-
-			   btformat = sbout.toString().getBytes();
-			   pwzip.write(btformat,0,btformat.length);
-
-		        }
-			pwzip.finish();
-		        pwzip.close();
+		        
+			   pwzip.finish();
+		           pwzip.close();
+			}
 		     }
 		     else
 		     {
-		        String szfile = szoutputbinarydir+"/"+szcell+"_"+chroms[nchrom]+"_binary.txt";
-		        System.out.println("Writing to file "+szfile);
-		        PrintWriter pw = new PrintWriter(szfile);
-	       	        //we have both primary and control data for the mark
-		        pw.println(szcell+"\t"+chroms[nchrom]);
+		        if (bsplit)
+			{
+		           int[][] grid_nchrom = grid[nchrom];
+	      	           int[][] sumgridcontrol_nchrom = sumgridcontrol[nchrom];
+			   int nsplit = 0;
+			   PrintWriter pw = null;
+ 	                   for (int nbin = 0; nbin < grid_nchrom.length; nbin++)
+                           {  
+			      if (nbin % numsplitbins == 0)
+			      {
+		                 String szfile = szoutputbinarydir+"/"+szcell+"_"+chroms[nchrom]+"."+nsplit+"_binary.txt";
+		                 System.out.println("Writing to file "+szfile);
+		                 pw = new PrintWriter(szfile);
+	       	                 //we have both primary and control data for the mark
+		                 pw.println(szcell+"\t"+chroms[nchrom]+"."+nsplit);
 
-                        for (int nmark = 0; nmark < nummarks_m1; nmark++)
-		        {
-      	                   pw.print(marks[nmark]+"\t");
-	                }
-	                pw.println(marks[nummarks_m1]);
+                                 for (int nmark = 0; nmark < nummarks_m1; nmark++)
+		                 {
+      	                            pw.print(marks[nmark]+"\t");
+	                         }
+	                         pw.println(marks[nummarks_m1]);
+				 nsplit++;
+			      }
 		     
-		        int[][] grid_nchrom = grid[nchrom];
-	      	        int[][] sumgridcontrol_nchrom = sumgridcontrol[nchrom];
- 	                for (int nbin = 0; nbin < grid_nchrom.length; nbin++)
-                        {  
-	                   int[] grid_nchrom_nbin = grid_nchrom[nbin];
-			   int[] sumgrid_nchrom_nbin = sumgridcontrol_nchrom[nbin];
+	                      int[] grid_nchrom_nbin = grid_nchrom[nbin];
+			      int[] sumgrid_nchrom_nbin = sumgridcontrol_nchrom[nbin];
 
-	                   for (int nmark = 0; nmark < nummarks_m1; nmark++)
-	                   {
+	                      for (int nmark = 0; nmark < nummarks_m1; nmark++)
+	                      {
+			         int ncontrolval;
+			         if (numcontrolmarks == 1)
+			         {
+			            ncontrolval = sumgrid_nchrom_nbin[0];
+			         }
+			         else
+			         {
+			            ncontrolval = sumgrid_nchrom_nbin[nmark];
+				 }
+	      		         //printing one if count exceeds background threshold
+
+			         if (!bpresentmarks[nmark])
+			         {
+			            pw.print("2\t");
+				 }
+		                 else if ((bpeaks&&(grid_nchrom_nbin[nmark]>=1)) ||(!bpeaks&&(thresholds[nmark][ncontrolval] <= grid_nchrom_nbin[nmark])))
+		                 {
+	                            pw.print("1\t");
+				 }
+		                 else
+		                 {
+	                            pw.print("0\t");
+				 }				 
+			      }
+
 			      int ncontrolval;
-			      if (numcontrolmarks == 1)
-			      {
-			         ncontrolval = sumgrid_nchrom_nbin[0];
-			      }
-			      else
-			      {
-			         ncontrolval = sumgrid_nchrom_nbin[nmark];
-			      }
-	      		      //printing one if count exceeds background threshold
-
-			      if (!bpresentmarks[nmark])
-			      {
-			         pw.print("2\t");
-			      }
-		              else if ((bpeaks&&(grid_nchrom_nbin[nmark]>=1)) ||(!bpeaks&&(thresholds[nmark][ncontrolval] <= grid_nchrom_nbin[nmark])))
+		              if (numcontrolmarks == 1)
 		              {
-	                         pw.print("1\t");
-	      	              }
+			         ncontrolval = sumgrid_nchrom_nbin[0];
+		              }
 		              else
 		              {
-	                         pw.print("0\t");
+		       	         ncontrolval = sumgrid_nchrom_nbin[nummarks_m1];
+			      }
+
+			      if (!bpresentmarks[nummarks_m1])
+		              {
+	                         pw.println("2");
+			      }
+		              else if ((bpeaks&&(grid_nchrom_nbin[nummarks_m1]>=1))||
+                                       (!bpeaks&&(thresholds[nummarks_m1][ncontrolval] <= grid_nchrom_nbin[nummarks_m1])))
+	                      {
+	                         pw.println("1");
+			      }
+		              else
+	                      {
+	      	                 pw.println("0");
+			      }
+			   
+                              if (((nbin + 1) == grid_nchrom.length)||((nbin+1) % numsplitbins == 0))
+			      {
+		                 pw.close();
+			      }
+			   }
+			}
+			else
+			{
+		           String szfile = szoutputbinarydir+"/"+szcell+"_"+chroms[nchrom]+"_binary.txt";
+		           System.out.println("Writing to file "+szfile);
+		           PrintWriter pw = new PrintWriter(szfile);
+	       	           //we have both primary and control data for the mark
+		           pw.println(szcell+"\t"+chroms[nchrom]);
+
+                           for (int nmark = 0; nmark < nummarks_m1; nmark++)
+		           {
+      	                      pw.print(marks[nmark]+"\t");
+	                   }
+	                   pw.println(marks[nummarks_m1]);
+		     
+		           int[][] grid_nchrom = grid[nchrom];
+	      	           int[][] sumgridcontrol_nchrom = sumgridcontrol[nchrom];
+ 	                   for (int nbin = 0; nbin < grid_nchrom.length; nbin++)
+                           {  
+	                      int[] grid_nchrom_nbin = grid_nchrom[nbin];
+			      int[] sumgrid_nchrom_nbin = sumgridcontrol_nchrom[nbin];
+
+	                      for (int nmark = 0; nmark < nummarks_m1; nmark++)
+	                      {
+			         int ncontrolval;
+			         if (numcontrolmarks == 1)
+			         {
+			            ncontrolval = sumgrid_nchrom_nbin[0];
+			         }
+			         else
+			         {
+			            ncontrolval = sumgrid_nchrom_nbin[nmark];
+			         }
+	      		         //printing one if count exceeds background threshold
+
+			         if (!bpresentmarks[nmark])
+			         {
+			            pw.print("2\t");
+			         }
+		                 else if ((bpeaks&&(grid_nchrom_nbin[nmark]>=1)) ||(!bpeaks&&(thresholds[nmark][ncontrolval] <= grid_nchrom_nbin[nmark])))
+		                 {
+	                            pw.print("1\t");
+	      	                 }
+		                 else
+		                 {
+	                            pw.print("0\t");
+		                 }
+			      }
+
+			      int ncontrolval;
+		              if (numcontrolmarks == 1)
+		              {
+			         ncontrolval = sumgrid_nchrom_nbin[0];
 		              }
+		              else
+		              {
+		       	         ncontrolval = sumgrid_nchrom_nbin[nummarks_m1];
+			      }
+
+
+			      if (!bpresentmarks[nummarks_m1])
+		              {
+	                         pw.println("2");
+			      }
+		              else if ((bpeaks&&(grid_nchrom_nbin[nummarks_m1]>=1))||(!bpeaks&&(thresholds[nummarks_m1][ncontrolval] <= grid_nchrom_nbin[nummarks_m1])))
+	                      {
+	                         pw.println("1");
+			      }
+		              else
+	                      {
+	      	                 pw.println("0");
+			      }
 			   }
-
-			   int ncontrolval;
-		           if (numcontrolmarks == 1)
-		           {
-			      ncontrolval = sumgrid_nchrom_nbin[0];
-		           }
-		           else
-		           {
-		       	      ncontrolval = sumgrid_nchrom_nbin[nummarks_m1];
-		           }
-
-
-			   if (!bpresentmarks[nummarks_m1])
-		           {
-	                      pw.println("2");
-			   }
-		           else if ((bpeaks&&(grid_nchrom_nbin[nummarks_m1]>=1))||(!bpeaks&&(thresholds[nummarks_m1][ncontrolval] <= grid_nchrom_nbin[nummarks_m1])))
-	                   {
-	                      pw.println("1");
-	      	           }
-		           else
-	                   {
-	      	              pw.println("0");
-		           }
-		        }
-		        pw.close();
+		           pw.close();
+			}
 		     }
 		  }
 	          else
@@ -1181,124 +1965,268 @@ public class Preprocessing
 	         {
 		    if (bgzip)
 		    {
-		       String szfile = szoutputbinarydir+"/"+szcell+"_"+chroms[nchrom]+"_binary.txt.gz";
-		       System.out.println("Writing to file "+szfile);
-		       GZIPOutputStream pwzip = new GZIPOutputStream(new FileOutputStream(szfile));
-	               //PrintWriter pw = new PrintWriter(szfile);
+		       if (bsplit)
+		       {		
+	                  int[][] grid_nchrom = grid[nchrom];
+			  int nsplit = 0;
+			  GZIPOutputStream pwzip = null;
+                          for (int nbin = 0; nbin < grid_nchrom.length; nbin++)
+                          {  
+			     if (nbin % numsplitbins == 0)
+			     {
+		                String szfile = szoutputbinarydir+"/"+szcell+"_"+chroms[nchrom]+"."+nsplit+"_binary.txt.gz";
+		                System.out.println("Writing to file "+szfile);
+		                pwzip = new GZIPOutputStream(new FileOutputStream(szfile));
+	                        //PrintWriter pw = new PrintWriter(szfile);
 
-		       String szout = szcell+"\t"+chroms[nchrom]+"\n";
-		       byte[] btformat = szout.getBytes();
-		       pwzip.write(btformat,0,btformat.length);
+		                String szout = szcell+"\t"+chroms[nchrom]+"."+nsplit+"\n";
+		                byte[] btformat = szout.getBytes();
+		                pwzip.write(btformat,0,btformat.length);
 
-		       StringBuffer sbout = new StringBuffer();
-		       //pw.println(szcell+"\t"+chroms[nchrom]);
-                       for (int nmark = 0; nmark < marks.length-1; nmark++)
-                       {
-			  sbout.append(marks[nmark]+"\t");
-	                  //pw.print(marks[nmark]+"\t");
-	               }
-		       sbout.append(marks[nummarks_m1]+"\n");
-	               //pw.println(marks[nummarks_m1]);
+		                StringBuffer sbout = new StringBuffer();
+		                //pw.println(szcell+"\t"+chroms[nchrom]);
+                                for (int nmark = 0; nmark < marks.length-1; nmark++)
+                                {
+			           sbout.append(marks[nmark]+"\t");
+	                           //pw.print(marks[nmark]+"\t");
+				}
+		                sbout.append(marks[nummarks_m1]+"\n");
+	                        //pw.println(marks[nummarks_m1]);
 
-		       btformat = sbout.toString().getBytes();
-		       pwzip.write(btformat,0,btformat.length);
+				btformat = sbout.toString().getBytes();
+				pwzip.write(btformat,0,btformat.length);
 
-		
-	               int[][] grid_nchrom = grid[nchrom];
-                       for (int nbin = 0; nbin < grid_nchrom.length; nbin++)
-                       {  
-			  sbout = new StringBuffer();
-	                  //printing 1 if signal has met data threshold and 0 otherwise
-	                  int[] grid_nchrom_nbin = grid_nchrom[nbin];
-                          for (int nmark = 0; nmark < nummarks_m1; nmark++)
-                          {
-			     if (!bpresentmarks[nmark])
-		             {
-				sbout.append("2\t");
-	                        //pw.print("2\t");
+				nsplit++;
 			     }
-                             else if ((bpeaks&&(grid_nchrom_nbin[nmark]>=1))||(!bpeaks&&(thresholds[nmark] <= grid_nchrom_nbin[nmark])))
-	       	             {
-				sbout.append("1\t");
-	                        //pw.print("1\t");
-	        	     }
-		             else
+
+			     StringBuffer sbout = new StringBuffer();
+	                     //printing 1 if signal has met data threshold and 0 otherwise
+	                     int[] grid_nchrom_nbin = grid_nchrom[nbin];
+                             for (int nmark = 0; nmark < nummarks_m1; nmark++)
+                             {
+			        if (!bpresentmarks[nmark])
+		                {
+				   sbout.append("2\t");
+	                           //pw.print("2\t");
+			        }
+                                else if ((bpeaks&&(grid_nchrom_nbin[nmark]>=1))||(!bpeaks&&(thresholds[nmark] <= grid_nchrom_nbin[nmark])))
+	       	                {
+				   sbout.append("1\t");
+	                           //pw.print("1\t");
+	        	        }
+		                else
+		                {
+			           sbout.append("0\t");
+	                           //pw.print("0\t");
+	                        }
+		             }
+
+		             if (!bpresentmarks[nummarks_m1])
 		             {
-			        sbout.append("0\t");
-	                        //pw.print("0\t");
-	                     }
-		          }
+			        sbout.append("2\n");
+	                        //pw.println("2");
+		             }
+		             else if ((bpeaks&&(grid_nchrom_nbin[nummarks_m1]>=1))||(!bpeaks&&(thresholds[nummarks_m1] <= grid_nchrom_nbin[nummarks_m1])))
+	                     {
+			        sbout.append("1\n");
+                                //pw.println("1");
+	       	             }
+	                     else
+	                     {
+			        sbout.append("0\n");
+	                        //pw.println("0");
+		             }
 
-		          if (!bpresentmarks[nummarks_m1])
-		          {
-			     sbout.append("2\n");
-	                     //pw.println("2");
-		          }
-		          else if ((bpeaks&&(grid_nchrom_nbin[nummarks_m1]>=1))||(!bpeaks&&(thresholds[nummarks_m1] <= grid_nchrom_nbin[nummarks_m1])))
-	                  {
-			     sbout.append("1\n");
-                             //pw.println("1");
-	       	          }
-	                  else
-	                  {
-			     sbout.append("0\n");
-	                     //pw.println("0");
-		          }
-
-			  btformat = sbout.toString().getBytes();
-			  pwzip.write(btformat,0,btformat.length);
-
+			     byte[] btformat = sbout.toString().getBytes();
+			     pwzip.write(btformat,0,btformat.length);
+			  
+			     if (((nbin + 1) == grid_nchrom.length)||((nbin+1) % numsplitbins == 0))
+			     {
+		                pwzip.finish();
+	                        pwzip.close();
+			     }
+			  }
 		       }
-		       pwzip.finish();
-	               pwzip.close();
+		       else
+		       {
+		          String szfile = szoutputbinarydir+"/"+szcell+"_"+chroms[nchrom]+"_binary.txt.gz";
+		          System.out.println("Writing to file "+szfile);
+		          GZIPOutputStream pwzip = new GZIPOutputStream(new FileOutputStream(szfile));
+	                  //PrintWriter pw = new PrintWriter(szfile);
+
+		          String szout = szcell+"\t"+chroms[nchrom]+"\n";
+		          byte[] btformat = szout.getBytes();
+		          pwzip.write(btformat,0,btformat.length);
+
+		          StringBuffer sbout = new StringBuffer();
+		          //pw.println(szcell+"\t"+chroms[nchrom]);
+                          for (int nmark = 0; nmark < marks.length-1; nmark++)
+                          {
+			     sbout.append(marks[nmark]+"\t");
+	                     //pw.print(marks[nmark]+"\t");
+	                  }
+		          sbout.append(marks[nummarks_m1]+"\n");
+	                  //pw.println(marks[nummarks_m1]);
+
+		          btformat = sbout.toString().getBytes();
+		          pwzip.write(btformat,0,btformat.length);
+		
+	                  int[][] grid_nchrom = grid[nchrom];
+                          for (int nbin = 0; nbin < grid_nchrom.length; nbin++)
+                          {  
+			     sbout = new StringBuffer();
+	                     //printing 1 if signal has met data threshold and 0 otherwise
+	                     int[] grid_nchrom_nbin = grid_nchrom[nbin];
+                             for (int nmark = 0; nmark < nummarks_m1; nmark++)
+                             {
+			        if (!bpresentmarks[nmark])
+		                {
+				   sbout.append("2\t");
+	                           //pw.print("2\t");
+			        }
+                                else if ((bpeaks&&(grid_nchrom_nbin[nmark]>=1))||(!bpeaks&&(thresholds[nmark] <= grid_nchrom_nbin[nmark])))
+	       	                {
+				   sbout.append("1\t");
+	                           //pw.print("1\t");
+	        	        }
+		                else
+		                {
+			           sbout.append("0\t");
+	                           //pw.print("0\t");
+	                        }
+		             }
+
+		             if (!bpresentmarks[nummarks_m1])
+		             {
+			        sbout.append("2\n");
+	                        //pw.println("2");
+		             }
+		             else if ((bpeaks&&(grid_nchrom_nbin[nummarks_m1]>=1))||(!bpeaks&&(thresholds[nummarks_m1] <= grid_nchrom_nbin[nummarks_m1])))
+	                     {
+			        sbout.append("1\n");
+                                //pw.println("1");
+	       	             }
+	                     else
+	                     {
+			        sbout.append("0\n");
+	                        //pw.println("0");
+		             }
+
+			     btformat = sbout.toString().getBytes();
+			     pwzip.write(btformat,0,btformat.length);
+			  }
+		          pwzip.finish();
+	                  pwzip.close();
+		       }
 		    }
 		    else
 		    {
-		       String szfile = szoutputbinarydir+"/"+szcell+"_"+chroms[nchrom]+"_binary.txt";
-		       System.out.println("Writing to file "+szfile);
-	               PrintWriter pw = new PrintWriter(szfile);
-		       pw.println(szcell+"\t"+chroms[nchrom]);
-                       for (int nmark = 0; nmark < marks.length-1; nmark++)
-                       {
-	                  pw.print(marks[nmark]+"\t");
-	               }
-	               pw.println(marks[nummarks_m1]);
-		
-	               int[][] grid_nchrom = grid[nchrom];
-                       for (int nbin = 0; nbin < grid_nchrom.length; nbin++)
-                       {  
-	                  //printing 1 if signal has met data threshold and 0 otherwise
-	                  int[] grid_nchrom_nbin = grid_nchrom[nbin];
-                          for (int nmark = 0; nmark < nummarks_m1; nmark++)
-                          {
-			     if (!bpresentmarks[nmark])
-		             {
-	                        pw.print("2\t");
-			     }
-                             else if ((bpeaks&&(grid_nchrom_nbin[nmark]>=1))||(!bpeaks&&(thresholds[nmark] <= grid_nchrom_nbin[nmark])))
-	       	             {
-	                        pw.print("1\t");
-	        	     }
-		             else
-		             {
-	                        pw.print("0\t");
-	                     }
-		          }
+		       if (bsplit)
+		       {
+	                  int[][] grid_nchrom = grid[nchrom];
+			  int nsplit = 0;
+			  PrintWriter pw = null;
+                          for (int nbin = 0; nbin < grid_nchrom.length; nbin++)
+                          {  
+			      if (nbin % numsplitbins == 0)
+			      {
+		                 String szfile = szoutputbinarydir+"/"+szcell+"_"+chroms[nchrom]+"."+nsplit+"_binary.txt";
+		                 System.out.println("Writing to file "+szfile);
+	                         pw = new PrintWriter(szfile);
+		                 pw.println(szcell+"\t"+chroms[nchrom]+"."+nsplit);
+                                 for (int nmark = 0; nmark < marks.length-1; nmark++)
+                                 {
+	                            pw.print(marks[nmark]+"\t");
+	                         }
+	                         pw.println(marks[nummarks_m1]);
+				 nsplit++;
+			      }
 
-		          if (!bpresentmarks[nummarks_m1])
-		          {
-	                     pw.println("2");
-		          }
-		          else if ((bpeaks&&(grid_nchrom_nbin[nummarks_m1]>=1))||(!bpeaks&&(thresholds[nummarks_m1] <= grid_nchrom_nbin[nummarks_m1])))
-	                  {
-                             pw.println("1");
-	       	          }
-	                  else
-	                  {
-	                     pw.println("0");
-		          }
+	                      //printing 1 if signal has met data threshold and 0 otherwise
+	                      int[] grid_nchrom_nbin = grid_nchrom[nbin];
+                              for (int nmark = 0; nmark < nummarks_m1; nmark++)
+                              {
+			         if (!bpresentmarks[nmark])
+		                 {
+	                            pw.print("2\t");
+			         }
+                                 else if ((bpeaks&&(grid_nchrom_nbin[nmark]>=1))||(!bpeaks&&(thresholds[nmark] <= grid_nchrom_nbin[nmark])))
+	       	                 {
+	                            pw.print("1\t");
+	        	         }
+		                 else
+		                 {
+	                            pw.print("0\t");
+	                         }
+			      }
+
+		              if (!bpresentmarks[nummarks_m1])
+		              {
+	                          pw.println("2");
+		              }
+		              else if ((bpeaks&&(grid_nchrom_nbin[nummarks_m1]>=1))||(!bpeaks&&(thresholds[nummarks_m1] <= grid_nchrom_nbin[nummarks_m1])))
+	                      {
+                                 pw.println("1");
+	       	              }
+	                      else
+	                      {
+	                         pw.println("0");
+			      }
+
+			      if (((nbin + 1) == grid_nchrom.length)||((nbin+1) % numsplitbins == 0))
+			      {			      
+	                         pw.close();
+			      }
+			  }
 		       }
-	               pw.close();
+		       else
+		       {
+		          String szfile = szoutputbinarydir+"/"+szcell+"_"+chroms[nchrom]+"_binary.txt";
+		          System.out.println("Writing to file "+szfile);
+	                  PrintWriter pw = new PrintWriter(szfile);
+		          pw.println(szcell+"\t"+chroms[nchrom]);
+                          for (int nmark = 0; nmark < marks.length-1; nmark++)
+                          {
+	                     pw.print(marks[nmark]+"\t");
+	                  }
+	                  pw.println(marks[nummarks_m1]);
+		
+	                  int[][] grid_nchrom = grid[nchrom];
+                          for (int nbin = 0; nbin < grid_nchrom.length; nbin++)
+                          {  
+	                     //printing 1 if signal has met data threshold and 0 otherwise
+	                     int[] grid_nchrom_nbin = grid_nchrom[nbin];
+                             for (int nmark = 0; nmark < nummarks_m1; nmark++)
+                             {
+			        if (!bpresentmarks[nmark])
+		                {
+	                           pw.print("2\t");
+			        }
+                                else if ((bpeaks&&(grid_nchrom_nbin[nmark]>=1))||(!bpeaks&&(thresholds[nmark] <= grid_nchrom_nbin[nmark])))
+	       	                {
+	                           pw.print("1\t");
+	        	        }
+		                else
+		                {
+	                           pw.print("0\t");
+	                        }
+			     }
+
+		             if (!bpresentmarks[nummarks_m1])
+		             {
+	                        pw.println("2");
+		             }
+		             else if ((bpeaks&&(grid_nchrom_nbin[nummarks_m1]>=1))||(!bpeaks&&(thresholds[nummarks_m1] <= grid_nchrom_nbin[nummarks_m1])))
+	                     {
+                                pw.println("1");
+	       	             }
+	                     else
+	                     {
+	                        pw.println("0");
+			     }
+			  }
+	                  pw.close();
+		       }
 		    }
 		 }	       
 	      }	       
@@ -1539,7 +2467,8 @@ public class Preprocessing
      */
     public static void makeBinaryDataFromSignalAgainstControl(String szbinneddataDIR, String szcontrolDIR, String szoutputDIR,
 							      double dpoissonthresh, double dfoldthresh, boolean bcontainsthresh, int nflankwidthcontrol, 
-                                                              int npseudocountcontrol, double dcountthresh, boolean bgzip) throws IOException
+                                                              int npseudocountcontrol, double dcountthresh, boolean bgzip, 
+                                                              boolean bsplit, int numsplitbins) throws IOException
     {
        int nummarks=-1;
        int nummarkscontrol=-1;
@@ -1792,163 +2721,348 @@ public class Preprocessing
 
 	      if (bgzip)
 	      {
-	         String szfile = szoutputDIR+"/"+szcell+"_"+szchrom+"_binary.txt.gz";
-	         System.out.println("Writing to file "+szfile);
-		 GZIPOutputStream pwzip = new GZIPOutputStream(new FileOutputStream(szfile));
-                 //PrintWriter pw = new PrintWriter(new FileWriter(szfile));	 
+		 if (bsplit)
+		 {
+		    GZIPOutputStream pwzip = null;
+	            int[][] grid_nchrom = grid[nchrom];
+                    int[][] sumgridcontrol_nchrom = sumgridcontrol[nchrom];
+		    int nsplit = 0;
+
+ 	            for (int nbin = 0; nbin < grid_nchrom.length; nbin++)
+                    {  
+	               if (nbin % numsplitbins == 0)
+		       { 		    
+	                  String szfile = szoutputDIR+"/"+szcell+"_"+szchrom+"."+nsplit+"_binary.txt.gz";
+	                  System.out.println("Writing to file "+szfile);
+		          pwzip = new GZIPOutputStream(new FileOutputStream(szfile));
+                          //PrintWriter pw = new PrintWriter(new FileWriter(szfile));	 
 	      
-	         int nummarks_m1 = nummarks - 1;
-	         //pw.println(szcell+"\t"+szchrom);
-		 String szout = szcell+"\t"+szchrom+"\n";
-		 byte[] btformat = szout.getBytes();
-		 pwzip.write(btformat,0,btformat.length);
+	                  //pw.println(szcell+"\t"+szchrom);
+			  String szout = szcell+"\t"+szchrom+"."+nsplit+"\n";
+			  byte[] btformat = szout.getBytes();
+			  pwzip.write(btformat,0,btformat.length);
 
-	         //pw.println(szHeaderLine2);
-		 szout = szHeaderLine2+"\n";
-		 btformat = szout.getBytes();
-		 pwzip.write(btformat,0,btformat.length);
-
-
-	         int[][] grid_nchrom = grid[nchrom];
-                 int[][] sumgridcontrol_nchrom = sumgridcontrol[nchrom];
- 	         for (int nbin = 0; nbin < grid_nchrom.length; nbin++)
-                 {   
-	            int[] grid_nchrom_nbin = grid_nchrom[nbin];
-	            int[] sumgridcontrol_nchrom_nbin = sumgridcontrol_nchrom[nbin];
-		    StringBuffer sbout = new StringBuffer();
-
-	            for (int nmark = 0; nmark < nummarks_m1; nmark++)
-	            {
-		       int ncontrolval;
-		       if (nummarkscontrol == 1)
-	               {
-		          //always use the first control mark column if only one column
-		          ncontrolval = sumgridcontrol_nchrom_nbin[0];
-		       }
-		       else
-	               {
-		          ncontrolval = sumgridcontrol_nchrom_nbin[nmark];
+	                  //pw.println(szHeaderLine2);
+		          szout = szHeaderLine2+"\n";
+		          btformat = szout.getBytes();
+		          pwzip.write(btformat,0,btformat.length);
+			  nsplit++;
 		       }
 
-	      	       //printing one if count exceeds background determined threshold
-		       if (grid_nchrom_nbin[nmark] == -1)
-		       {
-			  sbout.append("2\t");
-			  //pw.print("2\t");
-		       } 
-                       else if (thresholds[nmark][ncontrolval] <= grid_nchrom_nbin[nmark])
+	               int[] grid_nchrom_nbin = grid_nchrom[nbin];
+	               int[] sumgridcontrol_nchrom_nbin = sumgridcontrol_nchrom[nbin];
+		       StringBuffer sbout = new StringBuffer();
+		       int nummarks_m1 = nummarks - 1;
+	               for (int nmark = 0; nmark < nummarks_m1; nmark++)
 	               {
-			  sbout.append("1\t");
-                          //pw.print("1\t");
-            	       }
+		          int ncontrolval;
+		          if (nummarkscontrol == 1)
+	                  {
+		             //always use the first control mark column if only one column
+		             ncontrolval = sumgridcontrol_nchrom_nbin[0];
+		          }
+		          else
+	                  {
+		             ncontrolval = sumgridcontrol_nchrom_nbin[nmark];
+		          }
+
+	      	          //printing one if count exceeds background determined threshold
+		          if (grid_nchrom_nbin[nmark] == -1)
+		          {
+		             sbout.append("2\t");
+			        //pw.print("2\t");
+		          }
+                          else if (thresholds[nmark][ncontrolval] <= grid_nchrom_nbin[nmark])
+	                  {
+			     sbout.append("1\t");
+                             //pw.print("1\t");
+			  }
+	                  else
+	                  {
+		             sbout.append("0\t");
+                                //pw.print("0\t");
+		          }
+		       }
+
+	               int ncontrolval;
+	               if (nummarkscontrol == 1)
+	               {
+	                  ncontrolval = sumgridcontrol_nchrom_nbin[0];
+	               }
+	               else
+	               {  
+	                  ncontrolval = sumgridcontrol_nchrom_nbin[nummarks_m1];
+		       }
+
+	 	       if (grid_nchrom_nbin[nummarks_m1] == -1)
+	               {
+		          sbout.append("2\n");
+	       	          //pw.println("2");
+		       }
+                       else if (thresholds[nummarks_m1][ncontrolval] <= grid_nchrom_nbin[nummarks_m1]) 
+	               {
+		          sbout.append("1\n");
+	                  //pw.println("1");
+		       }
 	               else
 	               {
-			  sbout.append("0\t");
-                          //pw.print("0\t");
-   	               }
+		          sbout.append("0\n");
+                          //pw.println("0");
+		       }
+
+		       byte[] btformat = sbout.toString().getBytes();
+		       pwzip.write(btformat,0,btformat.length);
+		    
+		       if (((nbin + 1) == grid_nchrom.length)||((nbin+1) % numsplitbins == 0))
+		       {
+		          pwzip.finish();
+	                  pwzip.close();
+		       }
 		    }
-
-	            int ncontrolval;
-	            if (nummarkscontrol == 1)
-	            {
-	               ncontrolval = sumgridcontrol_nchrom_nbin[0];
-	            }
-	            else
-	            { 
-	               ncontrolval = sumgridcontrol_nchrom_nbin[nummarks_m1];
-	            }
-
-	 	    if (grid_nchrom_nbin[nummarks_m1] == -1)
-	            {
-		       sbout.append("2\n");
-	       	       //pw.println("2");
-	            }
-                    else if (thresholds[nummarks_m1][ncontrolval] <= grid_nchrom_nbin[nummarks_m1]) 
-	            {
-		       sbout.append("1\n");
-	               //pw.println("1");
-	            }
-	            else
-	            {
-		       sbout.append("0\n");
-                       //pw.println("0");
-                    }
-
-		    btformat = sbout.toString().getBytes();
+		 }
+		 else
+		 {
+	            String szfile = szoutputDIR+"/"+szcell+"_"+szchrom+"_binary.txt.gz";
+	            System.out.println("Writing to file "+szfile);
+		    GZIPOutputStream pwzip = new GZIPOutputStream(new FileOutputStream(szfile));
+                    //PrintWriter pw = new PrintWriter(new FileWriter(szfile));	 
+	      
+	            int nummarks_m1 = nummarks - 1;
+	            //pw.println(szcell+"\t"+szchrom);
+		    String szout = szcell+"\t"+szchrom+"\n";
+		    byte[] btformat = szout.getBytes();
 		    pwzip.write(btformat,0,btformat.length);
-	         }
-		 pwzip.finish();
-	         pwzip.close();
+
+	            //pw.println(szHeaderLine2);
+		    szout = szHeaderLine2+"\n";
+		    btformat = szout.getBytes();
+		    pwzip.write(btformat,0,btformat.length);
+
+	            int[][] grid_nchrom = grid[nchrom];
+                    int[][] sumgridcontrol_nchrom = sumgridcontrol[nchrom];
+ 	            for (int nbin = 0; nbin < grid_nchrom.length; nbin++)
+                    {   
+	               int[] grid_nchrom_nbin = grid_nchrom[nbin];
+	               int[] sumgridcontrol_nchrom_nbin = sumgridcontrol_nchrom[nbin];
+		       StringBuffer sbout = new StringBuffer();
+
+	               for (int nmark = 0; nmark < nummarks_m1; nmark++)
+	               {
+		          int ncontrolval;
+		          if (nummarkscontrol == 1)
+	                  {
+		             //always use the first control mark column if only one column
+		             ncontrolval = sumgridcontrol_nchrom_nbin[0];
+		          }
+		          else
+	                  {
+		             ncontrolval = sumgridcontrol_nchrom_nbin[nmark];
+			  }
+
+	      	          //printing one if count exceeds background determined threshold
+		          if (grid_nchrom_nbin[nmark] == -1)
+		          {
+			     sbout.append("2\t");
+			     //pw.print("2\t");
+			  }
+                          else if (thresholds[nmark][ncontrolval] <= grid_nchrom_nbin[nmark])
+	                  {
+			     sbout.append("1\t");
+                             //pw.print("1\t");
+			  }
+	                  else
+	                  {
+			     sbout.append("0\t");
+                             //pw.print("0\t");
+			  }
+		       }
+
+	               int ncontrolval;
+	               if (nummarkscontrol == 1)
+	               {
+	                  ncontrolval = sumgridcontrol_nchrom_nbin[0];
+	               }
+	               else
+	               {  
+	                  ncontrolval = sumgridcontrol_nchrom_nbin[nummarks_m1];
+		       }
+
+	 	       if (grid_nchrom_nbin[nummarks_m1] == -1)
+	               {
+		          sbout.append("2\n");
+	       	          //pw.println("2");
+		       }
+                       else if (thresholds[nummarks_m1][ncontrolval] <= grid_nchrom_nbin[nummarks_m1]) 
+	               {
+		          sbout.append("1\n");
+	                  //pw.println("1");
+		       }
+	               else
+	               {
+		          sbout.append("0\n");
+                          //pw.println("0");
+		       }
+
+		       btformat = sbout.toString().getBytes();
+		       pwzip.write(btformat,0,btformat.length);
+		    }
+		    pwzip.finish();
+	            pwzip.close();
+		 }
 	      }
 	      else
 	      {
-	         String szfile = szoutputDIR+"/"+szcell+"_"+szchrom+"_binary.txt";
-	         System.out.println("Writing to file "+szfile);
-                 PrintWriter pw = new PrintWriter(new FileWriter(szfile));	 
-	      
-	         int nummarks_m1 = nummarks - 1;
-	         pw.println(szcell+"\t"+szchrom);
-	         pw.println(szHeaderLine2);
+		 if (bsplit)
+		 {
+	            int[][] grid_nchrom = grid[nchrom];
+                    int[][] sumgridcontrol_nchrom = sumgridcontrol[nchrom];
+		    int nsplit = 0;
+		    PrintWriter pw = null;
 
-	         int[][] grid_nchrom = grid[nchrom];
-                 int[][] sumgridcontrol_nchrom = sumgridcontrol[nchrom];
- 	         for (int nbin = 0; nbin < grid_nchrom.length; nbin++)
-                 {   
-	            int[] grid_nchrom_nbin = grid_nchrom[nbin];
-	            int[] sumgridcontrol_nchrom_nbin = sumgridcontrol_nchrom[nbin];
-
-	            for (int nmark = 0; nmark < nummarks_m1; nmark++)
-	            {
-		       int ncontrolval;
-		       if (nummarkscontrol == 1)
-	               {
-		          //always use the first control mark column if only one column
-		          ncontrolval = sumgridcontrol_nchrom_nbin[0];
-		       }
-		       else
-	               {
-		          ncontrolval = sumgridcontrol_nchrom_nbin[nmark];
-		       }
-
-	      	       //printing one if count exceeds background determined threshold
-		       if (grid_nchrom_nbin[nmark] == -1)
+ 	            for (int nbin = 0; nbin < grid_nchrom.length; nbin++)
+                    {  
+		       if (nbin % numsplitbins == 0)
 		       {
-			  pw.print("2\t");
-		       } 
-                       else if (thresholds[nmark][ncontrolval] <= grid_nchrom_nbin[nmark])
+	                  String szfile = szoutputDIR+"/"+szcell+"_"+szchrom+"."+nsplit+"_binary.txt";
+	                  System.out.println("Writing to file "+szfile);
+                          pw = new PrintWriter(new FileWriter(szfile));	 
+	      
+	                  pw.println(szcell+"\t"+szchrom+"."+nsplit);
+	                  pw.println(szHeaderLine2);
+			  nsplit++;
+		       }
+
+	               int[] grid_nchrom_nbin = grid_nchrom[nbin];
+	               int[] sumgridcontrol_nchrom_nbin = sumgridcontrol_nchrom[nbin];
+		       int nummarks_m1 = nummarks - 1;
+
+	               for (int nmark = 0; nmark < nummarks_m1; nmark++)
 	               {
-                          pw.print("1\t");
-            	       }
+		          int ncontrolval;
+		          if (nummarkscontrol == 1)
+	                  {
+		             //always use the first control mark column if only one column
+		             ncontrolval = sumgridcontrol_nchrom_nbin[0];
+			  }
+		          else
+	                  {
+		             ncontrolval = sumgridcontrol_nchrom_nbin[nmark];
+			  }
+
+	      	          //printing one if count exceeds background determined threshold
+		          if (grid_nchrom_nbin[nmark] == -1)
+		          {
+			     pw.print("2\t");
+			  }
+                          else if (thresholds[nmark][ncontrolval] <= grid_nchrom_nbin[nmark])
+	                  {
+                             pw.print("1\t");
+            	          }
+	                  else
+	                  {
+                             pw.print("0\t");
+			  }
+		       }
+		    
+	               int ncontrolval;
+	               if (nummarkscontrol == 1)
+	               {
+	                  ncontrolval = sumgridcontrol_nchrom_nbin[0];
+	               }
+	               else
+	               { 
+	                  ncontrolval = sumgridcontrol_nchrom_nbin[nummarks_m1];
+		       }
+
+	 	       if (grid_nchrom_nbin[nummarks_m1] == -1)
+	               {
+	       	          pw.println("2");
+	               }
+                       else if (thresholds[nummarks_m1][ncontrolval] <= grid_nchrom_nbin[nummarks_m1]) 
+	               {
+	                  pw.println("1");
+	               }
 	               else
 	               {
-                          pw.print("0\t");
-   	               }
+                          pw.println("0");
+                       }
+		    
+                       if (((nbin + 1) == grid_nchrom.length)||((nbin+1) % numsplitbins == 0))
+		       {
+	                  pw.close();
+		       }
 		    }
+		 }
+		 else
+		 {
+	            String szfile = szoutputDIR+"/"+szcell+"_"+szchrom+"_binary.txt";
+	            System.out.println("Writing to file "+szfile);
+                    PrintWriter pw = new PrintWriter(new FileWriter(szfile));	 
+	      
+	            int nummarks_m1 = nummarks - 1;
+	            pw.println(szcell+"\t"+szchrom);
+	            pw.println(szHeaderLine2);
 
-	            int ncontrolval;
-	            if (nummarkscontrol == 1)
-	            {
-	               ncontrolval = sumgridcontrol_nchrom_nbin[0];
-	            }
-	            else
-	            { 
-	               ncontrolval = sumgridcontrol_nchrom_nbin[nummarks_m1];
-	            }
+	            int[][] grid_nchrom = grid[nchrom];
+                    int[][] sumgridcontrol_nchrom = sumgridcontrol[nchrom];
+ 	            for (int nbin = 0; nbin < grid_nchrom.length; nbin++)
+                    {   
+	               int[] grid_nchrom_nbin = grid_nchrom[nbin];
+	               int[] sumgridcontrol_nchrom_nbin = sumgridcontrol_nchrom[nbin];
 
-	 	    if (grid_nchrom_nbin[nummarks_m1] == -1)
-	            {
-	       	       pw.println("2");
-	            }
-                    else if (thresholds[nummarks_m1][ncontrolval] <= grid_nchrom_nbin[nummarks_m1]) 
-	            {
-	               pw.println("1");
-	            }
-	            else
-	            {
-                       pw.println("0");
-                    }
-	         }
-	         pw.close();
+	               for (int nmark = 0; nmark < nummarks_m1; nmark++)
+	               {
+		          int ncontrolval;
+		          if (nummarkscontrol == 1)
+	                  {
+		             //always use the first control mark column if only one column
+		             ncontrolval = sumgridcontrol_nchrom_nbin[0];
+			  }
+		          else
+	                  {
+		             ncontrolval = sumgridcontrol_nchrom_nbin[nmark];
+			  }
+
+	      	          //printing one if count exceeds background determined threshold
+		          if (grid_nchrom_nbin[nmark] == -1)
+		          {
+			     pw.print("2\t");
+			  }
+                          else if (thresholds[nmark][ncontrolval] <= grid_nchrom_nbin[nmark])
+	                  {
+                             pw.print("1\t");
+            	          }
+	                  else
+	                  {
+                             pw.print("0\t");
+			  }
+		       }
+		    
+	               int ncontrolval;
+	               if (nummarkscontrol == 1)
+	               {
+	                  ncontrolval = sumgridcontrol_nchrom_nbin[0];
+	               }
+	               else
+	               { 
+	                  ncontrolval = sumgridcontrol_nchrom_nbin[nummarks_m1];
+		       }
+
+	 	       if (grid_nchrom_nbin[nummarks_m1] == -1)
+	               {
+	       	          pw.println("2");
+	               }
+                       else if (thresholds[nummarks_m1][ncontrolval] <= grid_nchrom_nbin[nummarks_m1]) 
+	               {
+	                  pw.println("1");
+	               }
+	               else
+	               {
+                          pw.println("0");
+                       }
+		    }
+	            pw.close();
+		 }
 	      }
            }
        }       
@@ -1969,7 +3083,8 @@ public class Preprocessing
      **/
     public static void makeBinaryDataFromSignalUniform(String szbinneddataDIR, String szoutputDIR,
                                                        double dpoissonthresh, double dfoldthresh, 
-                                                       boolean bcontainsthresh, double dcountthresh, boolean bgzip) throws IOException
+                                                       boolean bcontainsthresh, double dcountthresh, 
+                                                       boolean bgzip, boolean bsplit, int numsplitbins) throws IOException
     {
 	//this computes the binarization without storing in main memory all the data
 
@@ -2136,115 +3251,748 @@ public class Preprocessing
 
 	       if (bgzip)
 	       {
-	          String szfile = szoutputDIR+"/"+st.nextToken()+"_"+st.nextToken()+"_binary.txt.gz";
-	          System.out.println("Writing to file "+szfile);
-		  GZIPOutputStream pwzip = new GZIPOutputStream(new FileOutputStream(szfile));
-	          //PrintWriter pw = new PrintWriter(new FileWriter(szfile));
-		  byte[] btformat = (szChromCellLine+"\n").getBytes();
-		  pwzip.write(btformat,0,btformat.length);
+		  if (bsplit)
+		  {
+	             //pw.println(szMarkLine);
+	             String szLine;
+		     int nbin = 0;
+		     int nsplit = 0;
+		     String szcurrcell = st.nextToken();
+		     String szchrom = st.nextToken();
+		     boolean bopen = false;
+		     GZIPOutputStream pwzip = null;
 
-	          //pw.println(szChromCellLine);
-		  btformat = (szMarkLine+"\n").getBytes();
-                  pwzip.write(btformat,0,btformat.length);
-
-	          //pw.println(szMarkLine);
-	          String szLine;
-	          while ((szLine = br.readLine())!=null)
-	          {
-	             st = new StringTokenizer(szLine,"\t");
-		     StringBuffer sbout  = new StringBuffer();
-
-	             for (int ncol = 0; ncol < nummarks-1; ncol++)
+	             while ((szLine = br.readLine())!=null)
 	             {
+		        if (nbin % numsplitbins == 0)
+		        {
+		           String szfile = szoutputDIR+"/"+szcurrcell+"_"+szchrom+"."+nsplit+"_binary.txt.gz";
+		           //String szfile = szoutputDIR+"/"+st.nextToken()+"_"+st.nextToken()+"_binary.txt.gz";
+	                   System.out.println("Writing to file "+szfile);
+
+	  	           pwzip = new GZIPOutputStream(new FileOutputStream(szfile));
+	                   //PrintWriter pw = new PrintWriter(new FileWriter(szfile));
+		           byte[] btformat = (szcurrcell+"\t"+szchrom+"."+nsplit+"\n").getBytes();
+		           pwzip.write(btformat,0,btformat.length);
+
+	                   //pw.println(szChromCellLine);
+		           btformat = (szMarkLine+"\n").getBytes();
+                           pwzip.write(btformat,0,btformat.length);
+			   nsplit++;
+			   bopen = true;
+			}
+	              
+                        st = new StringTokenizer(szLine,"\t");
+		        StringBuffer sbout = new StringBuffer();
+
+	                for (int ncol = 0; ncol < nummarks-1; ncol++)
+	                {
+		           double dval = Double.parseDouble(st.nextToken());
+		           if (dval == -1)
+	                   {
+			      sbout.append("2\t");
+			      //pw.print("2\t");
+			   }
+		           else if (thresholds[ncol] <= dval)
+		           {
+			      sbout.append("1\t");
+		              //pw.print("1\t");			       
+			   }
+		           else
+		           {
+			      sbout.append("0\t");
+		              //pw.print("0\t");
+			   }
+			}
+
 		        double dval = Double.parseDouble(st.nextToken());
 		        if (dval == -1)
-	                {
-			   sbout.append("2\t");
-			   //pw.print("2\t");
-		        }
-		        else if (thresholds[ncol] <= dval)
 		        {
-			   sbout.append("1\t");
-		           //pw.print("1\t");			       
-		        }
+			   sbout.append("2\n");
+		           //pw.println("2");
+			}
+		        else if (thresholds[nummarks-1] <= dval)
+		        {
+			   sbout.append("1\n");
+		           //pw.println("1");
+			}
 		        else
+	                {
+			   sbout.append("0\n");
+	      	           //pw.println("0");
+			}
+
+		        byte[] btformat = sbout.toString().getBytes();
+		        pwzip.write(btformat,0,btformat.length);
+
+		        if ((nbin+1) % numsplitbins == 0)
 		        {
-			   sbout.append("0\t");
-		           //pw.print("0\t");
-		        }
+			   bopen = false;
+			   pwzip.finish();
+			   pwzip.close();
+			}
+		        nbin++;
 		     }
+	             br.close();
 
-		     double dval = Double.parseDouble(st.nextToken());
-		     if (dval == -1)
+		     if (bopen)
 		     {
-			sbout.append("2\n");
-		        //pw.println("2");
+		       pwzip.finish();
+	               pwzip.close();
 		     }
-		     else if (thresholds[nummarks-1] <= dval)
-		     {
-			sbout.append("1\n");
-		        //pw.println("1");
-	             }
-		     else
-	             {
-			sbout.append("0\n");
-	      	        //pw.println("0");
-		     }
-
-		     btformat = sbout.toString().getBytes();
+		  }
+		  else
+		  {
+		     String szfile = szoutputDIR+"/"+st.nextToken()+"_"+st.nextToken()+"_binary.txt.gz";
+		     System.out.println("Writing to file "+szfile);
+		     GZIPOutputStream pwzip = new GZIPOutputStream(new FileOutputStream(szfile));
+		     //PrintWriter pw = new PrintWriter(new FileWriter(szfile));
+		     byte[] btformat = (szChromCellLine+"\n").getBytes();
 		     pwzip.write(btformat,0,btformat.length);
 
-	          }
-	          br.close();
-		  pwzip.finish();
-	          pwzip.close();
+		     //pw.println(szChromCellLine);
+		     btformat = (szMarkLine+"\n").getBytes();
+		     pwzip.write(btformat,0,btformat.length);
+
+		     //pw.println(szMarkLine);
+		     String szLine;
+		     while ((szLine = br.readLine())!=null)
+		     {
+		        st = new StringTokenizer(szLine,"\t");
+		        StringBuffer sbout = new StringBuffer();
+
+		        for (int ncol = 0; ncol < nummarks-1; ncol++)
+			{
+		           double dval = Double.parseDouble(st.nextToken());
+			   if (dval == -1)
+			   {
+		              sbout.append("2\t");
+					      //pw.print("2\t");
+			   }
+			   else if (thresholds[ncol] <= dval)
+			   {
+			      sbout.append("1\t");
+					      //pw.print("1\t");       
+			   }
+		           else
+			   {
+			      sbout.append("0\t");
+					      //pw.print("0\t");
+			   }
+			}
+
+			double dval = Double.parseDouble(st.nextToken());
+		        if (dval == -1)
+		        {
+			    sbout.append("2\n");
+				      //pw.println("2");
+			}
+		        else if (thresholds[nummarks-1] <= dval)
+			{
+		            sbout.append("1\n");
+				      //pw.println("1");
+		        }
+		        else
+			{
+		            sbout.append("0\n");
+				      //pw.println("0");
+			}
+
+		        btformat = sbout.toString().getBytes();
+	       	        pwzip.write(btformat,0,btformat.length);
+
+		     }
+		     br.close();
+		     pwzip.finish();
+		     pwzip.close();
+		  }
 	       }
 	       else
 	       {
-	          String szfile = szoutputDIR+"/"+st.nextToken()+"_"+st.nextToken()+"_binary.txt";
-	          System.out.println("Writing to file "+szfile);
-	          PrintWriter pw = new PrintWriter(new FileWriter(szfile));
-	          pw.println(szChromCellLine);
-	          pw.println(szMarkLine);
-	          String szLine;
-	          while ((szLine = br.readLine())!=null)
-	          {
-	             st = new StringTokenizer(szLine,"\t");
-	             for (int ncol = 0; ncol < nummarks-1; ncol++)
+		  if (bsplit)
+		  {
+		     int nbin = 0;
+		     int nsplit = 0;
+		     String szcurrcell = st.nextToken();
+		     String szchrom = st.nextToken();
+		     boolean bopen = false;
+		     PrintWriter pw = null;
+	             String szLine;
+	             while ((szLine = br.readLine())!=null)
 	             {
+		        if (nbin % numsplitbins == 0)
+		        {
+			     //String szfile = szoutputDIR+"/"+st.nextToken()+"_"+st.nextToken()+"_binary.txt";
+	                    String szfile = szoutputDIR+"/"+szcurrcell+"_"+szchrom+"."+nsplit+"_binary.txt";
+			    System.out.println("Writing to file "+szfile);
+			    pw = new PrintWriter(new FileWriter(szfile));
+			    pw.println(szcurrcell+"\t"+szchrom+"."+nsplit);//szChromCellLine);
+			    pw.println(szMarkLine);
+			    nsplit++;
+			    bopen = true;
+		        }
+
+	                st = new StringTokenizer(szLine,"\t");
+	                for (int ncol = 0; ncol < nummarks-1; ncol++)
+	                {
+		           double dval = Double.parseDouble(st.nextToken());
+		           if (dval == -1)
+	                   {
+			      pw.print("2\t");
+		           }
+		           else if (thresholds[ncol] <= dval)
+		           {
+		              pw.print("1\t");			       
+		           }
+		           else
+		           {
+		              pw.print("0\t");
+		           }
+		        }
+
 		        double dval = Double.parseDouble(st.nextToken());
 		        if (dval == -1)
-	                {
-			   pw.print("2\t");
-		        }
-		        else if (thresholds[ncol] <= dval)
 		        {
-		           pw.print("1\t");			       
+		           pw.println("2");
 		        }
+		        else if (thresholds[nummarks-1] <= dval)
+		        {
+		           pw.println("1");
+	                }
 		        else
-		        {
-		           pw.print("0\t");
+	                {
+	      	           pw.println("0");
 		        }
-		     }
 
-		     double dval = Double.parseDouble(st.nextToken());
-		     if (dval == -1)
-		     {
-		        pw.println("2");
-		     }
-		     else if (thresholds[nummarks-1] <= dval)
-		     {
-		        pw.println("1");
+			if ((nbin+1)%numsplitbins == 0)
+			{
+			    pw.close();
+			    bopen = false;
+			}
+
+			nbin++;
 	             }
-		     else
-	             {
-	      	        pw.println("0");
+	             br.close();
+
+		     if (bopen)
+		     {
+	                pw.close();
 		     }
-	          }
-	          br.close();
-	          pw.close();
+		  }
+		  else
+		  {
+	             String szfile = szoutputDIR+"/"+st.nextToken()+"_"+st.nextToken()+"_binary.txt";
+	             System.out.println("Writing to file "+szfile);
+	             PrintWriter pw = new PrintWriter(new FileWriter(szfile));
+	             pw.println(szChromCellLine);
+	             pw.println(szMarkLine);
+	             String szLine;
+	             while ((szLine = br.readLine())!=null)
+	             {
+	                st = new StringTokenizer(szLine,"\t");
+	                for (int ncol = 0; ncol < nummarks-1; ncol++)
+	                {
+		           double dval = Double.parseDouble(st.nextToken());
+		           if (dval == -1)
+	                   {
+			      pw.print("2\t");
+		           }
+		           else if (thresholds[ncol] <= dval)
+		           {
+		              pw.print("1\t");			       
+		           }
+		           else
+		           {
+		              pw.print("0\t");
+		           }
+		        }
+
+		        double dval = Double.parseDouble(st.nextToken());
+		        if (dval == -1)
+		        {
+		           pw.println("2");
+		        }
+		        else if (thresholds[nummarks-1] <= dval)
+		        {
+		           pw.println("1");
+	                }
+		        else
+	                {
+	      	           pw.println("0");
+		        }
+	             }
+	             br.close();
+	             pw.close();
+		  }
 	       }
 	   }
        }
     }
+
+    /**
+     * This procedure can do a columnwise merge of binarized data for different mark subsets split across files in multiple subdirectories. 
+     * Files that are for the same cell type and chromosome are merged. If a chromosome for a cell type is found in one subdirectory, 
+     * but not another, then a warning message is printed and not present values are used for that chromosome. This command can also be 
+     * used to do a row split on the input files, including if only one subdirectory is provided and no merging is done.
+     */
+    public static void mergeBinarizedFiles(String szinputdir, String szoutputdir, String szdirlistfile,
+                                           boolean bsplit, int numsplitbins, boolean bgzip) throws IOException
+    {
+       ArrayList aldirs = new ArrayList();
+
+       if (szdirlistfile == null)
+       {
+          //takes all subdirectories in szinputdir
+	  File dir = new File(szinputdir);
+	  String[] subdirall = dir.list();
+	  if (subdirall == null)
+	  {
+	     throw new IllegalArgumentException(szinputdir+" is not a valid directory!");
+	  }
+	  for (int ndir = 0; ndir < subdirall.length; ndir++)
+          {
+	     File f = new File(szinputdir+"/"+subdirall[ndir]);
+	     if ((f.isDirectory())&&(!f.isHidden()))
+	     {
+		 aldirs.add(subdirall[ndir]);
+	     }
+	  }
+
+	  if (aldirs.size() == 0)
+	  {
+	     throw new IllegalArgumentException("No sub-directories found in "+szinputdir+" that are not Hidden");
+          }
+       }
+       else
+       {
+          //loads in the input list of subdirectories to use
+	  BufferedReader brfiles = Util.getBufferedReader(szdirlistfile);
+
+	  String szLine;
+	  while ((szLine = brfiles.readLine())!=null)
+          {
+	     aldirs.add(szLine);
+          }
+	  brfiles.close();
+
+       }
+
+
+       //stores them in subdiralll
+       String[] subdirall = new String[aldirs.size()];
+       for (int ndir = 0; ndir < subdirall.length; ndir++)
+       {
+          subdirall[ndir] = (String) aldirs.get(ndir);
+       }
+       Arrays.sort(subdirall);//gives a deterministic reproducible startin
+
+       HashSet hsfiles = new HashSet();
+       HashMap[] hmbrA = new HashMap[subdirall.length];
+       for (int na = 0; na < hmbrA.length; na++)
+       {
+	   hmbrA[na] = new HashMap();
+       }
+       String[] szheader2A = new String[subdirall.length];
+
+       for (int ndir = 0; ndir < subdirall.length; ndir++)
+       {
+	   File currdir = new File(szinputdir+"/"+subdirall[ndir]);
+           String[] chromfilesall = currdir.list();
+           if (chromfilesall == null)
+	   {
+	      throw new IllegalArgumentException(szinputdir+"/"+subdirall[ndir]+" is not a valid directory!");
+	   }
+           //ArrayList alfiles = new ArrayList();
+	   String szcurrpath = szinputdir+"/"+subdirall[ndir];
+
+           for (int nfile = 0; nfile < chromfilesall.length; nfile++)
+	   {
+	       String szcurrfile = chromfilesall[nfile];
+	      if ((szcurrfile.contains("_binary"))&&(!(new File(szcurrpath+"/"+szcurrfile)).isHidden()))
+	      {
+	         //added hidden check in v.1.11
+		  //read first two lines
+		  //maps the first line to the buffered reader
+                  BufferedReader brfile = Util.getBufferedReader(szcurrpath+"/"+szcurrfile);
+		  String szheader1 = brfile.readLine();
+		  if (szheader1 == null)
+		  {
+		      throw new IllegalArgumentException("File "+szcurrpath+"/"+szcurrfile+" is empty!");
+		  }
+		  StringTokenizer st =new StringTokenizer(szheader1,"\t");
+		  if (st.countTokens() != 2)
+		  {
+		      throw new IllegalArgumentException("Invalid first line header of "+szheader1+" found in "+szcurrpath+"/"+szcurrfile);
+		  }
+
+                  String szheader2 = brfile.readLine();
+
+		  if (szheader2A[ndir] == null)
+		  {
+		      szheader2A[ndir] = szheader2;
+		  }
+		  else if (!szheader2.equals(szheader2A[ndir]))
+		  {
+		      throw new IllegalArgumentException("Inconsistent header lines in "+szcurrpath+" found "+szheader2+" and "+szheader2A[ndir]);
+		  }
+		  hmbrA[ndir].put(szheader1, brfile);
+
+		  hsfiles.add(szheader1);
+	      }
+	   }
+
+           if (hmbrA[ndir].size() == 0)
+	   {
+	       throw new IllegalArgumentException("No files found in "+szcurrpath+" containing '_binary' that are not Hidden");
+	   }
+       }
+
+
+       StringBuffer sbmergedheader = new StringBuffer();
+       //sbmergedheader.append(szheader2A[0]);
+       String[] notpresent = new String[szheader2A.length];
+
+       for (int ndir = 0; ndir < szheader2A.length; ndir++)
+       {
+	   StringTokenizer st = new StringTokenizer(szheader2A[ndir], "\t");
+           int ntokens =  st.countTokens();
+	   StringBuffer sbnotpresent = new StringBuffer();
+	   sbnotpresent.append("0");
+	   for (int na = 1; na <ntokens; na++)
+	   {
+	       sbnotpresent.append("\t0");
+	   }
+
+	   notpresent[ndir] = sbnotpresent.toString();
+	   if (ndir == 0)
+	   {
+	      sbmergedheader.append(szheader2A[ndir]);
+	   }
+	   else
+	   {
+	      sbmergedheader.append("\t"+szheader2A[ndir]);
+	   }
+       }
+       String szmergedheader = sbmergedheader.toString();
+
+       String[] chromfilescombine = new String[hsfiles.size()];
+
+       //stores them in chromfiles
+       //chromfiles_hs[ndir] = new HashSet();
+       //chromfiles_ndir = chromfiles[ndir];
+       Iterator hsfilesitr = (Iterator) hsfiles.iterator();
+       for (int nfile = 0; nfile < chromfilescombine.length; nfile++)
+       {
+	  chromfilescombine[nfile] = (String) hsfilesitr.next();
+          //chromfiles_hs[ndir].add(chromfiles_ndir[nfile]);
+	  //hsfiles.add(chromfiles_ndir[nfile]);
+       }
+       
+       Arrays.sort(chromfilescombine);
+       boolean[] bpresent = new boolean[subdirall.length];
+       BufferedReader[] brfiles = new BufferedReader[subdirall.length];
+
+       for (int nfile = 0; nfile < chromfilescombine.length; nfile++)
+       {
+
+	   String szcurrfile = chromfilescombine[nfile];
+	   for (int ndir = 0; ndir < subdirall.length; ndir++)
+	   {
+	      BufferedReader br = (BufferedReader) hmbrA[ndir].get(szcurrfile);
+	      if (br == null)
+	      {
+		  System.out.println("Warning directory "+szinputdir+"/"+subdirall[ndir]+" does not contain file "+szcurrfile+" going to treat as not present");
+		  bpresent[ndir] = false;
+
+	      }
+	      else
+	      {
+		  bpresent[ndir] = true;
+		  brfiles[ndir] = br;
+	      }
+	   }
+
+
+	   StringTokenizer st = new StringTokenizer(chromfilescombine[nfile],"\t");
+           String szcell = st.nextToken();
+           String szchrom = st.nextToken();
+
+
+	   if (bsplit)
+	   {
+	      int nsplit = 0;
+	      boolean bnull = false;
+	      while (!bnull)
+	      {
+	         if (bgzip)
+	         {
+		     //System.out.println(szcell+"_"+szchrom+"."+nsplit);
+		    GZIPOutputStream pwzip = new GZIPOutputStream(new FileOutputStream(szoutputdir+"/"+szcell+"_"+szchrom+"."+nsplit+"_binary.txt.gz"));
+										    //szfile));
+	            //PrintWriter pw = new PrintWriter(new FileWriter(szoutputdir+"/"+szcell+"_"+szmark+"_binary.txt"));
+	            //need to read here
+		    String szout = szcell+"\t"+szchrom+"."+nsplit+"\n";
+		    byte[] btformat = szout.getBytes();
+		    pwzip.write(btformat,0,btformat.length);
+
+	            //pw.println(szcell+"\t"+szmark);
+		    btformat = (szmergedheader+"\n").getBytes();
+                    pwzip.write(btformat,0,btformat.length);
+
+	            //pw.println(szmergedheader);
+	            //boolean bnull = false;
+		    int nline = 0;
+	            while ((!bnull) && (nline < numsplitbins))
+	            {
+	               StringBuffer sbout = new StringBuffer();
+		       if (bpresent[0])
+	               {
+		          String szLine = brfiles[0].readLine();
+		          bnull = (szLine == null);
+		          if (!bnull)
+		          {
+		             sbout.append(szLine);
+		          }
+	               }
+		       else
+	               {
+		          sbout.append(notpresent[0]);
+		       }
+
+		       int ndir = 1;
+		       while ((ndir < subdirall.length) && (!bnull))
+		       {
+		          if (bpresent[ndir])
+		          {
+		             String szLine = brfiles[ndir].readLine();
+		             bnull = (szLine == null);
+			     if (!bnull)
+			     {
+		                sbout.append("\t"+szLine);
+			     }
+		          }
+		          else
+		          {
+		 	     sbout.append("\t"+notpresent[ndir]);
+		          }
+		          ndir++;
+		       }
+
+		       if (!bnull)
+		       {
+		          btformat = (sbout.toString()+"\n").getBytes();
+		          pwzip.write(btformat,0,btformat.length);
+		       //pw.println(sbout.toString());
+		       }
+		       nline++;
+		    }
+		    nsplit++;
+		    pwzip.finish();
+	            pwzip.close();
+		 }	      
+	         else
+	         {
+		    //StringTokenizer st = new StringTokenizer(chromfilescombine[nfile],"\t");
+		    //String szcell = st.nextToken();
+		    //String szmark = st.nextToken();
+		     //System.out.println(szcell+"_"+szchrom+"."+nsplit);
+	            PrintWriter pw = new PrintWriter(new FileWriter(szoutputdir+"/"+szcell+"_"+szchrom+"."+nsplit+"_binary.txt"));
+	            //need to read here
+	            pw.println(szcell+"\t"+szchrom+"."+nsplit);
+	            pw.println(szmergedheader);
+
+
+		    int nline = 0;
+	            while ((!bnull) && (nline < numsplitbins))
+	            {
+	               StringBuffer sbout = new StringBuffer();
+		       if (bpresent[0])
+	               {
+		          String szLine = brfiles[0].readLine();
+		          bnull = (szLine == null);
+
+		          if (!bnull)
+		          {
+		             sbout.append(szLine);
+		          }
+	               }
+		       else
+	               {
+		          sbout.append(notpresent[0]);
+		       }
+
+		       int ndir = 1;
+		       while ((ndir < subdirall.length) && (!bnull))
+	               {
+		          if (bpresent[ndir])
+		          {
+		             String szLine = brfiles[ndir].readLine();
+		             bnull = (szLine == null);
+
+			     if (!bnull)
+			     {
+		                sbout.append("\t"+szLine);
+			     }
+		          }
+		          else
+		          {
+		 	     sbout.append("\t"+notpresent[ndir]);
+		          }
+		          ndir++;
+		       }
+
+		       if (!bnull)
+		       {
+		          pw.println(sbout.toString());
+		       }
+		       nline++;
+		    }
+		    nsplit++;
+	            pw.close();
+		 }
+	      }
+	   }
+	   else
+	   {
+	      if (bgzip)
+	      {
+		 GZIPOutputStream pwzip = new GZIPOutputStream(new FileOutputStream(szoutputdir+"/"+szcell+"_"+szchrom+"_binary.txt.gz"));
+										    //szfile));
+	         //PrintWriter pw = new PrintWriter(new FileWriter(szoutputdir+"/"+szcell+"_"+szmark+"_binary.txt"));
+	         //need to read here
+		 String szout = szcell+"\t"+szchrom +"\n";
+		 byte[] btformat = szout.getBytes();
+		 pwzip.write(btformat,0,btformat.length);
+
+	         //pw.println(szcell+"\t"+szmark);
+		 btformat = (szmergedheader+"\n").getBytes();
+                 pwzip.write(btformat,0,btformat.length);
+
+	         //pw.println(szmergedheader);
+	         boolean bnull = false;
+
+	         while (!bnull)
+	         {
+	            StringBuffer sbout = new StringBuffer();
+		    if (bpresent[0])
+	            {
+		       String szLine = brfiles[0].readLine();
+		       bnull = (szLine == null);
+		       if (!bnull)
+		       {
+		          sbout.append(szLine);
+		       }
+	            }
+		    else
+	            {
+		       sbout.append(notpresent[0]);
+		    }
+
+		    int ndir = 1;
+		    while ((ndir < subdirall.length) && (!bnull))
+		    {
+		       if (bpresent[ndir])
+		       {
+		          String szLine = brfiles[ndir].readLine();
+		          bnull = (szLine == null);
+			  if (!bnull)
+			  {
+		             sbout.append("\t"+szLine);
+			  }
+		       }
+		       else
+		       {
+		 	  sbout.append("\t"+notpresent[ndir]);
+		       }
+		       ndir++;
+		    }
+
+		    if (!bnull)
+		    {
+		       btformat = (sbout.toString()+"\n").getBytes();
+		       pwzip.write(btformat,0,btformat.length);
+		       //pw.println(sbout.toString());
+		    }
+		 }
+		 pwzip.finish();
+	         pwzip.close();
+	      }
+	      else
+	      {
+		  //StringTokenizer st = new StringTokenizer(chromfilescombine[nfile],"\t");
+		  //String szcell = st.nextToken();
+		  //String szmark = st.nextToken();
+	         PrintWriter pw = new PrintWriter(new FileWriter(szoutputdir+"/"+szcell+"_"+szchrom+"_binary.txt"));
+	         //need to read here
+	         pw.println(szcell+"\t"+szchrom);
+	         pw.println(szmergedheader);
+
+	         boolean bnull = false;
+
+	         while (!bnull)
+	         {
+	            StringBuffer sbout = new StringBuffer();
+		    if (bpresent[0])
+	            {
+		       String szLine = brfiles[0].readLine();
+		       bnull = (szLine == null);
+
+		       if (!bnull)
+		       {
+		          sbout.append(szLine);
+		       }
+	            }
+		    else
+	            {
+		       sbout.append(notpresent[0]);
+		    }
+
+		    int ndir = 1;
+		    while ((ndir < subdirall.length) && (!bnull))
+	            {
+		       if (bpresent[ndir])
+		       {
+		          String szLine = brfiles[ndir].readLine();
+		          bnull = (szLine == null);
+
+			  if (!bnull)
+			  {
+		             sbout.append("\t"+szLine);
+			  }
+		       }
+		       else
+		       {
+		 	  sbout.append("\t"+notpresent[ndir]);
+		       }
+		       ndir++;
+		    }
+
+		    if (!bnull)
+		    {
+		       pw.println(sbout.toString());
+		    }
+		 }
+	         pw.close();
+	      }
+	   }
+
+	   for (int ndir = 0; ndir < hmbrA.length; ndir++)
+	   {
+	       BufferedReader br = (BufferedReader) hmbrA[ndir].get(szcurrfile);
+	       br.close();
+	   }
+
+       }
+
+
+    //   for (int ndir = 0; ndir 
+    //    hmbrA[ndir].put(szheader1, brfile);
+
+
+       //need to close out
+       //       hmbrA[ndir].put(szheader1, brfile);
+
+
+    }
+
 }

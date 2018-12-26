@@ -42,6 +42,8 @@ public class ChromHMM
     static boolean BVERBOSE = false;
     static double EPSILONEMISSIONS = Math.pow(10,-300);
 
+    static double EPSILONSTATE = Math.pow(10,-300);
+
     static String SZSEGMENTEXTENSION = "_segments.bed";
     static String SZPOSTERIOREXTENSION = "_posterior.txt";
     static String SZSTATEBYLINEEXTENSION = "_statebyline.txt";
@@ -51,6 +53,10 @@ public class ChromHMM
      */
     static int DEFAULT_BINSIZEBASEPAIRS = 200;
 
+    /**
+     * When splitting the default number of bins per file
+     */
+    static int DEFAULT_NUMSPLITBINS = 5000;
  
     static int DEFAULT_OVERLAPENRICHMENT_NOFFSETLEFT = 0;
     static int DEFAULT_OVERLAPENRICHMENT_NOFFSETRIGHT = 1;
@@ -352,6 +358,13 @@ public class ChromHMM
      */
     boolean bordercols;
 
+
+    /**
+     * If true reorders rows of emission matrix
+     */
+    boolean borderrows;
+
+
     /**
      * File with list of input files to learn
      */
@@ -511,6 +524,35 @@ public class ChromHMM
      */
     boolean bgzip = false;
 
+
+    /**
+     * True if the binarized files aren't true chromosomes and instead are split portions
+     */
+    boolean bsplit = false;
+
+
+    /**
+     * The max number of bins per file when splitting 
+     */
+    int numsplitbins = ChromHMM.DEFAULT_NUMSPLITBINS;
+
+    /**
+     * BED file input that is remapped in Reorder
+     */
+    String szreorderinbedfile;
+
+    /**
+     * BED file output that was remapped in Reorder
+     */
+    String szreorderoutbedfile;
+
+
+
+    /**
+     * Indicate the beta's should be rescaled separately and also enforces that no beta value goes below STATEEPSILON or alpha if emission is greater than 0
+     */
+    boolean bscalebeta;
+
     ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
     /**
      * Stores an integer index and array of boolean flags
@@ -605,6 +647,74 @@ public class ChromHMM
     }
 
 
+    ///////////////////////////////////////////////////////////////////////////////////////
+
+    /**
+     * Record stores the overall index, cell, chromosome values, and index within the chromosome which with RecIntStringSplitCompare can be used to
+     * sort the files
+     */
+    static class RecIntStringSplit
+    {
+	int nindex; //overall index of file
+	String szcell;
+	String szchrom;
+	int nsplitbinindex; //index within chromosome
+
+	RecIntStringSplit(int nindex, String szcell, String szchrom, int nsplitbinindex)
+	{
+	    this.nindex = nindex;
+	    this.szcell = szcell;
+	    this.szchrom = szchrom;
+	    this.nsplitbinindex = nsplitbinindex;
+	}
+    }
+
+
+    ///////////////////////////////////////////////////////////////////////////////////////////
+    /**
+     * Sorts the records based on the value of szcell, then szchrom, then nsplitbinindex
+     */
+    public static class RecIntStringSplitCompare implements Comparator, Serializable
+    {
+	
+	public int compare(Object o1, Object o2)
+	{
+	    //need to sort on chromosome name not file name
+	    RecIntStringSplit r1 = (RecIntStringSplit) o1;
+	    RecIntStringSplit r2 = (RecIntStringSplit) o2;
+
+	    if (r1.szcell.equals(r2.szcell))
+	    {
+	       if (r1.szchrom.equals(r2.szchrom))
+	       {
+	 	  if (r1.nsplitbinindex < r2.nsplitbinindex)
+		  {
+		     return -1;
+		  }
+		  else if (r1.nsplitbinindex > r2.nsplitbinindex)
+		  {
+		     return 1;
+		  }
+		  else
+		  {
+		     return 0;
+		  }
+	       }
+	       else
+	       {
+		   return (r1.szchrom+"_").compareTo(r2.szchrom+"_");
+	       }
+	    }
+	    else
+	    {
+		return (r1.szcell+"_").compareTo(r2.szcell+"_");
+	    }
+	}
+    }
+
+
+
+
     ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     /**
@@ -615,7 +725,8 @@ public class ChromHMM
 		     int nmaxiterations,double dcovergediff,int nmaxseconds,boolean bprintposterior,
 		    boolean bprintsegment,boolean bprintstatebyline, int nbinsize,String szoutfileID,int nstateorder,boolean bordercols,int nzerotransitionpower,
 		     Color theColor, boolean bnormalEM, int nmaxprocessors, boolean blowmem, 
-                     int numincludeseq, boolean bprintimage, boolean bscaleemissions, boolean bpseudo, boolean bgzip) throws IOException
+                     int numincludeseq, boolean bprintimage, boolean bscaleemissions, 
+                     boolean bpseudo, boolean bgzip,boolean bsplit, boolean borderrows, boolean bscalebeta) throws IOException
     {
 	this.szinputdir = szinputdir;
         this.szoutputdir = szoutputdir;
@@ -639,6 +750,7 @@ public class ChromHMM
 	this.chorder = ChromHMM.ORDERCHARS[nstateorder];
 	this.szorder = ChromHMM.ORDERSTRINGS[nstateorder];
 	this.bordercols = bordercols;
+	this.borderrows = borderrows;
 	this.nzerotransitionpower = nzerotransitionpower;
 	this.theColor = theColor;
 	this.bnormalEM = bnormalEM;
@@ -649,6 +761,9 @@ public class ChromHMM
 	this.bscaleemissions = bscaleemissions;
 	this.bpseudo = bpseudo;
 	this.bgzip = bgzip;
+	this.bscalebeta = bscalebeta;
+	//this.numsplitbins = numsplitbins;
+	this.bsplit = bsplit;
 
         hmlabelExtend = new HashMap();
         theRandom = new Random(nseed);
@@ -709,7 +824,8 @@ public class ChromHMM
       * Constructor involved in reordering the data
       */
     public ChromHMM(String szInitFile, String szoutputdir, String szstateorderingfile, String szcolumnorderingfile,
-                    String szoutfileID,int nstateorder,boolean bordercols,Color theColor,String szlabelmapping, boolean bprintimage) throws IOException
+                    String szoutfileID,int nstateorder,boolean bordercols,Color theColor,
+                    String szlabelmapping, boolean bprintimage,String szreorderinbedfile, String szreorderoutbedfile) throws IOException
     {
 	this.szcolumnorderingfile = szcolumnorderingfile;
 	this.szInitFile = szInitFile;
@@ -720,6 +836,10 @@ public class ChromHMM
 
 	this.bordercols = bordercols;
 	this.theColor = theColor;
+
+	this.szreorderinbedfile = szreorderinbedfile;
+        this.szreorderoutbedfile = szreorderoutbedfile;
+
         hmlabelExtend = new HashMap();
 	makeLabelMapping(szlabelmapping);
 
@@ -753,7 +873,7 @@ public class ChromHMM
      */
     public ChromHMM(String szinputdir, String szinputfilelist, String szchromlengthfile, String szoutputdir, String szInitFile, String szoutfileID,
                     int nbinsize, boolean bprintposterior, boolean bprintsegment,boolean bprintstatebyline, 
-                    boolean blowmem, boolean bscaleemissions, boolean bgzip) throws IOException
+                    boolean blowmem, boolean bscaleemissions, boolean bgzip, boolean bsplit, boolean bscalebeta) throws IOException
     {
 	this.szinputdir = szinputdir;
 	this.szinputfilelist = szinputfilelist;
@@ -768,6 +888,9 @@ public class ChromHMM
 	this.blowmem = blowmem;
 	this.bscaleemissions = bscaleemissions;
 	this.bgzip = bgzip;
+	this.bsplit = bsplit;
+	this.bscalebeta = bscalebeta;
+
         hmlabelExtend = new HashMap();
 
 	if (blowmem)
@@ -801,7 +924,8 @@ public class ChromHMM
     public ChromHMM(String szinputdir, String szsegmentdir, String szinputfilelist, String szconfusionfileprefix,
                     String szInitFile, String szoutfileID,
                     int nbinsize, boolean breadposterior, boolean breadsegment,boolean breadstatebyline,
-                    String szincludemarks, boolean bappend, Color theColor, boolean bprintimage, boolean blowmem, boolean bscaleemissions) throws IOException
+                    String szincludemarks, boolean bappend, Color theColor, boolean bprintimage, 
+                    boolean blowmem, boolean bscaleemissions, boolean bscalebeta) throws IOException
     {
 	this.bappend = bappend;
 	this.szinputdir = szinputdir;
@@ -820,6 +944,7 @@ public class ChromHMM
 	this.bprintimage = bprintimage;
 	this.blowmem = blowmem;
 	this.bscaleemissions = bscaleemissions;
+	this.bscalebeta = bscalebeta;
         hmlabelExtend = new HashMap();
 
 	if (blowmem)
@@ -927,6 +1052,7 @@ public class ChromHMM
     {	
        if (szstateorderingfile !=null)
        {
+	   int[] stateorderingOLDtoNEW = new int[stateordering.length];
 	   BufferedReader brstate =  Util.getBufferedReader(szstateorderingfile);
 	   String szLine;
 	   while ((szLine = brstate.readLine())!=null)
@@ -935,8 +1061,14 @@ public class ChromHMM
 	       int nold = Integer.parseInt(st.nextToken())-1;
 	       int nnew = Integer.parseInt(st.nextToken())-1;
 	       stateordering[nnew] = nold;
+	       stateorderingOLDtoNEW[nold] = nnew;
 	   }
 	   brstate.close();
+
+	   if (szreorderinbedfile != null)
+	   {
+	       reorderBEDfile(stateorderingOLDtoNEW);
+	   }
        }
        else
        {
@@ -984,6 +1116,96 @@ public class ChromHMM
           printTransitionImage(-1);
        }
        printParametersToFile(-1);
+    }
+
+
+    /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    private void reorderBEDfile(int[] stateorderingOLDtoNEW) throws IOException
+    {
+	BufferedReader brin = Util.getBufferedReader(szreorderinbedfile);
+	System.out.println("Writing to file "+szreorderoutbedfile);
+	if (szreorderoutbedfile.toLowerCase(Locale.ENGLISH).endsWith(".gz"))
+	{
+	    GZIPOutputStream pwzip = new GZIPOutputStream(new FileOutputStream(szreorderoutbedfile));
+	    //output zipfile
+	    String szLine;
+	    while ((szLine = brin.readLine())!=null)
+	    {
+		StringTokenizer st = new StringTokenizer(szLine, "\t");
+		if (st.countTokens() < 4)
+		{
+		    //not full line just directly outputting except updating header info 
+		    szLine = szLine.replaceAll("Emission ordered","User ordered");
+		    szLine = szLine.replaceAll("Transition ordered","User ordered");
+		    byte[] btformat = szLine.getBytes();
+		    pwzip.write(btformat,0,btformat.length);
+		    continue;
+		}
+		StringBuffer sb = new StringBuffer(st.nextToken()+"\t"+st.nextToken()+"\t"+st.nextToken());
+		String szinstate = st.nextToken();
+		String szoutstate;
+
+		if (!Character.isDigit(szinstate.charAt(0)))
+		{
+		    szoutstate = (""+chorder) + (stateorderingOLDtoNEW[Integer.parseInt(szinstate.substring(1))-1]+1);
+		}
+		else
+		{
+                    szoutstate = ""+(stateorderingOLDtoNEW[Integer.parseInt(szinstate)-1]+1);
+		}
+		sb.append("\t"+szoutstate);
+
+		while (st.hasMoreTokens())
+		{
+		    sb.append("\t"+st.nextToken());
+		}
+		sb.append("\n");
+
+		byte[] btformat = sb.toString().getBytes();
+		pwzip.write(btformat,0,btformat.length);
+	    }
+	    pwzip.finish();
+	    pwzip.close();
+	    brin.close();
+	}
+	else
+        {
+	    PrintWriter pw = new PrintWriter(new FileWriter(szreorderoutbedfile));
+	    //output zipfile
+	    String szLine;
+	    while ((szLine = brin.readLine())!=null)
+	    {
+		StringTokenizer st = new StringTokenizer(szLine, "\t");
+		if (st.countTokens() < 4)
+		{
+		    //not full line just directly outputting except updating header info
+		    szLine = szLine.replaceAll("Emission ordered","User ordered");
+                    szLine = szLine.replaceAll("Transition ordered","User ordered");
+		    pw.println(szLine);
+		    continue;
+		}
+		pw.print(st.nextToken()+"\t"+st.nextToken()+"\t"+st.nextToken());
+		String szinstate = st.nextToken();
+		String szoutstate;
+		if (!Character.isDigit(szinstate.charAt(0)))
+		{
+		    szoutstate = (""+chorder) + (stateorderingOLDtoNEW[Integer.parseInt(szinstate.substring(1))-1]+1);
+		}
+		else
+		{
+                    szoutstate = ""+ (stateorderingOLDtoNEW[Integer.parseInt(szinstate)-1]+1);
+		}
+		pw.print("\t"+szoutstate);
+
+		while (st.hasMoreTokens())
+		{
+		    pw.print("\t"+st.nextToken());
+		}
+		pw.println();
+	    }
+	    brin.close();
+	    pw.close();
+	}
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -3186,10 +3408,30 @@ public class ChromHMM
 
 	  //alpha_t(s)=P(o_0,...,o_t,x_t=s|lambda)
           //converts the alpha terms to probabilities
-	  for (int ni = 0; ni < numstates; ni++)
-          {
-             alpha_nt[ni] /= dscale;
+
+	  if (bscalebeta)
+	  {
+	     for (int ns = 0; ns < numstates; ns++)
+	     {
+                alpha_nt[ns] /= dscale;
+
+		if ((alpha_nt[ns] < EPSILONSTATE)&&(emissionproducts_nobserveindex[ns]>0))// (ns < numstates-1))) 
+	        {
+	           alpha_nt[ns] = EPSILONSTATE;
+		}
+	     }
 	  }
+      	  else
+	  {
+             for (int ns = 0; ns < numstates; ns++)
+	     {
+                alpha_nt[ns] /= dscale;
+	     }
+	  }
+	  //for (int ni = 0; ni < numstates; ni++)
+          //{
+          //   alpha_nt[ni] /= dscale;
+	  //}
 	
           //stores in coltransitionprobs the transpose of transitionprobs
           for (int ni = 0; ni < numstates; ni++)
@@ -3251,20 +3493,53 @@ public class ChromHMM
               scale[nt] = dscale;
               //scale_t(s)=P(o_0,...,o_t|lambda) summed over all states
 
-	      for (int ns = 0; ns < numstates; ns++)
-              {
-		  alpha_nt[ns] /= dscale;
-	      }      	       
+	      if (bscalebeta)
+	      {
+	         for (int ns = 0; ns < numstates; ns++)
+	         {
+                    alpha_nt[ns] /= dscale;
+
+		    if ((alpha_nt[ns] < EPSILONSTATE)&&(emissionproducts_nobserveindex[ns]>0))//(ns < numstates-1))) 
+		    {
+		       alpha_nt[ns] = EPSILONSTATE;
+		    }
+		 }
+	      }
+      	      else
+	      {
+	         for (int ns = 0; ns < numstates; ns++)
+	         {
+                    alpha_nt[ns] /= dscale;
+		 }
+	      }
+	      //for (int ns = 0; ns < numstates; ns++)
+              //{
+	      //  alpha_nt[ns] /= dscale;
+	      //}      	       
 	  }
 	    
           //backward step
           //beta_t(s)=P(o_t+1,...,o_T|x_t=s,lambda)
           int nlastindex = numtime_nseq-1;
-          double dinitval = 1.0/scale[nlastindex];
-          for (int ns = 0; ns < numstates; ns++)
-          {
-              beta_ntp1[ns] = dinitval;
+	  double dinitval;
+          if (bscalebeta)
+	  {
+	     dinitval = 1.0/numstates;
 	  }
+	  else
+	  {
+             dinitval = 1.0/scale[nlastindex];
+	  }
+
+          for (int ns = 0; ns < numstates; ns++)
+	  {
+	     beta_ntp1[ns] = dinitval;
+	  }
+          //double dinitval = 1.0/scale[nlastindex];
+          //for (int ns = 0; ns < numstates; ns++)
+          //{
+          //    beta_ntp1[ns] = dinitval;
+	  //}
 	
 	  int nmappedindexouter;
  
@@ -3292,6 +3567,8 @@ public class ChromHMM
 	      int ntp1 = (nt+1);
 		   
 	      double[] emissionproducts_ncombo_ntp1 = emissionproducts[traindataObservedIndex_nseq[ntp1]];		
+
+	      double dsumbeta = 0;
 	      double dscale_nt = scale[nt];
 
 	      for (int ns = 0; ns < numstates; ns++)
@@ -3329,16 +3606,47 @@ public class ChromHMM
 		     }
 		  }
 
-		  double dratio = dtempsum/dscale_nt;
-		  if (dratio > Double.MAX_VALUE)
+		  if (bscalebeta)
 		  {
-		      beta_nt[ni] = Double.MAX_VALUE;//dtempsum/dscale_nt;
+		     beta_nt[ni] = dtempsum;
+		     dsumbeta += dtempsum;
 		  }
 		  else
 		  {
-		      beta_nt[ni] = dratio;// dtempsum/dscale_nt;
+		     double dratio = dtempsum/dscale_nt;
+		     if (dratio > Double.MAX_VALUE)
+		     {
+		        beta_nt[ni] = Double.MAX_VALUE;//dtempsum/dscale_nt;
+		     }
+		     else
+		     {
+		        beta_nt[ni] = dratio;
+		     }
 		  }
+
+		  //double dratio = dtempsum/dscale_nt;
+		  //if (dratio > Double.MAX_VALUE)
+		  //{
+		  //    beta_nt[ni] = Double.MAX_VALUE;//dtempsum/dscale_nt;
+		  //}
+		  //else
+		  //{
+		  //    beta_nt[ni] = dratio;// dtempsum/dscale_nt;
+		  //}
 	      }
+
+	      if (bscalebeta)
+	      {
+                 for (int ni = 0; ni < numstates; ni++)
+	         {
+	            beta_nt[ni]/= dsumbeta;
+
+		    if (beta_nt[ni] < EPSILONSTATE)//&&(!bdummy))// || (ni < numstates-1))) 
+		    {
+		       beta_nt[ni] = EPSILONSTATE;
+		    }
+		 }
+	      }		
 
 	      ddenom = 0;		
 	      alpha_nt = alpha[nt];
@@ -4007,10 +4315,29 @@ public class ChromHMM
 
 	  //alpha_t(s)=P(o_0,...,o_t,x_t=s|lambda)
           //converts the alpha terms to probabilities
-	  for (int ni = 0; ni < numstates; ni++)
+	  if (bscalebeta)
           {
-             alpha_nt[ni] /= dscale;
+             for (int ns = 0; ns < numstates; ns++)
+	     {
+                alpha_nt[ns] /= dscale;
+
+	        if ((alpha_nt[ns] < EPSILONSTATE)&& (emissionproducts_nobserveindex[ns]>0))//(ns < numstates-1))) 
+	        {
+	           alpha_nt[ns] = EPSILONSTATE;
+	        }
+             }
 	  }
+      	  else
+	  {
+	     for (int ns = 0; ns < numstates; ns++)
+	     {
+                alpha_nt[ns] /= dscale;
+	     }
+	  }
+	  //for (int ni = 0; ni < numstates; ni++)
+          //{
+          //   alpha_nt[ni] /= dscale;
+	  //}
 	
           //stores in coltransitionprobs the transpose of transitionprobs
           for (int ni = 0; ni < numstates; ni++)
@@ -4072,20 +4399,53 @@ public class ChromHMM
               scale[nt] = dscale;
               //scale_t(s)=P(o_0,...,o_t|lambda) summed over all states
 
-	      for (int ns = 0; ns < numstates; ns++)
-              {
-		  alpha_nt[ns] /= dscale;
-	      }      	       
+	      if (bscalebeta)
+	      {
+	         for (int ns = 0; ns < numstates; ns++)
+	         {
+                    alpha_nt[ns] /= dscale;
+
+		    if ((alpha_nt[ns] < EPSILONSTATE)&&(emissionproducts_nobserveindex[ns]>0))//(ns < numstates-1))) 
+		    {
+		       alpha_nt[ns] = EPSILONSTATE;
+		    }
+		 }
+	      }
+      	      else
+	      {
+	         for (int ns = 0; ns < numstates; ns++)
+	         {
+                    alpha_nt[ns] /= dscale;
+		 }
+	      }
+	      //for (int ns = 0; ns < numstates; ns++)
+              //{
+	      //  alpha_nt[ns] /= dscale;
+	      //}      	       
 	  }
 	    
           //backward step
           //beta_t(s)=P(o_t+1,...,o_T|x_t=s,lambda)
           int nlastindex = numtime_nseq-1;
-          double dinitval = 1.0/scale[nlastindex];
-          for (int ns = 0; ns < numstates; ns++)
-          {
-              beta_ntp1[ns] = dinitval;
+	  double dinitval;
+	  if (bscalebeta)
+	  {
+	     dinitval = 1.0/numstates;
 	  }
+	  else
+	  {
+             dinitval = 1.0/scale[nlastindex];
+	  }
+
+          for (int ns = 0; ns < numstates; ns++)
+	  {
+             beta_ntp1[ns] = dinitval;
+	  }
+          //double dinitval = 1.0/scale[nlastindex];
+          //for (int ns = 0; ns < numstates; ns++)
+          //{
+          //    beta_ntp1[ns] = dinitval;
+	  //}
 	
 	  int nmappedindexouter;
  
@@ -4113,6 +4473,7 @@ public class ChromHMM
 	      int ntp1 = (nt+1);
 		   
 	      double[] emissionproducts_ncombo_ntp1 = emissionproducts[traindataObservedIndex[ntp1]];		
+	      double dsumbeta = 0;
 	      double dscale_nt = scale[nt];
 
 	      for (int ns = 0; ns < numstates; ns++)
@@ -4150,16 +4511,46 @@ public class ChromHMM
 		     }
 		  }
 
-		  double dratio = dtempsum/dscale_nt;
-		  if (dratio > Double.MAX_VALUE)
+		  if (bscalebeta)
 		  {
-		      beta_nt[ni] = Double.MAX_VALUE;//dtempsum/dscale_nt;
+		     beta_nt[ni] = dtempsum;
+		     dsumbeta += dtempsum;
 		  }
 		  else
 		  {
-		      beta_nt[ni] = dratio;// dtempsum/dscale_nt;
+		     double dratio = dtempsum/dscale_nt;
+		     if (dratio > Double.MAX_VALUE)
+		     {
+		        beta_nt[ni] = Double.MAX_VALUE;//dtempsum/dscale_nt;
+		     }
+		     else
+		     {
+		        beta_nt[ni] = dratio;
+		     }
 		  }
+		  //double dratio = dtempsum/dscale_nt;
+		  //if (dratio > Double.MAX_VALUE)
+		  //{
+		  //    beta_nt[ni] = Double.MAX_VALUE;//dtempsum/dscale_nt;
+		  //}
+		  //else
+		  //{
+		  //    beta_nt[ni] = dratio;// dtempsum/dscale_nt;
+		  //}
 	      }
+
+	      if (bscalebeta)
+	      {
+                 for (int ni = 0; ni < numstates; ni++)
+	         {
+	            beta_nt[ni]/= dsumbeta;
+
+		    if (beta_nt[ni] < EPSILONSTATE)//&&(!bdummy))// || (ni < numstates-1))) 
+		    {
+		       beta_nt[ni] = EPSILONSTATE;
+		    }
+		 }
+	      }		
 
 	      ddenom = 0;		
 	      alpha_nt = alpha[nt];
@@ -4446,18 +4837,102 @@ public class ChromHMM
           hmcellToFourColPW = new HashMap();
        }
 
-       RecIntString[] ordered = new RecIntString[chromfiles.length];
-       for (int nindex = 0; nindex < ordered.length; nindex++)
+       RecIntString[] ordered = null;//new RecIntString[chromfiles.length];
+       RecIntStringSplit[] orderedsplit = null;//new RecIntString[chromfiles.length];
+
+       if (bsplit)
        {
-	   ordered[nindex] = new RecIntString(nindex,chromfiles[nindex]);
+          orderedsplit = new RecIntStringSplit[chromfiles.length];
+	  for (int nindex = 0; nindex < orderedsplit.length; nindex++)
+          {
+	     int nlastperiodindex = chromSeq[nindex].lastIndexOf('.');
+
+	     if (nlastperiodindex == -1)
+	     {
+	        throw new IllegalArgumentException("No period found in chromosome "+chromSeq[nindex]+" despite split being specified");
+	     }
+
+	     String szchromportion = chromSeq[nindex].substring(0, nlastperiodindex);
+	     int nsplitbinindex = Integer.parseInt(chromSeq[nindex].substring(nlastperiodindex+1));
+             orderedsplit[nindex] = new RecIntStringSplit(nindex,cellSeq[nindex],szchromportion,nsplitbinindex);
+	  }
+	  Arrays.sort(orderedsplit,new RecIntStringSplitCompare());
        }
-       Arrays.sort(ordered,new RecIntStringCompare());
+       else
+       {
+          ordered = new RecIntString[chromfiles.length];
+	  for (int nindex = 0; nindex < ordered.length; nindex++)
+          {
+	     ordered[nindex] = new RecIntString(nindex,chromfiles[nindex]);
+	  }
+	  Arrays.sort(ordered,new RecIntStringCompare());
+       }
+
+
+       //RecIntString[] ordered = new RecIntString[chromfiles.length];
+       //for (int nindex = 0; nindex < ordered.length; nindex++)
+       //{
+       //	   ordered[nindex] = new RecIntString(nindex,chromfiles[nindex]);
+       //}
+       //Arrays.sort(ordered,new RecIntStringCompare());
 
        hsprefix = new HashSet();
 
+       GZIPOutputStream pwprobszip = null;
+       GZIPOutputStream pwmaxzip = null;
+       GZIPOutputStream pwbedzip = null;
+       PrintWriter pwprobs = null;
+       PrintWriter pwmax = null;
+       PrintWriter pwbed = null;
+
+       int noffset = 0;
+       boolean bclosefile = true;
+       boolean bnewfile = true;
+
+
+       //these can go across split files so defined out here
+       int nstart = 0; //the start index of the current active interval
+       int nmaxstateprev = -1;
+       int nprevlinecount = 0;
        for (int nseq = 0; nseq < chromfiles.length; nseq++)
        {
-	   int nordered_nseq = ordered[nseq].nindex;
+	   int nordered_nseq;// = ordered[nseq].nindex;
+           String szactualchrom;
+           if (bsplit)
+	   {
+	      nordered_nseq = orderedsplit[nseq].nindex;
+	      szactualchrom = orderedsplit[nseq].szchrom;
+           }
+           else
+           {
+	      nordered_nseq = ordered[nseq].nindex;
+	      szactualchrom = chromSeq[nordered_nseq];
+	   }
+
+	   if (bsplit)
+	   {
+	       //noffset = orderedsplit[nseq].nsplitbinindex * numsplitbins;
+	       //if (noffset == 0)
+	      if (orderedsplit[nseq].nsplitbinindex == 0)
+	      {
+		 noffset = 0;
+	         bnewfile = true;
+	      }
+	      else
+	      {
+		 noffset += nprevlinecount;
+	         if ((nseq >= 1) && (orderedsplit[nseq].nsplitbinindex != (orderedsplit[nseq-1].nsplitbinindex+1)))
+		 {
+		    throw new IllegalArgumentException("For "+orderedsplit[nseq].szcell+"_"+orderedsplit[nseq].szchrom+" found "+
+                                                         "a file with split index "+orderedsplit[nseq].nsplitbinindex+", but not "+
+								      (orderedsplit[nseq].nsplitbinindex-1));
+		 }
+	         bnewfile = false;
+	      }
+	      bclosefile = ((nseq + 1 == orderedsplit.length)||(orderedsplit[nseq+1].nsplitbinindex == 0));
+	   }
+
+
 	   //goes through each sequence
 
 	   ///////////////////////////////////////////////////////////////////////////////
@@ -4513,32 +4988,33 @@ public class ChromHMM
 	   br.close();
 	      
 	   int nsize = aldata.size();
+	   nprevlinecount = nsize;
 	   //traindataObservedIndex[nfile] = new int[nsize];
 	   //int[] traindataObservedIndex_nfile = traindataObservedIndex[nfile];
 
 	   for (int nrow = 0; nrow < nsize; nrow++)
 	   {
-	       BigInteger theBigInteger = new BigInteger((String) aldata.get(nrow),3);
-	       Integer theObservedInt  = (Integer) hmObserved.get(theBigInteger);
+	      BigInteger theBigInteger = new BigInteger((String) aldata.get(nrow),3);
+	      Integer theObservedInt  = (Integer) hmObserved.get(theBigInteger);
 	       //boolean[] flagA;
 
-	       if (theObservedInt == null)
-       	       {
-	          //System.out.println(szmappingbyte.length());
-	          //storing a mapping from observed byte string to an integer index in alFlags and alObserved
-		  hmObserved.put(theBigInteger, Integer.valueOf(nobserved));
+	      if (theObservedInt == null)
+       	      {
+	         //System.out.println(szmappingbyte.length());
+	         //storing a mapping from observed byte string to an integer index in alFlags and alObserved
+	         hmObserved.put(theBigInteger, Integer.valueOf(nobserved));
 
-		  //saving this observed index
-		  traindataObservedIndex[nrow] = nobserved;
+		 //saving this observed index
+		 traindataObservedIndex[nrow] = nobserved;
 
-		  //increments the number of observed combinations of marks
-		  nobserved++;
-	       }
-	       else
-	       {
-	          //storing the index of the flags associated with this row 
-      	          traindataObservedIndex[nrow] = ((Integer) theObservedInt).intValue();
-	       }
+		 //increments the number of observed combinations of marks
+		 nobserved++;
+	      }
+	      else
+	      {
+	         //storing the index of the flags associated with this row 
+      	         traindataObservedIndex[nrow] = ((Integer) theObservedInt).intValue();
+	      }
 	   }  	 
 	   
 	   Iterator hmObservedIterator = hmObserved.entrySet().iterator();
@@ -4576,389 +5052,438 @@ public class ChromHMM
 		 }
 	         else if (ch=='1')
 	         {
-		     traindataObservedValues_ncurrindex[nmappedindex] = true;
-		     traindataNotMissing_ncurrindex[nmappedindex] = true;
+		    traindataObservedValues_ncurrindex[nmappedindex] = true;
+		    traindataNotMissing_ncurrindex[nmappedindex] = true;
 		 }
 	         else
 	         {
 		      //missing data
-		      traindataObservedValues_ncurrindex[nmappedindex] = false;
-		      traindataNotMissing_ncurrindex[nmappedindex] = false;
-		  }
-	          nmappedindex++;
+		    traindataObservedValues_ncurrindex[nmappedindex] = false;
+		    traindataNotMissing_ncurrindex[nmappedindex] = false;
+		 }
+	         nmappedindex++;
 	      }
 	   }
        
-
-
-
 	   //////////////////////////////////////////////////////////////////////////////
 
 	   //int[] traindataObservedIndex_nseq = traindataObservedIndex[nordered_nseq];
-          //boolean[] traindataObservedSeqFlags_nseq = traindataObservedSeqFlags[nordered_nseq];
+           //boolean[] traindataObservedSeqFlags_nseq = traindataObservedSeqFlags[nordered_nseq];
 
-	  String szprefix = "";
-	  if (!cellSeq[nordered_nseq].equals(""))
-	  {
-	     szprefix += cellSeq[nordered_nseq]+"_";
-	  }
-	  szprefix += numstates;
-	  if (!szoutfileID.equals(""))
-	  {
-	     szprefix += "_"+szoutfileID;
-          }
-	  hsprefix.add(szprefix);
+	   if (bnewfile)
+	   {
+	      String szprefix = "";
+	      if (!cellSeq[nordered_nseq].equals(""))
+	      {
+	         szprefix += cellSeq[nordered_nseq]+"_";
+	      }
+	      szprefix += numstates;
+	      if (!szoutfileID.equals(""))
+	      {
+	         szprefix += "_"+szoutfileID;
+	      }
+	      hsprefix.add(szprefix);
 
-	  GZIPOutputStream pwprobszip = null;
-	  PrintWriter pwprobs = null;
+	      //GZIPOutputStream pwprobszip = null;
+	      //PrintWriter pwprobs = null;
 
-	  GZIPOutputStream pwmaxzip = null;
-	  PrintWriter pwmax = null;
+	      //GZIPOutputStream pwmaxzip = null;
+	      //PrintWriter pwmax = null;
 
-          GZIPOutputStream pwbedzip = null;
-	  PrintWriter pwbed = null;
+              //GZIPOutputStream pwbedzip = null;
+	      //PrintWriter pwbed = null;
 
-	  if (bgzip)
-	  {
-	     //PrintWriter pwprobs = null;
-	     if (bprintposterior)
-	     {
-	        //creates the posterior file
+	      if (bgzip)
+	      {
+	         //PrintWriter pwprobs = null;
+	         if (bprintposterior)
+	         {
+	            //creates the posterior file
  
-	        String szposterioroutfilename = szoutputdir+"/POSTERIOR/"+szprefix+"_"+chromSeq[nordered_nseq]+ChromHMM.SZPOSTERIOREXTENSION+".gz";
+		     //changed in v.1.18
+	            //String szposterioroutfilename = szoutputdir+"/POSTERIOR/"+szprefix+"_"+chromSeq[nordered_nseq]+ChromHMM.SZPOSTERIOREXTENSION+".gz";
+	            String szposterioroutfilename = szoutputdir+"/POSTERIOR/"+szprefix+"_"+szactualchrom+ChromHMM.SZPOSTERIOREXTENSION+".gz";
 
-                System.out.println("Writing to file "+szposterioroutfilename);
-		pwprobszip = new GZIPOutputStream(new FileOutputStream(szposterioroutfilename));
-	        //pwprobs = new PrintWriter(szposterioroutfilename);
-		String szout = cellSeq[nordered_nseq]+"\t"+chromSeq[nordered_nseq]+"\n";
+                    System.out.println("Writing to file "+szposterioroutfilename);
+		    pwprobszip = new GZIPOutputStream(new FileOutputStream(szposterioroutfilename));
+	            //pwprobs = new PrintWriter(szposterioroutfilename);
+		    String szout = cellSeq[nordered_nseq]+"\t"+szactualchrom+"\n";
 
-		byte[] btformat = szout.getBytes();
-		pwprobszip.write(btformat,0,btformat.length);
+		    byte[] btformat = szout.getBytes();
+		    pwprobszip.write(btformat,0,btformat.length);
 
-		StringBuffer sbout = new StringBuffer();
-	        //pwprobs.println(cellSeq[nordered_nseq]+"\t"+chromSeq[nordered_nseq]);
-	        for (int ni = 0; ni < numstates-1; ni++)
-	        {
-		   sbout.append(""+chorder+(ni+1)+"\t");
-		   //pwprobs.print(""+chorder+(ni+1)+"\t");
-	        } 
-		sbout.append(""+chorder+(numstates)+"\n");
-	        //pwprobs.println(""+chorder+(numstates));
+		    StringBuffer sbout = new StringBuffer();
+	            //pwprobs.println(cellSeq[nordered_nseq]+"\t"+chromSeq[nordered_nseq]);
+	            for (int ni = 0; ni < numstates-1; ni++)
+	            {
+		       sbout.append(""+chorder+(ni+1)+"\t");
+		       //pwprobs.print(""+chorder+(ni+1)+"\t");
+		    } 
+		    sbout.append(""+chorder+(numstates)+"\n");
+	            //pwprobs.println(""+chorder+(numstates));
+		    btformat = sbout.toString().getBytes();
+		    pwprobszip.write(btformat,0,btformat.length);
+		 }
 
-		btformat = sbout.toString().getBytes();
-                pwprobszip.write(btformat,0,btformat.length);
-	     }
+   	         //PrintWriter pwmax = null;
 
-	     //PrintWriter pwmax = null;
+	         if (bprintstatebyline)
+	         {
+	            //creates a file which has the state with the maximum posterior probability
+	            String szmaxoutfilename = szoutputdir+"/STATEBYLINE/"+szprefix+"_"+szactualchrom+ChromHMM.SZSTATEBYLINEEXTENSION+".gz";
 
+	            System.out.println("Writing to file "+szmaxoutfilename);
+	            //pwmax = new PrintWriter(szmaxoutfilename);
+		    pwmaxzip = new GZIPOutputStream(new FileOutputStream(szmaxoutfilename));
 
-	     if (bprintstatebyline)
-	     {
-	        //creates a file which has the state with the maximum posterior probability
-	        String szmaxoutfilename = szoutputdir+"/STATEBYLINE/"+szprefix+"_"+chromSeq[nordered_nseq]+ChromHMM.SZSTATEBYLINEEXTENSION+".gz";
+		    String szout = cellSeq[nordered_nseq]+"\t"+szactualchrom+"\n";
+                    byte[] btformat = szout.getBytes();
+                    pwprobszip.write(btformat,0,btformat.length);
+	            //pwmax.println(cellSeq[nordered_nseq]+"\t"+chromSeq[nordered_nseq]);
 
-	        System.out.println("Writing to file "+szmaxoutfilename);
-	        //pwmax = new PrintWriter(szmaxoutfilename);
-		pwmaxzip = new GZIPOutputStream(new FileOutputStream(szmaxoutfilename));
+		    szout = "MaxState "+chorder+"\n";
+		    btformat = szout.getBytes();
+                    pwprobszip.write(btformat,0,btformat.length);
+	            //pwmax.println("MaxState "+chorder);
+		 }
 
-		String szout = cellSeq[nordered_nseq]+"\t"+chromSeq[nordered_nseq]+"\n";
-                byte[] btformat = szout.getBytes();
-                pwprobszip.write(btformat,0,btformat.length);
-	        //pwmax.println(cellSeq[nordered_nseq]+"\t"+chromSeq[nordered_nseq]);
+	         //PrintWriter pwbed = null;
+	         //GZIPOutputStream pwbedzip = null;
 
-		szout = "MaxState "+chorder+"\n";
-		btformat = szout.getBytes();
-                pwprobszip.write(btformat,0,btformat.length);
-	        //pwmax.println("MaxState "+chorder);
-	     }
+	         if (bprintsegment)
+	         {
+	            //creates a file which has the maximum segmentation
+	            //we only have one file per cell type here
+	            pwbedzip = (GZIPOutputStream) hmcellToFourColPW.get(cellSeq[nordered_nseq]);
+		    // (PrintWriter) hmcellToFourColPW.get(cellSeq[nordered_nseq]);
 
-	     //PrintWriter pwbed = null;
-	     //GZIPOutputStream pwbedzip = null;
+	            if (pwbedzip == null)
+	            {
+		       //haven't seen this cell type
+	               String szsegmentoutfilename = szoutputdir+"/" + szprefix+SZSEGMENTEXTENSION+".gz";
 
-	     if (bprintsegment)
-	     {
-	        //creates a file which has the maximum segmentation
-	        //we only have one file per cell type here
-	        pwbedzip = (GZIPOutputStream) hmcellToFourColPW.get(cellSeq[nordered_nseq]);
-		// (PrintWriter) hmcellToFourColPW.get(cellSeq[nordered_nseq]);
+		       pwbedzip = new GZIPOutputStream(new FileOutputStream(szsegmentoutfilename));
+	               //pwbed = new PrintWriter(szsegmentoutfilename);
+		       System.out.println("Writing to file "+szsegmentoutfilename);
 
-	        if (pwbedzip == null)
-	        {
-		   //haven't seen this cell type
-	           String szsegmentoutfilename = szoutputdir+"/" + szprefix+SZSEGMENTEXTENSION+".gz";
+	               hmcellToFourColPW.put(cellSeq[nordered_nseq],pwbedzip);    
+		    }
+		 }
+	      }
+	      else
+	      {
 
-		   pwbedzip = new GZIPOutputStream(new FileOutputStream(szsegmentoutfilename));
-	           //pwbed = new PrintWriter(szsegmentoutfilename);
-		   System.out.println("Writing to file "+szsegmentoutfilename);
-
-	           hmcellToFourColPW.put(cellSeq[nordered_nseq],pwbedzip);    
-		}
-	     }
-	  }
-	  else
-	  {
-
-	     if (bprintposterior)
-	     {
-	        //creates the posterior file
+	         if (bprintposterior)
+	         {
+	            //creates the posterior file
  
-	        String szposterioroutfilename = szoutputdir+"/POSTERIOR/"+szprefix+"_"+chromSeq[nordered_nseq]+ChromHMM.SZPOSTERIOREXTENSION;
+	            String szposterioroutfilename = szoutputdir+"/POSTERIOR/"+szprefix+"_"+szactualchrom+ChromHMM.SZPOSTERIOREXTENSION;
 
-                System.out.println("Writing to file "+szposterioroutfilename);
-	        pwprobs = new PrintWriter(szposterioroutfilename);
-	        pwprobs.println(cellSeq[nordered_nseq]+"\t"+chromSeq[nordered_nseq]);
-	        for (int ni = 0; ni < numstates-1; ni++)
-	        {
-		   pwprobs.print(""+chorder+(ni+1)+"\t");
-	        } 
-	        pwprobs.println(""+chorder+(numstates));
-	     }
+                    System.out.println("Writing to file "+szposterioroutfilename);
+	            pwprobs = new PrintWriter(szposterioroutfilename);
+	            pwprobs.println(cellSeq[nordered_nseq]+"\t"+szactualchrom);
+	            for (int ni = 0; ni < numstates-1; ni++)
+	            {
+		       pwprobs.print(""+chorder+(ni+1)+"\t");
+		    }
+	            pwprobs.println(""+chorder+(numstates));
+		 }
 
-	     if (bprintstatebyline)
-	     {
-	        //creates a file which has the state with the maximum posterior probability
-	        String szmaxoutfilename = szoutputdir+"/STATEBYLINE/"+szprefix+"_"+chromSeq[nordered_nseq]+ChromHMM.SZSTATEBYLINEEXTENSION;
+	         if (bprintstatebyline)
+	         {
+	            //creates a file which has the state with the maximum posterior probability
+	            String szmaxoutfilename = szoutputdir+"/STATEBYLINE/"+szprefix+"_"+szactualchrom+ChromHMM.SZSTATEBYLINEEXTENSION;
 
-	        System.out.println("Writing to file "+szmaxoutfilename);
-	        pwmax = new PrintWriter(szmaxoutfilename);
-	        pwmax.println(cellSeq[nordered_nseq]+"\t"+chromSeq[nordered_nseq]);
-	        pwmax.println("MaxState "+chorder);
-	     }
+	            System.out.println("Writing to file "+szmaxoutfilename);
+	            pwmax = new PrintWriter(szmaxoutfilename);
+	            pwmax.println(cellSeq[nordered_nseq]+"\t"+szactualchrom);
+	            pwmax.println("MaxState "+chorder);
+		 }
 
-	     //PrintWriter pwbed = null;
-	     if (bprintsegment)
-	     {
-	        //creates a file which has the maximum segmentation
-	        //we only have one file per cell type here
-	        pwbed = (PrintWriter) hmcellToFourColPW.get(cellSeq[nordered_nseq]);
+	         //PrintWriter pwbed = null;
+	         if (bprintsegment)
+	         {
+	            //creates a file which has the maximum segmentation
+	            //we only have one file per cell type here
+	            pwbed = (PrintWriter) hmcellToFourColPW.get(cellSeq[nordered_nseq]);
 
-	        if (pwbed == null)
-	        {
-		   //haven't seen this cell type
-	           String szsegmentoutfilename = szoutputdir+"/" + szprefix+SZSEGMENTEXTENSION;
+	            if (pwbed == null)
+	            {
+		       //haven't seen this cell type
+	               String szsegmentoutfilename = szoutputdir+"/" + szprefix+SZSEGMENTEXTENSION;
 
-	           pwbed = new PrintWriter(szsegmentoutfilename);
-		   System.out.println("Writing to file "+szsegmentoutfilename);
+	               pwbed = new PrintWriter(szsegmentoutfilename);
+		       System.out.println("Writing to file "+szsegmentoutfilename);
 
-	           hmcellToFourColPW.put(cellSeq[nordered_nseq],pwbed);    
-		}
-	     }
-	  }
-
-
-          if (bscaleemissions)
-  	  {
-	     for (int ni = 0; ni < nobserved; ni++)
-	     {
-	        //going through each combination of marks
-	        //if (traindataObservedSeqFlags_nseq[ni])
-	        //{
-		//this signature of marks is observed on the current chromosome so
-		//updating its emission probabilities
-		double[] emissionproducts_ni = emissionproducts[ni];
-	        boolean[] traindataObservedValues_ni = traindataObservedValues[ni];
-		boolean[] traindataNotMissing_ni = traindataNotMissing[ni];
-
-		for (int ns = 0; ns < numstates; ns++)
-		{
-		   emissionproducts_ni[ns] = 1;
-		}
-
-		for (int nmod = 0; nmod < numdatasets; nmod++)
-		{
-		   for (int ns = 0; ns < numstates; ns++)
-		   {
-		      if (traindataNotMissing_ni[nmod])
-		      {
-		         //we are include this marks emission probability
-			 if (traindataObservedValues_ni[nmod])
-			 {
-			    emissionproducts_ni[ns] *= emissionprobs[ns][nmod][1];
-			 }
-			 else
-			 {
-			    emissionproducts_ni[ns] *= emissionprobs[ns][nmod][0];
-			 }
-                      }
-		      // otherwise treated as missing omitting from product
-                   }
-
-                   double dmaxval = 0;
-                   for (int ns = 0; ns < numstates; ns++)
-		   {
-		      if (emissionproducts_ni[ns] > dmaxval)
-		      {
-		         dmaxval = emissionproducts_ni[ns];
-		      }
-		   }
+	               hmcellToFourColPW.put(cellSeq[nordered_nseq],pwbed);    
+		    }
+		 }
+	      }
+	   }
 
 
-                   if (dmaxval <= 0)//EPSILONEMISSIONS)
-		   {
-		      for (int ns = 0; ns < numstates; ns++)
-		      {
-		         emissionproducts_ni[ns] = 1;
-		      }
-		   }
-		   else
-		   {
-		      for (int ns = 0; ns < numstates; ns++)
-		      {
-		         emissionproducts_ni[ns]/= dmaxval;
-		      }
-		   }
+           if (bscaleemissions)
+  	   {
+	      for (int ni = 0; ni < nobserved; ni++)
+	      {
+	         //going through each combination of marks
+	         //if (traindataObservedSeqFlags_nseq[ni])
+	         //{
+	 	 //this signature of marks is observed on the current chromosome so
+		 //updating its emission probabilities
+		 double[] emissionproducts_ni = emissionproducts[ni];
+	         boolean[] traindataObservedValues_ni = traindataObservedValues[ni];
+		 boolean[] traindataNotMissing_ni = traindataNotMissing[ni];
 
-                }
-             }
-          }
-	  else
-	  {
-	     for (int ni = 0; ni < nobserved; ni++)
-             {
-	        //going through each combination of marks
-	        //if (traindataObservedSeqFlags_nseq[ni])
-	        //{
-	        //this signature of marks is observed on the current chromosome so
-	        //updating its emission probabilities
-	        double[] emissionproducts_ni = emissionproducts[ni];
-	        boolean[] traindataObservedValues_ni = traindataObservedValues[ni];
-	        boolean[] traindataNotMissing_ni = traindataNotMissing[ni];		  
+		 for (int ns = 0; ns < numstates; ns++)
+		 {
+		    emissionproducts_ni[ns] = 1;
+		 }
 
-	        boolean ballzero = true;
+		 for (int nmod = 0; nmod < numdatasets; nmod++)
+		 {
+		    for (int ns = 0; ns < numstates; ns++)
+		    {
+		       if (traindataNotMissing_ni[nmod])
+		       {
+		          //we are include this marks emission probability
+			  if (traindataObservedValues_ni[nmod])
+			  {
+			     emissionproducts_ni[ns] *= emissionprobs[ns][nmod][1];
+			  }
+			  else
+			  {
+			     emissionproducts_ni[ns] *= emissionprobs[ns][nmod][0];
+			  }
+                       }
+		       // otherwise treated as missing omitting from product
+		    }
 
-	        for (int ns = 0; ns < numstates; ns++)
-	        {
-	           double dproduct = 1;
-	           double[][] emissionprobs_ni = emissionprobs[ns];
+                    double dmaxval = 0;
+                    for (int ns = 0; ns < numstates; ns++)
+		    {
+		       if (emissionproducts_ni[ns] > dmaxval)
+		       {
+		          dmaxval = emissionproducts_ni[ns];
+		       }
+		    }
 
-		   //going through all marks
-	           for (int nmod = 0; nmod < numdatasets; nmod++)
-	           {
-		      if (traindataNotMissing_ni[nmod])
-		      {
-		         //we have observed the mark
-		         if (traindataObservedValues_ni[nmod])
-		         {
-		            dproduct *= emissionprobs_ni[nmod][1];
-		         }
-		         else 
-	                 {
-		            dproduct *= emissionprobs_ni[nmod][0];
-		         }
-		      }
-		      // otherwise treated as missing omitting from product
-		   }
-	           emissionproducts_ni[ns] = dproduct;
 
-		   if (dproduct >= EPSILONEMISSIONS)
-		   {
-	              ballzero = false;
-		   }
-		}
+                    if (dmaxval <= 0)//EPSILONEMISSIONS)
+		    {
+		       for (int ns = 0; ns < numstates; ns++)
+		       {
+		          emissionproducts_ni[ns] = 1;
+		       }
+		    }
+		    else
+		    {
+		       for (int ns = 0; ns < numstates; ns++)
+		       {
+		          emissionproducts_ni[ns]/= dmaxval;
+		       }
+		    }
+		 }
+	      }
+	   }
+	   else
+	   {
+	      for (int ni = 0; ni < nobserved; ni++)
+              {
+	         //going through each combination of marks
+	         //if (traindataObservedSeqFlags_nseq[ni])
+	         //{
+	         //this signature of marks is observed on the current chromosome so
+	         //updating its emission probabilities
+	         double[] emissionproducts_ni = emissionproducts[ni];
+	         boolean[] traindataObservedValues_ni = traindataObservedValues[ni];
+	         boolean[] traindataNotMissing_ni = traindataNotMissing[ni];		  
+
+	         boolean ballzero = true;
+
+	         for (int ns = 0; ns < numstates; ns++)
+	         {
+	            double dproduct = 1;
+	            double[][] emissionprobs_ni = emissionprobs[ns];
+
+		    //going through all marks
+	            for (int nmod = 0; nmod < numdatasets; nmod++)
+	            {
+		       if (traindataNotMissing_ni[nmod])
+		       {
+		          //we have observed the mark
+		          if (traindataObservedValues_ni[nmod])
+		          {
+		             dproduct *= emissionprobs_ni[nmod][1];
+		          }
+		          else 
+	                  {
+		             dproduct *= emissionprobs_ni[nmod][0];
+		          }
+		       }
+		       // otherwise treated as missing omitting from product
+		    }
+	            emissionproducts_ni[ns] = dproduct;
+
+		    if (dproduct >= EPSILONEMISSIONS)
+		    {
+	               ballzero = false;
+		    }
+		 }
 	     
-	        if (ballzero)
-	        {
-	           for (int ns = 0; ns < numstates; ns++)
-	           {
-	              emissionproducts_ni[ns] = EPSILONEMISSIONS;
-		   }
-		}
-	     }
-	  }
+	         if (ballzero)
+	         {
+	            for (int ns = 0; ns < numstates; ns++)
+	            {
+	               emissionproducts_ni[ns] = EPSILONEMISSIONS;
+		    }
+		 }
+	      }
+	   }
 	  
-
-	  //initial probability in state s is initial probability times emission probability at first position
-          double[] alpha_nt = alpha[0];
-	  double dscale = 0;
-	  double[] emissionproducts_nobserveindex =emissionproducts[traindataObservedIndex[0]];
- 	  for (int ns = 0; ns < numstates; ns++)
-          {
+	   //initial probability in state s is initial probability times emission probability at first position
+           double[] alpha_nt = alpha[0];
+	   double dscale = 0;
+	   double[] emissionproducts_nobserveindex =emissionproducts[traindataObservedIndex[0]];
+ 	   for (int ns = 0; ns < numstates; ns++)
+           {
 	      alpha_nt[ns] = probinit[ns] * emissionproducts_nobserveindex[ns];
 	      dscale += alpha_nt[ns];
-	  }
-	  scale[0] = dscale;
+	   }
+	   scale[0] = dscale;
 
-	  //alpha_t(s)=P(o_0,...,o_t,x_t=s|lambda)
-          //converts the alpha terms to probabilities
-	  for (int ni = 0; ni < numstates; ni++)
-          {
-             alpha_nt[ni] /= dscale;
-	  }
+	   //alpha_t(s)=P(o_0,...,o_t,x_t=s|lambda)
+           //converts the alpha terms to probabilities
+	   if (bscalebeta)
+	   {
+	      for (int ns = 0; ns < numstates; ns++)
+	      {
+                 alpha_nt[ns] /= dscale;
+
+	         if ((alpha_nt[ns] < EPSILONSTATE)&&(emissionproducts_nobserveindex[ns]>0))//(ns < numstates-1))) 
+       	         {
+	            alpha_nt[ns] = EPSILONSTATE;
+		 }
+	      }
+	   }
+      	   else
+           {
+	      for (int ns = 0; ns < numstates; ns++)
+	      {
+                 alpha_nt[ns] /= dscale;
+	      }
+	   }
+	   //for (int ni = 0; ni < numstates; ni++)
+           //{
+           //   alpha_nt[ni] /= dscale;
+	   //}
 	
-          //stores in coltransitionprobs the transpose of transitionprobs
-          for (int ni = 0; ni < numstates; ni++)
-          {
-             double[] coltransitionprobs_ni = coltransitionprobs[ni];
-             for (int nj = 0; nj < numstates; nj++)
-	     {
-	        coltransitionprobs_ni[nj] = transitionprobs[nj][ni];
-	     }
-	  }
+           //stores in coltransitionprobs the transpose of transitionprobs
+           for (int ni = 0; ni < numstates; ni++)
+           {
+              double[] coltransitionprobs_ni = coltransitionprobs[ni];
+              for (int nj = 0; nj < numstates; nj++)
+	      {
+	         coltransitionprobs_ni[nj] = transitionprobs[nj][ni];
+	      }
+	   }
 
-          //forward step
-          int numtime_nseq = numtime[nordered_nseq];
-          for (int nt = 1; nt < numtime_nseq; nt++)
-          {
-             //the actual observed combination at position t	        
-	     double[] alpha_ntm1 = alpha[nt-1];
-	     alpha_nt = alpha[nt];
+           //forward step
+           int numtime_nseq = numtime[nordered_nseq];
+           for (int nt = 1; nt < numtime_nseq; nt++)
+           {
+              //the actual observed combination at position t	        
+	      double[] alpha_ntm1 = alpha[nt-1];
+	      alpha_nt = alpha[nt];
 	      
-	     dscale = 0;
-	     emissionproducts_nobserveindex = emissionproducts[traindataObservedIndex[nt]];
-	     for (int ns = 0; ns < numstates; ns++)
-	     {
-	        //going through each state		   
+	      dscale = 0;
+	      emissionproducts_nobserveindex = emissionproducts[traindataObservedIndex[nt]];
+	      for (int ns = 0; ns < numstates; ns++)
+	      {
+	         //going through each state		   
+	         int transitionprobsnumCol_ns = transitionprobsnumCol[ns];
+	         int[] transitionprobsindexCol_ns = transitionprobsindexCol[ns];
+	         double[] coltransitionprobs_ns = coltransitionprobs[ns];
 
-	        int transitionprobsnumCol_ns = transitionprobsnumCol[ns];
-	        int[] transitionprobsindexCol_ns = transitionprobsindexCol[ns];
-	        double[] coltransitionprobs_ns = coltransitionprobs[ns];
-
-	        double dtempsum = 0;
-                if (transitionprobsnumCol_ns < nsparsecutoff)
-	        {
+	         double dtempsum = 0;
+                 if (transitionprobsnumCol_ns < nsparsecutoff)
+	         {
 		    //if it is sparse enough then it is worth the extra array indirection here
-	           for (int nj = 0; nj < transitionprobsnumCol_ns; nj++)
-	           {
+	            for (int nj = 0; nj < transitionprobsnumCol_ns; nj++)
+	            {
 	               //for each next state computing inner sum of all previous alpha and the transition probability
 	               //for all non-zero transitions into the state
-			int nmappedindex = transitionprobsindexCol_ns[nj];
-			dtempsum += coltransitionprobs_ns[nmappedindex]*alpha_ntm1[nmappedindex];
-		   }
-		}
-	        else
-	        {
-                   for (int nj = 0; nj < numstates; nj++)
-	           {
-	              //for each next state computing inner sum of all previous alpha and the transition probability
-	              //for all transitions into the state
-		      dtempsum += coltransitionprobs_ns[nj]*alpha_ntm1[nj];
-		   }
-		}
+	               int nmappedindex = transitionprobsindexCol_ns[nj];
+	       	       dtempsum += coltransitionprobs_ns[nmappedindex]*alpha_ntm1[nmappedindex];
+		    }
+		 }
+	         else
+	         {
+                    for (int nj = 0; nj < numstates; nj++)
+	            {
+	               //for each next state computing inner sum of all previous alpha and the transition probability
+	               //for all transitions into the state
+		       dtempsum += coltransitionprobs_ns[nj]*alpha_ntm1[nj];
+		    }
+		 }
 
-                //multiply the transition sum by the emission probability
-	        double dalphaval = dtempsum*emissionproducts_nobserveindex[ns];
-                alpha_nt[ns] = dalphaval;
-	        dscale += dalphaval;
-	     }
+                 //multiply the transition sum by the emission probability
+	         double dalphaval = dtempsum*emissionproducts_nobserveindex[ns];
+                 alpha_nt[ns] = dalphaval;
+	         dscale += dalphaval;
+	      }
 
 	      //rescaling alpha
               scale[nt] = dscale;
               //scale_t(s)=P(o_0,...,o_t|lambda) summed over all states
 
-	      for (int ns = 0; ns < numstates; ns++)
-              {
-		  alpha_nt[ns] /= dscale;
-	      }      	       
+	      if (bscalebeta)
+	      {
+	         for (int ns = 0; ns < numstates; ns++)
+	         {
+                    alpha_nt[ns] /= dscale;
+
+		    if ((alpha_nt[ns] < EPSILONSTATE)&&(emissionproducts_nobserveindex[ns]>0))//(ns < numstates-1))) 
+		    {
+		       alpha_nt[ns] = EPSILONSTATE;
+		    }
+		 }
+	      }
+      	      else
+	      {
+	         for (int ns = 0; ns < numstates; ns++)
+	         {
+                    alpha_nt[ns] /= dscale;
+		 }
+	      }
+	     //for (int ns = 0; ns < numstates; ns++)
+	     //{
+	     //	  alpha_nt[ns] /= dscale;
+	     //}      	       
 	  }
 	    
           //backward step
           //beta_t(s)=P(o_t+1,...,o_T|x_t=s,lambda)
           int nlastindex = numtime_nseq-1;
-          double dinitval = 1.0/scale[nlastindex];
+	  double dinitval;
+	  if (bscalebeta)
+	  {
+	     dinitval = 1.0/numstates;
+	  }
+	  else
+	  {
+             dinitval = 1.0/scale[nlastindex];
+	  }
+
           for (int ns = 0; ns < numstates; ns++)
           {
-              beta_ntp1[ns] = dinitval;
-	  }
+             beta_ntp1[ns] = dinitval;
+          }
+          //double dinitval = 1.0/scale[nlastindex];
+          //for (int ns = 0; ns < numstates; ns++)
+          //{
+          //    beta_ntp1[ns] = dinitval;
+	  //}
 	
 	  int nmappedindexouter;
  
@@ -4986,6 +5511,7 @@ public class ChromHMM
 	      int ntp1 = (nt+1);
 		   
 	      double[] emissionproducts_ncombo_ntp1 = emissionproducts[traindataObservedIndex[ntp1]];		
+	      double dsumbeta = 0;
 	      double dscale_nt = scale[nt];
 
 	      for (int ns = 0; ns < numstates; ns++)
@@ -5023,16 +5549,46 @@ public class ChromHMM
 		     }
 		  }
 
-		  double dratio = dtempsum/dscale_nt;
-		  if (dratio > Double.MAX_VALUE)
+		  if (bscalebeta)
 		  {
-		      beta_nt[ni] = Double.MAX_VALUE;
+		     beta_nt[ni] = dtempsum;
+		     dsumbeta += dtempsum;
 		  }
 		  else
 		  {
-		      beta_nt[ni] = dratio;//dtempsum/dscale_nt;
+		     double dratio = dtempsum/dscale_nt;
+		     if (dratio > Double.MAX_VALUE)
+		     {
+		        beta_nt[ni] = Double.MAX_VALUE;//dtempsum/dscale_nt;
+		     }
+		     else
+		     {
+		        beta_nt[ni] = dratio;
+		     }
 		  }
+		   //double dratio = dtempsum/dscale_nt;
+		   //if (dratio > Double.MAX_VALUE)
+		   //{
+		   //   beta_nt[ni] = Double.MAX_VALUE;
+		   //}
+		  //else
+		  //{
+		  //  beta_nt[ni] = dratio;//dtempsum/dscale_nt;
+		  //}
 	      }
+
+	      if (bscalebeta)
+	      {
+                 for (int ni = 0; ni < numstates; ni++)
+	         {
+	            beta_nt[ni]/= dsumbeta;
+
+		    if (beta_nt[ni] < EPSILONSTATE)//&&(!bdummy))// || (emissionproducts_nobserveindex[ns]>0)))//(ni < numstates-1))) 
+		    {
+		       beta_nt[ni] = EPSILONSTATE;
+		    }
+		 }
+	      }		
 
 	      ddenom = 0;		
 	      alpha_nt = alpha[nt];
@@ -5055,65 +5611,75 @@ public class ChromHMM
 	       beta_ntp1 = beta_nt;		
 	  }
 
-	  int nstart = 0; //the start index of the current active interval
+	  //int nstart = 0; //the start index of the current active interval
           gamma_nt = gamma[0];
 
 	  double dmaxval = 0;
           int nmaxstate = 0;
 
+	  int nt = 0;
+
 	  if (bgzip)
 	  {
-	     //handling the first line
-             for (int ns = 0; ns < gamma_nt.length; ns++)
-             {	   	
-	        int nmappedstate = stateordering[ns]; //maps new state to old
-	        double dprob = gamma_nt[nmappedstate];
+
+	     if (bnewfile)
+	     {
+	        //handling the first line
+                for (int ns = 0; ns < gamma_nt.length; ns++)
+                {	   	
+	           int nmappedstate = stateordering[ns]; //maps new state to old
+	           double dprob = gamma_nt[nmappedstate];
+	           if (bprintposterior)
+	           {
+		      String szout;
+	              if (ns > 0)
+	              {
+		         //print with tab if not the first
+		         szout = "\t"+nf.format(dprob);
+                         //pwprobs.print("\t"+nf.format(dprob));
+		      }
+                      else
+                      {
+		         szout = nf.format(dprob);
+		         //pwprobs.print(nf.format(dprob));
+		      }
+		      byte[] btformat = szout.getBytes();
+		      pwprobszip.write(btformat,0,btformat.length);
+		   }
+
+	           if (dprob > dmaxval)
+	           {
+		      //best one found so far 
+	              dmaxval = dprob;
+	              nmaxstate = ns;
+		   }
+		}
+
 	        if (bprintposterior)
 	        {
-		   String szout;
-	           if (ns > 0)
-	           {
-		      //print with tab if not the first
-		      szout = "\t"+nf.format(dprob);
-                      //pwprobs.print("\t"+nf.format(dprob));
-	           }
-                   else
-                   {
-		      szout = nf.format(dprob);
-		       //pwprobs.print(nf.format(dprob));
-		   }
+		   String szout = "\n";
 		   byte[] btformat = szout.getBytes();
 		   pwprobszip.write(btformat,0,btformat.length);
+		   //pwprobs.println();
 		}
 
-	        if (dprob > dmaxval)
+	        if (bprintstatebyline)
 	        {
-		   //best one found so far 
-	           dmaxval = dprob;
-	           nmaxstate = ns;
-		}
-	     }
+                   String szout = (nmaxstate+1)+"\n";
+                   byte[] btformat = szout.getBytes();
+                   pwmaxzip.write(btformat,0,btformat.length);
+		   //pwmax.println(""+(nmaxstate+1));
+	        }
 
-	     if (bprintposterior)
-	     {
-		 String szout = "\n";
-		 byte[] btformat = szout.getBytes();
-		 pwprobszip.write(btformat,0,btformat.length);
-		 //pwprobs.println();
-	     }
-
-	     if (bprintstatebyline)
-	     {
-                 String szout = (nmaxstate+1)+"\n";
-                 byte[] btformat = szout.getBytes();
-                 pwmaxzip.write(btformat,0,btformat.length);
-		 //pwmax.println(""+(nmaxstate+1));
+                nmaxstateprev = nmaxstate;
+                nt = 1;
+                nstart = 0;
 	     }
 
 	     //this contains the best state of the previous interval
-	     int nmaxstateprev = nmaxstate;  	
+	     //int nmaxstateprev = nmaxstate;  	
 
-             for (int nt = 1; nt < numtime_nseq; nt++)
+             for (; nt < numtime_nseq; nt++)
              {
                 gamma_nt = gamma[nt];
 
@@ -5168,95 +5734,103 @@ public class ChromHMM
 	        {
 		   //print out last segment we are done with
 		   //pwbed.println(chromSeq[nordered_nseq]+"\t"+(nstart*nbinsize)+"\t"+(nt*nbinsize)+"\t"+chorder+(nmaxstateprev+1));		 
-		   String szout = chromSeq[nordered_nseq]+"\t"+(nstart*nbinsize)+"\t"+(nt*nbinsize)+"\t"+chorder+(nmaxstateprev+1)+"\n";
+		   String szout = szactualchrom+"\t"+(nstart*nbinsize)+"\t"+((nt+noffset)*nbinsize)+"\t"+chorder+(nmaxstateprev+1)+"\n";
                    byte[] btformat = szout.getBytes();
                    pwbedzip.write(btformat,0,btformat.length);
 		   //start a new segment now
-		   nstart = nt;
+		   nstart = nt+noffset;
 		   nmaxstateprev = nmaxstate;
 		}	     
 	     }
 
-	     if (bprintsegment)
+	     if (bclosefile)
 	     {
-	        int nlastcoordinate;
-	        Integer objMaxCoord = null;
-	        if (hmMaxCoord != null)
+	        if (bprintsegment)
 	        {
-		   objMaxCoord = ((Integer) hmMaxCoord.get(chromSeq[nordered_nseq]));
-	        }
+	           int nlastcoordinate;
+	           Integer objMaxCoord = null;
+	           if (hmMaxCoord != null)
+	           {
+		      objMaxCoord = ((Integer) hmMaxCoord.get(szactualchrom));
+		   }
 
-	        if (objMaxCoord != null)
-	        {
-		   nlastcoordinate = Math.min(numtime_nseq*nbinsize,((Integer) objMaxCoord).intValue());
-	        }
-	        else
-	        {
-		   nlastcoordinate = numtime_nseq*nbinsize;
-	        }
+	           if (objMaxCoord != null)
+	           {
+		       nlastcoordinate = Math.min((numtime_nseq+noffset)*nbinsize,((Integer) objMaxCoord).intValue());
+	           }
+	           else
+	           {
+		       nlastcoordinate = (numtime_nseq+noffset)*nbinsize;
+		   }
 
-		String szout = chromSeq[nordered_nseq]+"\t"+(nstart*nbinsize)+"\t"+nlastcoordinate+"\t"+chorder+(nmaxstateprev+1)+"\n";
-		byte[] btformat = szout.getBytes();
-		pwbedzip.write(btformat,0,btformat.length);
+		   String szout = szactualchrom+"\t"+(nstart*nbinsize)+"\t"+nlastcoordinate+"\t"+chorder+(nmaxstateprev+1)+"\n";
+		   byte[] btformat = szout.getBytes();
+		   pwbedzip.write(btformat,0,btformat.length);
 
 	        //pwbed.println(chromSeq[nordered_nseq]+"\t"+(nstart*nbinsize)+"\t"+nlastcoordinate+"\t"+chorder+(nmaxstateprev+1));
-	     }
+		}
 
-	     //close out the max state file if that was requested
-	     if (bprintstatebyline)
-	     {
-		pwmaxzip.finish();
-	        pwmaxzip.close();
+	        //close out the max state file if that was requested
+	        if (bprintstatebyline)
+	        {
+		   pwmaxzip.finish();
+	           pwmaxzip.close();
+	        }
+	        //close out the posterior state file if that was requested
+	        if (bprintposterior)
+	        {
+		   pwprobszip.finish();
+	           pwprobszip.close();    
+		}
 	     }
-	     //close out the posterior state file if that was requested
-	     if (bprintposterior)
-	     {
-		pwprobszip.finish();
-	        pwprobszip.close();    
-	     }	  
 	  }
 	  else
 	  {
-	     //handling the first line
-             for (int ns = 0; ns < gamma_nt.length; ns++)
-             {	   	
-	        int nmappedstate = stateordering[ns]; //maps new state to old
-	        double dprob = gamma_nt[nmappedstate];
+	     if (bnewfile)
+	     {
+	        //handling the first line
+                for (int ns = 0; ns < gamma_nt.length; ns++)
+                {	   	
+	           int nmappedstate = stateordering[ns]; //maps new state to old
+	           double dprob = gamma_nt[nmappedstate];
 
-	        if (bprintposterior)
-	        {
-	           if (ns > 0)
+	           if (bprintposterior)
 	           {
-                      pwprobs.print("\t"+nf.format(dprob));
-	           }
-                   else
-                   {
-                      pwprobs.print(nf.format(dprob));
+	              if (ns > 0)
+	              {
+                         pwprobs.print("\t"+nf.format(dprob));
+	              }
+                      else
+                      {
+                         pwprobs.print(nf.format(dprob));
+		      }
+		   }
+
+	           if (dprob > dmaxval)
+	           {
+		      //best one found so far 
+	              dmaxval = dprob;
+	              nmaxstate = ns;
 		   }
 		}
 
-	        if (dprob > dmaxval)
+	        if (bprintposterior)
 	        {
-		   //best one found so far 
-	           dmaxval = dprob;
-	           nmaxstate = ns;
-		}
+                   pwprobs.println();
+	        }
+
+	        if (bprintstatebyline)
+	        {
+	           pwmax.println(""+(nmaxstate+1));
+	        }
+
+	        //this contains the best state of the previous interval
+	        nmaxstateprev = nmaxstate;  	
+                nt = 1;
+                nstart = 0;
 	     }
 
-	     if (bprintposterior)
-	     {
-                pwprobs.println();
-	     }
-
-	     if (bprintstatebyline)
-	     {
-	        pwmax.println(""+(nmaxstate+1));
-	     }
-
-	     //this contains the best state of the previous interval
-	     int nmaxstateprev = nmaxstate;  	
-
-             for (int nt = 1; nt < numtime_nseq; nt++)
+             for ( ; nt < numtime_nseq; nt++)
              {
                 gamma_nt = gamma[nt];
 
@@ -5299,42 +5873,45 @@ public class ChromHMM
 	        if (bprintsegment&&(nmaxstateprev != nmaxstate))
 	        {
 		   //print out last segment we are done with
-		   pwbed.println(chromSeq[nordered_nseq]+"\t"+(nstart*nbinsize)+"\t"+(nt*nbinsize)+"\t"+chorder+(nmaxstateprev+1));		 
+		    pwbed.println(szactualchrom+"\t"+(nstart*nbinsize)+"\t"+((nt+noffset)*nbinsize)+"\t"+chorder+(nmaxstateprev+1));		 
 		   //start a new segment now
-		   nstart = nt;
+		   nstart = nt+noffset;
 		   nmaxstateprev = nmaxstate;
 		}	     
 	     }
 
-	     if (bprintsegment)
+	     if (bclosefile)
 	     {
-	        int nlastcoordinate;
-	        Integer objMaxCoord = null;
-	        if (hmMaxCoord != null)
+	        if (bprintsegment)
 	        {
-		   objMaxCoord = ((Integer) hmMaxCoord.get(chromSeq[nordered_nseq]));
-	        }
+	           int nlastcoordinate;
+	           Integer objMaxCoord = null;
+	           if (hmMaxCoord != null)
+	           {
+		      objMaxCoord = ((Integer) hmMaxCoord.get(szactualchrom));
+	           }
 
-	        if (objMaxCoord != null)
-	        {
-		   nlastcoordinate = Math.min(numtime_nseq*nbinsize,((Integer) objMaxCoord).intValue());
-	        }
-	        else
-	        {
-		   nlastcoordinate = numtime_nseq*nbinsize;
-	        }
-	        pwbed.println(chromSeq[nordered_nseq]+"\t"+(nstart*nbinsize)+"\t"+nlastcoordinate+"\t"+chorder+(nmaxstateprev+1));
-	     }
+	           if (objMaxCoord != null)
+	           {
+		       nlastcoordinate = Math.min((numtime_nseq+noffset)*nbinsize,((Integer) objMaxCoord).intValue());
+	           }
+	           else
+	           {
+		       nlastcoordinate = (numtime_nseq+noffset)*nbinsize;
+	           }
+	           pwbed.println(szactualchrom+"\t"+(nstart*nbinsize)+"\t"+nlastcoordinate+"\t"+chorder+(nmaxstateprev+1));
+		}
 
-	     //close out the max state file if that was requested
-	     if (bprintstatebyline)
-	     {
-	        pwmax.close();
-	     }
-	     //close out the posterior state file if that was requested
-	     if (bprintposterior)
-	     {
-	        pwprobs.close();    
+	        //close out the max state file if that was requested
+	        if (bprintstatebyline)
+	        {
+	           pwmax.close();
+	        }
+	        //close out the posterior state file if that was requested
+	        if (bprintposterior)
+	        {
+	           pwprobs.close();    
+	        }
 	     }
 	  }
        }
@@ -5446,153 +6023,226 @@ public class ChromHMM
           hmcellToFourColPW = new HashMap();
        }
 
-       RecIntString[] ordered = new RecIntString[chromfiles.length];
-       for (int nindex = 0; nindex < ordered.length; nindex++)
+       RecIntString[] ordered = null;//new RecIntString[chromfiles.length];
+       RecIntStringSplit[] orderedsplit = null;//new RecIntString[chromfiles.length];
+
+       if (bsplit)
        {
-	   ordered[nindex] = new RecIntString(nindex,chromfiles[nindex]);
+	   orderedsplit = new RecIntStringSplit[chromfiles.length];
+	   for (int nindex = 0; nindex < orderedsplit.length; nindex++)
+	   {
+	      int nlastperiodindex = chromSeq[nindex].lastIndexOf('.');
+
+	      if (nlastperiodindex == -1)
+	      {
+	         throw new IllegalArgumentException("No period found in chromosome "+chromSeq[nindex]+" despite split being specified");
+	      }
+
+	      String szchromportion = chromSeq[nindex].substring(0, nlastperiodindex);
+	      int nsplitbinindex = Integer.parseInt(chromSeq[nindex].substring(nlastperiodindex+1));
+	      orderedsplit[nindex] = new RecIntStringSplit(nindex,cellSeq[nindex],szchromportion,nsplitbinindex);
+	   }
+	   Arrays.sort(orderedsplit,new RecIntStringSplitCompare());
        }
-       Arrays.sort(ordered,new RecIntStringCompare());
+       else
+       {
+          ordered = new RecIntString[chromfiles.length];
+          for (int nindex = 0; nindex < ordered.length; nindex++)
+          {
+	     ordered[nindex] = new RecIntString(nindex,chromfiles[nindex]);
+          }
+          Arrays.sort(ordered,new RecIntStringCompare());
+       }
 
        hsprefix = new HashSet();
 
+       GZIPOutputStream pwprobszip = null;
+       GZIPOutputStream pwmaxzip = null;
+       GZIPOutputStream pwbedzip = null;
+       PrintWriter pwprobs = null;
+       PrintWriter pwmax = null;
+       PrintWriter pwbed = null;
+
+       int noffset = 0;
+       boolean bclosefile = true;
+       boolean bnewfile = true;
+
+       //these can go across split files so defined out here
+       int nstart = 0; //the start index of the current active interval
+       int nmaxstateprev = -1;
+       int nprevlinecount = 0;
        for (int nseq = 0; nseq < traindataObservedIndex.length; nseq++)
        {
-	   int nordered_nseq = ordered[nseq].nindex;
+	   int nordered_nseq;
+	   String szactualchrom;
+	   if (bsplit)
+	   {
+              nordered_nseq = orderedsplit[nseq].nindex;
+	      szactualchrom = orderedsplit[nseq].szchrom;
+	   }
+	   else
+	   {
+	      nordered_nseq = ordered[nseq].nindex;
+	      szactualchrom = chromSeq[nordered_nseq];
+	   }
 	   //goes through each sequence
 
           int[] traindataObservedIndex_nseq = traindataObservedIndex[nordered_nseq];
           boolean[] traindataObservedSeqFlags_nseq = traindataObservedSeqFlags[nordered_nseq];
 
-	  String szprefix = "";
-	  if (!cellSeq[nordered_nseq].equals(""))
+
+	  if (bsplit)
 	  {
-	     szprefix += cellSeq[nordered_nseq]+"_";
+	      //noffset = orderedsplit[nseq].nsplitbinindex * numsplitbins;
+	      if (orderedsplit[nseq].nsplitbinindex==0) //(noffset == 0)
+	      {
+		  noffset = 0;
+		  bnewfile = true; 
+	      }
+	      else
+	      {
+		  noffset += nprevlinecount;
+		  if ((nseq >= 1) && (orderedsplit[nseq].nsplitbinindex != (orderedsplit[nseq-1].nsplitbinindex+1)))
+		  {
+		      throw new IllegalArgumentException("For "+orderedsplit[nseq].szcell+"_"+orderedsplit[nseq].szchrom+" found "+
+                                                         "a file with split index "+orderedsplit[nseq].nsplitbinindex+", but not "+
+                                                         (orderedsplit[nseq].nsplitbinindex-1));
+		  }
+		  bnewfile = false;
+	      }
+	      bclosefile = ((nseq + 1 == orderedsplit.length)||(orderedsplit[nseq+1].nsplitbinindex == 0));
 	  }
-	  szprefix += numstates;
-	  if (!szoutfileID.equals(""))
+
+
+	  if (bnewfile)
 	  {
-	     szprefix += "_"+szoutfileID;
-          }
-	  hsprefix.add(szprefix);
 
+	     String szprefix = "";
 
-	  GZIPOutputStream pwprobszip = null;
-	  GZIPOutputStream pwmaxzip = null;
-	  GZIPOutputStream pwbedzip = null;
-	  PrintWriter pwprobs = null;
-	  PrintWriter pwmax = null;
-	  PrintWriter pwbed = null;
-
-	  if (bgzip)
-	  {
-	     if (bprintposterior)
+	     if (!cellSeq[nordered_nseq].equals(""))
 	     {
-	        //creates the posterior file
- 
-	        String szposterioroutfilename = szoutputdir+"/POSTERIOR/"+szprefix+"_"+chromSeq[nordered_nseq]+ChromHMM.SZPOSTERIOREXTENSION+".gz";
-
-                System.out.println("Writing to file "+szposterioroutfilename);
-	        //pwprobs = new PrintWriter(szposterioroutfilename);
-		pwprobszip = new GZIPOutputStream(new FileOutputStream(szposterioroutfilename));
-		String szout = cellSeq[nordered_nseq]+"\t"+chromSeq[nordered_nseq]+"\n";
-
-		byte[] btformat = szout.getBytes();
-		pwprobszip.write(btformat,0,btformat.length);
-
-	        //pwprobs.println(cellSeq[nordered_nseq]+"\t"+chromSeq[nordered_nseq]);
-		StringBuffer sbout = new StringBuffer();
-	        for (int ni = 0; ni < numstates-1; ni++)
-	        {
-		   sbout.append(""+chorder+(ni+1)+"\t");
-		   //pwprobs.print(""+chorder+(ni+1)+"\t");
-	        } 
-		sbout.append(""+chorder+(numstates)+"\n");
-
-		btformat = sbout.toString().getBytes();
-                pwprobszip.write(btformat,0,btformat.length);
-	        //pwprobs.println(""+chorder+(numstates));
+	        szprefix += cellSeq[nordered_nseq]+"_";
 	     }
-
-	     if (bprintstatebyline)
+	     szprefix += numstates;
+	     if (!szoutfileID.equals(""))
 	     {
-	        //creates a file which has the state with the maximum posterior probability
-	        String szmaxoutfilename = szoutputdir+"/STATEBYLINE/"+szprefix+"_"+chromSeq[nordered_nseq]+ChromHMM.SZSTATEBYLINEEXTENSION+".gz";
-	        System.out.println("Writing to file "+szmaxoutfilename);
-		pwmaxzip = new GZIPOutputStream(new FileOutputStream(szmaxoutfilename));
-	        //pwmax = new PrintWriter(szmaxoutfilename);
-		String szout = cellSeq[nordered_nseq]+"\t"+chromSeq[nordered_nseq] +"\n";
-                byte[] btformat = szout.getBytes();
-                pwmaxzip.write(btformat,0,btformat.length);
+	        szprefix += "_"+szoutfileID;
+             }
+	     hsprefix.add(szprefix);
 
-		szout = "MaxState "+chorder+"\n";
 
-		btformat = szout.getBytes();
-                pwmaxzip.write(btformat,0,btformat.length);
-	        //pwmax.println(cellSeq[nordered_nseq]+"\t"+chromSeq[nordered_nseq]);
-	        //pwmax.println("MaxState "+chorder);
-	     }
-
-	     if (bprintsegment)
+	     if (bgzip)
 	     {
-	        //creates a file which has the maximum segmentation
-	        //we only have one file per cell type here
-	        pwbedzip = (GZIPOutputStream) hmcellToFourColPW.get(cellSeq[nordered_nseq]);
-
-	        if (pwbedzip == null)
+	        if (bprintposterior)
 	        {
-		   //haven't seen this cell type
-	           String szsegmentoutfilename = szoutputdir+"/" + szprefix+SZSEGMENTEXTENSION+".gz";
+	           //creates the posterior file
+		    //v.1.18 replacing chromSeq[nordered_nseq] with szactualchrom
+ 	           //String szposterioroutfilename = szoutputdir+"/POSTERIOR/"+szprefix+"_"+chromSeq[nordered_nseq]+ChromHMM.SZPOSTERIOREXTENSION+".gz";
+	           String szposterioroutfilename = szoutputdir+"/POSTERIOR/"+szprefix+"_"+szactualchrom+ChromHMM.SZPOSTERIOREXTENSION+".gz";
 
-		   pwbedzip = new GZIPOutputStream(new FileOutputStream(szsegmentoutfilename));
-		   //pwbed = new PrintWriter(szsegmentoutfilename);
-		   System.out.println("Writing to file "+szsegmentoutfilename);
-	           hmcellToFourColPW.put(cellSeq[nordered_nseq],pwbedzip);    
+                   System.out.println("Writing to file "+szposterioroutfilename);
+	           //pwprobs = new PrintWriter(szposterioroutfilename);
+		   pwprobszip = new GZIPOutputStream(new FileOutputStream(szposterioroutfilename));
+		   String szout = cellSeq[nordered_nseq]+"\t"+szactualchrom+"\n";
+
+		   byte[] btformat = szout.getBytes();
+		   pwprobszip.write(btformat,0,btformat.length);
+
+	           //pwprobs.println(cellSeq[nordered_nseq]+"\t"+chromSeq[nordered_nseq]);
+		   StringBuffer sbout = new StringBuffer();
+	           for (int ni = 0; ni < numstates-1; ni++)
+	           {
+		      sbout.append(""+chorder+(ni+1)+"\t");
+		      //pwprobs.print(""+chorder+(ni+1)+"\t");
+	           } 
+		   sbout.append(""+chorder+(numstates)+"\n");
+
+		   btformat = sbout.toString().getBytes();
+                   pwprobszip.write(btformat,0,btformat.length);
+	           //pwprobs.println(""+chorder+(numstates));
+		}
+
+	        if (bprintstatebyline)
+	        {
+	           //creates a file which has the state with the maximum posterior probability
+	           String szmaxoutfilename = szoutputdir+"/STATEBYLINE/"+szprefix+"_"+szactualchrom+ChromHMM.SZSTATEBYLINEEXTENSION+".gz";
+	           System.out.println("Writing to file "+szmaxoutfilename);
+	 	   pwmaxzip = new GZIPOutputStream(new FileOutputStream(szmaxoutfilename));
+	           //pwmax = new PrintWriter(szmaxoutfilename);
+		   String szout = cellSeq[nordered_nseq]+"\t"+szactualchrom +"\n";
+                   byte[] btformat = szout.getBytes();
+                   pwmaxzip.write(btformat,0,btformat.length);
+
+		   szout = "MaxState "+chorder+"\n";
+
+	 	   btformat = szout.getBytes();
+                   pwmaxzip.write(btformat,0,btformat.length);
+	           //pwmax.println(cellSeq[nordered_nseq]+"\t"+chromSeq[nordered_nseq]);
+	           //pwmax.println("MaxState "+chorder);
+		}
+
+	        if (bprintsegment)
+	        {
+	           //creates a file which has the maximum segmentation
+	           //we only have one file per cell type here
+	           pwbedzip = (GZIPOutputStream) hmcellToFourColPW.get(cellSeq[nordered_nseq]);
+
+	           if (pwbedzip == null)
+	           {
+		      //haven't seen this cell type
+	              String szsegmentoutfilename = szoutputdir+"/" + szprefix+SZSEGMENTEXTENSION+".gz";
+
+		      pwbedzip = new GZIPOutputStream(new FileOutputStream(szsegmentoutfilename));
+		      //pwbed = new PrintWriter(szsegmentoutfilename);
+		      System.out.println("Writing to file "+szsegmentoutfilename);
+	              hmcellToFourColPW.put(cellSeq[nordered_nseq],pwbedzip);    
+		   }
 		}
 	     }
-	  }
-	  else
-	  {
-	     if (bprintposterior)
+	     else
 	     {
-	        //creates the posterior file
+	        if (bprintposterior)
+	        {
+	           //creates the posterior file
  
-	        String szposterioroutfilename = szoutputdir+"/POSTERIOR/"+szprefix+"_"+chromSeq[nordered_nseq]+ChromHMM.SZPOSTERIOREXTENSION;
+	           String szposterioroutfilename = szoutputdir+"/POSTERIOR/"+szprefix+"_"+szactualchrom+ChromHMM.SZPOSTERIOREXTENSION;
 
-                System.out.println("Writing to file "+szposterioroutfilename);
-	        pwprobs = new PrintWriter(szposterioroutfilename);
-	        pwprobs.println(cellSeq[nordered_nseq]+"\t"+chromSeq[nordered_nseq]);
-	        for (int ni = 0; ni < numstates-1; ni++)
+                   System.out.println("Writing to file "+szposterioroutfilename);
+	           pwprobs = new PrintWriter(szposterioroutfilename);
+	           pwprobs.println(cellSeq[nordered_nseq]+"\t"+chromSeq[nordered_nseq]);
+	           for (int ni = 0; ni < numstates-1; ni++)
+	           {
+		      pwprobs.print(""+chorder+(ni+1)+"\t");
+	           } 
+	           pwprobs.println(""+chorder+(numstates));
+		}
+
+	        if (bprintstatebyline)
 	        {
-		   pwprobs.print(""+chorder+(ni+1)+"\t");
-	        } 
-	        pwprobs.println(""+chorder+(numstates));
-	     }
+	           //creates a file which has the state with the maximum posterior probability
+	           String szmaxoutfilename = szoutputdir+"/STATEBYLINE/"+szprefix+"_"+szactualchrom+ChromHMM.SZSTATEBYLINEEXTENSION;
+	           System.out.println("Writing to file "+szmaxoutfilename);
+	           pwmax = new PrintWriter(szmaxoutfilename);
+	           pwmax.println(cellSeq[nordered_nseq]+"\t"+szactualchrom);
+	           pwmax.println("MaxState "+chorder);
+		}
 
-	     if (bprintstatebyline)
-	     {
-	        //creates a file which has the state with the maximum posterior probability
-	        String szmaxoutfilename = szoutputdir+"/STATEBYLINE/"+szprefix+"_"+chromSeq[nordered_nseq]+ChromHMM.SZSTATEBYLINEEXTENSION;
-	        System.out.println("Writing to file "+szmaxoutfilename);
-	        pwmax = new PrintWriter(szmaxoutfilename);
-	        pwmax.println(cellSeq[nordered_nseq]+"\t"+chromSeq[nordered_nseq]);
-	        pwmax.println("MaxState "+chorder);
-	     }
-
-	     //PrintWriter pwbed = null;
-	     if (bprintsegment)
-	     {
-	        //creates a file which has the maximum segmentation
-	        //we only have one file per cell type here
-	        pwbed = (PrintWriter) hmcellToFourColPW.get(cellSeq[nordered_nseq]);
-
-	        if (pwbed == null)
+	        //PrintWriter pwbed = null;
+	        if (bprintsegment)
 	        {
-		   //haven't seen this cell type
-	           String szsegmentoutfilename = szoutputdir+"/" + szprefix+SZSEGMENTEXTENSION;
+	           //creates a file which has the maximum segmentation
+	           //we only have one file per cell type here
+	           pwbed = (PrintWriter) hmcellToFourColPW.get(cellSeq[nordered_nseq]);
 
-	           pwbed = new PrintWriter(szsegmentoutfilename);
-		   System.out.println("Writing to file "+szsegmentoutfilename);
-	           hmcellToFourColPW.put(cellSeq[nordered_nseq],pwbed);    
+	           if (pwbed == null)
+	           {
+		      //haven't seen this cell type
+	              String szsegmentoutfilename = szoutputdir+"/" + szprefix+SZSEGMENTEXTENSION;
+
+	              pwbed = new PrintWriter(szsegmentoutfilename);
+		      System.out.println("Writing to file "+szsegmentoutfilename);
+	              hmcellToFourColPW.put(cellSeq[nordered_nseq],pwbed);    
+		   }
 		}
 	     }
 	  }
@@ -5731,10 +6381,29 @@ public class ChromHMM
 
 	  //alpha_t(s)=P(o_0,...,o_t,x_t=s|lambda)
           //converts the alpha terms to probabilities
-	  for (int ni = 0; ni < numstates; ni++)
-          {
-             alpha_nt[ni] /= dscale;
+          if (bscalebeta)
+	  {
+             for (int ns = 0; ns < numstates; ns++)
+	     {
+                alpha_nt[ns] /= dscale;
+
+	        if ((alpha_nt[ns] < EPSILONSTATE)&&(emissionproducts_nobserveindex[ns]>0))//(ns < numstates-1))) 
+       	        {
+	           alpha_nt[ns] = EPSILONSTATE;
+	        }
+	     }
 	  }
+      	  else
+	  {
+             for (int ns = 0; ns < numstates; ns++)
+	     {
+                alpha_nt[ns] /= dscale;
+	     }
+	  }
+	     //for (int ni = 0; ni < numstates; ni++)
+	     //{
+             //alpha_nt[ni] /= dscale;
+	     //}
 	
           //stores in coltransitionprobs the transpose of transitionprobs
           for (int ni = 0; ni < numstates; ni++)
@@ -5748,6 +6417,9 @@ public class ChromHMM
 
           //forward step
           int numtime_nseq = numtime[nordered_nseq];
+
+	  nprevlinecount = numtime_nseq;
+
           for (int nt = 1; nt < numtime_nseq; nt++)
           {
              //the actual observed combination at position t	        
@@ -5796,20 +6468,53 @@ public class ChromHMM
               scale[nt] = dscale;
               //scale_t(s)=P(o_0,...,o_t|lambda) summed over all states
 
-	      for (int ns = 0; ns < numstates; ns++)
-              {
-		  alpha_nt[ns] /= dscale;
-	      }      	       
+	      if (bscalebeta)
+	      {
+	         for (int ns = 0; ns < numstates; ns++)
+	         {
+                    alpha_nt[ns] /= dscale;
+
+		    if ((alpha_nt[ns] < EPSILONSTATE)&&(emissionproducts_nobserveindex[ns]>0))//(ns < numstates-1))) 
+		    {
+		       alpha_nt[ns] = EPSILONSTATE;
+		    }
+		 }
+	      }
+      	      else
+	      {
+	         for (int ns = 0; ns < numstates; ns++)
+	         {
+                    alpha_nt[ns] /= dscale;
+		 }
+	      }
+	     // for (int ns = 0; ns < numstates; ns++)
+             // {
+	     //	  alpha_nt[ns] /= dscale;
+	     //}      	       
 	  }
 	    
           //backward step
           //beta_t(s)=P(o_t+1,...,o_T|x_t=s,lambda)
           int nlastindex = numtime_nseq-1;
-          double dinitval = 1.0/scale[nlastindex];
-          for (int ns = 0; ns < numstates; ns++)
-          {
-              beta_ntp1[ns] = dinitval;
+	  double dinitval;
+	  if (bscalebeta)
+	  {
+	     dinitval = 1.0/numstates;
 	  }
+	  else
+	  {
+             dinitval = 1.0/scale[nlastindex];
+	  }
+
+          for (int ns = 0; ns < numstates; ns++)
+	  {
+             beta_ntp1[ns] = dinitval;
+	  }
+          //double dinitval = 1.0/scale[nlastindex];
+          //for (int ns = 0; ns < numstates; ns++)
+          //{
+          //    beta_ntp1[ns] = dinitval;
+	  //}
 	
 	  int nmappedindexouter;
  
@@ -5837,6 +6542,7 @@ public class ChromHMM
 	      int ntp1 = (nt+1);
 		   
 	      double[] emissionproducts_ncombo_ntp1 = emissionproducts[traindataObservedIndex_nseq[ntp1]];		
+	      double dsumbeta = 0;
 	      double dscale_nt = scale[nt];
 
 	      for (int ns = 0; ns < numstates; ns++)
@@ -5874,98 +6580,136 @@ public class ChromHMM
 		     }
 		  }
 
-		  double dratio = dtempsum/dscale_nt;
-		  if (dratio > Double.MAX_VALUE)
+		  if (bscalebeta)
 		  {
-		      beta_nt[ni] = Double.MAX_VALUE;
+		     beta_nt[ni] = dtempsum;
+		     dsumbeta += dtempsum;
 		  }
 		  else
 		  {
-		      beta_nt[ni] = dratio;//dtempsum/dscale_nt;
+		     double dratio = dtempsum/dscale_nt;
+		     if (dratio > Double.MAX_VALUE)
+		     {
+		        beta_nt[ni] = Double.MAX_VALUE;//dtempsum/dscale_nt;
+		     }
+		     else
+		     {
+		         beta_nt[ni] = dratio;
+		     }
 		  }
+		  //double dratio = dtempsum/dscale_nt;
+		  //if (dratio > Double.MAX_VALUE)
+		  //{
+		  //    beta_nt[ni] = Double.MAX_VALUE;
+		  //}
+		  //else
+		  //{
+		  //    beta_nt[ni] = dratio;//dtempsum/dscale_nt;
+		  //}
 	      }
+
+	      if (bscalebeta)
+	      {
+                 for (int ni = 0; ni < numstates; ni++)
+	         {
+	            beta_nt[ni]/= dsumbeta;
+
+		    if (beta_nt[ni] < EPSILONSTATE)//&&(!bdummy))// || (ni < numstates-1))) 
+		    {
+		       beta_nt[ni] = EPSILONSTATE;
+		    }
+		 }
+	      }		
 
 	      ddenom = 0;		
 	      alpha_nt = alpha[nt];
 
-	       //gamma_nt - P(x=S| o_0,...,o_t)
-               //P(o_t+1,...,o_T|x_t=s,lambda) * P(o_0,...,o_t,xt=s|lambda)
+	      //gamma_nt - P(x=S| o_0,...,o_t)
+              //P(o_t+1,...,o_T|x_t=s,lambda) * P(o_0,...,o_t,xt=s|lambda)
 
-	       for (int ns = 0; ns < gamma_nt.length; ns++)
-               {
-		   double dval = alpha_nt[ns]*beta_nt[ns];
+	      for (int ns = 0; ns < gamma_nt.length; ns++)
+              {
+	         double dval = alpha_nt[ns]*beta_nt[ns];
 
-		   ddenom += dval;
-		   gamma_nt[ns] = dval;
-	       }
+		 ddenom += dval;
+	         gamma_nt[ns] = dval;
+	      }
 
-	       for (int ns = 0; ns < gamma_nt.length; ns++)
-               {
-		   gamma_nt[ns]/=ddenom;       		   
-	       }
-	       beta_ntp1 = beta_nt;		
+	      for (int ns = 0; ns < gamma_nt.length; ns++)
+              {
+	         gamma_nt[ns]/=ddenom;       		   
+	      }
+	      beta_ntp1 = beta_nt;		
 	  }
 
-	  int nstart = 0; //the start index of the current active interval
+
           gamma_nt = gamma[0];
 
 	  double dmaxval = 0;
           int nmaxstate = 0;
 
+	  int nt = 0;
+
 	  if (bgzip)
 	  {
 	     //handling the first line
-             for (int ns = 0; ns < gamma_nt.length; ns++)
-             {	   	
-	        int nmappedstate = stateordering[ns]; //maps new state to old
-	        double dprob = gamma_nt[nmappedstate];
-	        if (bprintposterior)
-	        {
-		   String szout;
-	           if (ns > 0)
+	     if (bnewfile)
+	     {
+                for (int ns = 0; ns < gamma_nt.length; ns++)
+                {	   	
+	           int nmappedstate = stateordering[ns]; //maps new state to old
+	           double dprob = gamma_nt[nmappedstate];
+	           if (bprintposterior)
 	           {
-		      szout = "\t"+nf.format(dprob);
-		      //print with tab if not the first
-                      //pwprobs.print("\t"+nf.format(dprob));
-	           }
-                   else
-                   {
-		      szout = nf.format(dprob);
-                      //pwprobs.print(nf.format(dprob));
+		      String szout;
+	              if (ns > 0)
+	              {
+		         szout = "\t"+nf.format(dprob);
+		         //print with tab if not the first
+                         //pwprobs.print("\t"+nf.format(dprob));
+		      }
+                      else
+                      {
+		         szout = nf.format(dprob);
+                         //pwprobs.print(nf.format(dprob));
+		      }
+
+		      byte[] btformat = szout.getBytes();
+		      pwprobszip.write(btformat,0,btformat.length);
 		   }
 
-		   byte[] btformat = szout.getBytes();
-		   pwprobszip.write(btformat,0,btformat.length);
+	           if (dprob > dmaxval)
+	           {
+		      //best one found so far 
+	              dmaxval = dprob;
+	              nmaxstate = ns;
+		   }
 		}
 
-	        if (dprob > dmaxval)
+	        if (bprintposterior)
 	        {
-		   //best one found so far 
-	           dmaxval = dprob;
-	           nmaxstate = ns;
+		   String szout = "\n";
+	  	   byte[] btformat = szout.getBytes();
+		   pwprobszip.write(btformat,0,btformat.length);
+	           //pwprobs.println();
 		}
+
+	        if (bprintstatebyline)
+	        {
+	           String szout = ""+(nmaxstate+1)+"\n";
+	           byte[] btformat = szout.getBytes();
+		   pwmaxzip.write(btformat,0,btformat.length);
+	           //pwmax.println(""+(nmaxstate+1));
+		}
+
+	        //this contains the best state of the previous interval
+	        nmaxstateprev = nmaxstate;  	
+		nt = 1;
+		nstart = 0;
 	     }
 
-	     if (bprintposterior)
-	     {
-		String szout = "\n";
-		byte[] btformat = szout.getBytes();
-		pwprobszip.write(btformat,0,btformat.length);
-	        //pwprobs.println();
-	     }
 
-	     if (bprintstatebyline)
-	     {
-	        String szout = ""+(nmaxstate+1)+"\n";
-	        byte[] btformat = szout.getBytes();
-		pwmaxzip.write(btformat,0,btformat.length);
-	        //pwmax.println(""+(nmaxstate+1));
-	     }
-
-	     //this contains the best state of the previous interval
-	     int nmaxstateprev = nmaxstate;  	
-
-             for (int nt = 1; nt < numtime_nseq; nt++)
+             for ( ; nt < numtime_nseq; nt++)
              { 
                 gamma_nt = gamma[nt];
 
@@ -6019,98 +6763,106 @@ public class ChromHMM
 	        if (bprintsegment&&(nmaxstateprev != nmaxstate))
 	        {
 		   //print out last segment we are done with
-		   String szout = chromSeq[nordered_nseq]+"\t"+(nstart*nbinsize)+"\t"+(nt*nbinsize)+"\t"+chorder+(nmaxstateprev+1) +"\n";
+		    //String szout = chromSeq[nordered_nseq]+"\t"+((nstart+noffset)*nbinsize)+"\t"+((nt+noffset)*nbinsize)+"\t"+chorder+(nmaxstateprev+1) +"\n";
+		   String szout = szactualchrom+"\t"+(nstart*nbinsize)+"\t"+((nt+noffset)*nbinsize)+"\t"+chorder+(nmaxstateprev+1) +"\n";
 		    //pwbed.println(chromSeq[nordered_nseq]+"\t"+(nstart*nbinsize)+"\t"+(nt*nbinsize)+"\t"+chorder+(nmaxstateprev+1));	
                    byte[] btformat = szout.getBytes();
 		   pwbedzip.write(btformat,0,btformat.length);
 	 
 		   //start a new segment now
-		   nstart = nt;
+		   nstart = nt+noffset;
 		   nmaxstateprev = nmaxstate;
 		}
 	     }
 
-	     if (bprintsegment)
+	     if (bclosefile)
 	     {
-	        int nlastcoordinate;
-	        Integer objMaxCoord = null;
-	        if (hmMaxCoord != null)
+	        if (bprintsegment)
 	        {
-		   objMaxCoord = ((Integer) hmMaxCoord.get(chromSeq[nordered_nseq]));
-	        }
+	           int nlastcoordinate;
+	           Integer objMaxCoord = null;
+	           if (hmMaxCoord != null)
+	           {
+		      //objMaxCoord = ((Integer) hmMaxCoord.get(chromSeq[nordered_nseq]));
+		      objMaxCoord = ((Integer) hmMaxCoord.get(szactualchrom));
+	           }
 
-	        if (objMaxCoord != null)
-	        {
-		   nlastcoordinate = Math.min(numtime_nseq*nbinsize,((Integer) objMaxCoord).intValue());
-	        }
-	        else
-	        {
-		   nlastcoordinate = numtime_nseq*nbinsize;
-	        }
-	        //pwbed.println(chromSeq[nordered_nseq]+"\t"+(nstart*nbinsize)+"\t"+nlastcoordinate+"\t"+chorder+(nmaxstateprev+1));
+	           if (objMaxCoord != null)
+	           {
+		      nlastcoordinate = Math.min((numtime_nseq+noffset)*nbinsize,((Integer) objMaxCoord).intValue());
+	           }
+	           else
+	           {
+		      nlastcoordinate = (numtime_nseq+noffset)*nbinsize;
+	           }
+	           //pwbed.println(chromSeq[nordered_nseq]+"\t"+(nstart*nbinsize)+"\t"+nlastcoordinate+"\t"+chorder+(nmaxstateprev+1));
 
-		String szout = chromSeq[nordered_nseq]+"\t"+(nstart*nbinsize)+"\t"+nlastcoordinate+"\t"+chorder+(nmaxstateprev+1)+"\n";
-		byte[] btformat = szout.getBytes();
-		pwbedzip.write(btformat,0,btformat.length);
-
-	     }
+		   String szout = szactualchrom+"\t"+(nstart*nbinsize)+"\t"+nlastcoordinate+"\t"+chorder+(nmaxstateprev+1)+"\n";
+		   byte[] btformat = szout.getBytes();
+		   pwbedzip.write(btformat,0,btformat.length);
+	        }
 	  
-	     //close out the max state file if that was requested
-	     if (bprintstatebyline)
-	     {
-	        pwmaxzip.finish();
-	        pwmaxzip.close();
-	     }
-	     //close out the posterior state file if that was requested
-	     if (bprintposterior)
-	     {
-	        pwprobszip.finish();
-	        pwprobszip.close();    
-	     }	  
-       
+	        //close out the max state file if that was requested
+	        if (bprintstatebyline)
+	        {
+	           pwmaxzip.finish();
+	           pwmaxzip.close();
+	        }
+	        //close out the posterior state file if that was requested
+	        if (bprintposterior)
+	        {
+	           pwprobszip.finish();
+	           pwprobszip.close();    
+	        }
+	     }	        
 	  }
 	  else
 	  {
-	     //handling the first line
-             for (int ns = 0; ns < gamma_nt.length; ns++)
-             {	   	
-	        int nmappedstate = stateordering[ns]; //maps new state to old
-	        double dprob = gamma_nt[nmappedstate];
+	     if (bnewfile)
+	     {
+	        //handling the first line
+                for (int ns = 0; ns < gamma_nt.length; ns++)
+                {	   	
+	           int nmappedstate = stateordering[ns]; //maps new state to old
+	           double dprob = gamma_nt[nmappedstate];
+	           if (bprintposterior)
+	           {
+	              if (ns > 0)
+	              {
+		         //print with tab if not the first
+                         pwprobs.print("\t"+nf.format(dprob));
+	              }
+                      else
+                      {
+                         pwprobs.print(nf.format(dprob));
+		      }
+		   }
+
+	           if (dprob > dmaxval)
+	           {
+		      //best one found so far 
+	              dmaxval = dprob;
+	              nmaxstate = ns;
+		   }
+	        }
+
 	        if (bprintposterior)
 	        {
-	           if (ns > 0)
-	           {
-		      //print with tab if not the first
-                      pwprobs.print("\t"+nf.format(dprob));
-	           }
-                   else
-                   {
-                      pwprobs.print(nf.format(dprob));
-		   }
-		}
+	           pwprobs.println();
+	        }
 
-	        if (dprob > dmaxval)
+	        if (bprintstatebyline)
 	        {
-		   //best one found so far 
-	           dmaxval = dprob;
-	           nmaxstate = ns;
-		}
+	           pwmax.println(""+(nmaxstate+1));
+	        }
+
+	        //this contains the best state of the previous interval
+	        nmaxstateprev = nmaxstate;  	
+		nt = 1;
+		nstart = 0;
 	     }
 
-	     if (bprintposterior)
-	     {
-	        pwprobs.println();
-	     }
-
-	     if (bprintstatebyline)
-	     {
-	        pwmax.println(""+(nmaxstate+1));
-	     }
-
-	     //this contains the best state of the previous interval
-	     int nmaxstateprev = nmaxstate;  	
-
-             for (int nt = 1; nt < numtime_nseq; nt++)
+             for ( ; nt < numtime_nseq; nt++)
              { 
                 gamma_nt = gamma[nt];
 
@@ -6153,42 +6905,46 @@ public class ChromHMM
 	        if (bprintsegment&&(nmaxstateprev != nmaxstate))
 	        {
 		   //print out last segment we are done with
-		   pwbed.println(chromSeq[nordered_nseq]+"\t"+(nstart*nbinsize)+"\t"+(nt*nbinsize)+"\t"+chorder+(nmaxstateprev+1));		 
+		    pwbed.println(szactualchrom+"\t"+(nstart*nbinsize)+"\t"+((nt+noffset)*nbinsize)+"\t"+chorder+(nmaxstateprev+1));		 
 		   //start a new segment now
-		   nstart = nt;
+		   nstart = nt + noffset;
 		   nmaxstateprev = nmaxstate;
 		}
 	     }
 
-	     if (bprintsegment)
+	     if (bclosefile)
 	     {
-	        int nlastcoordinate;
-	        Integer objMaxCoord = null;
-	        if (hmMaxCoord != null)
+	        if (bprintsegment)
 	        {
-		   objMaxCoord = ((Integer) hmMaxCoord.get(chromSeq[nordered_nseq]));
-	        }
+	           int nlastcoordinate;
+	           Integer objMaxCoord = null;
+	           if (hmMaxCoord != null)
+	           {
+		      objMaxCoord = ((Integer) hmMaxCoord.get(szactualchrom));
+	           }
 
-	        if (objMaxCoord != null)
-	        {
-		   nlastcoordinate = Math.min(numtime_nseq*nbinsize,((Integer) objMaxCoord).intValue());
+	           if (objMaxCoord != null)
+	           {
+		      nlastcoordinate = Math.min((numtime_nseq+noffset)*nbinsize,((Integer) objMaxCoord).intValue());
+	           }
+	           else
+	           {
+		      nlastcoordinate = (numtime_nseq+noffset)*nbinsize;
+	           }
+
+	           pwbed.println(szactualchrom+"\t"+(nstart*nbinsize)+"\t"+nlastcoordinate+"\t"+chorder+(nmaxstateprev+1));
 	        }
-	        else
-	        {
-		   nlastcoordinate = numtime_nseq*nbinsize;
-	        }
-	        pwbed.println(chromSeq[nordered_nseq]+"\t"+(nstart*nbinsize)+"\t"+nlastcoordinate+"\t"+chorder+(nmaxstateprev+1));
-	     }
 	  
-	     //close out the max state file if that was requested
-	     if (bprintstatebyline)
-	     {
-	        pwmax.close();
-	     }
-	     //close out the posterior state file if that was requested
-	     if (bprintposterior)
-	     {
-	        pwprobs.close();    
+	        //close out the max state file if that was requested
+	        if (bprintstatebyline)
+	        {
+	           pwmax.close();
+	        }
+	        //close out the posterior state file if that was requested
+	        if (bprintposterior)
+	        {
+	           pwprobs.close();    
+		}
 	     }	  
 	  }
        }
@@ -6652,10 +7408,29 @@ public class ChromHMM
 
 	     //alpha_t(s)=P(o_0,...,o_t,x_t=s|lambda)
 	     //converts the alpha terms to probabilities
-	     for (int ni = 0; ni < numstates; ni++)
+	     if (bscalebeta)
 	     {
-		 alpha_nt[ni] /= dscale;
+	        for (int ns = 0; ns < numstates; ns++)
+	        {
+                   alpha_nt[ns] /= dscale;
+
+		   if ((alpha_nt[ns] < EPSILONSTATE)&&(emissionproducts_nobserveindex[ns]>0))//(ns < numstates-1))) 
+		   {
+		      alpha_nt[ns] = EPSILONSTATE;
+		   }
+		}
 	     }
+      	     else
+	     {
+	        for (int ns = 0; ns < numstates; ns++)
+	        {
+                   alpha_nt[ns] /= dscale;
+		}
+	     }
+	     //for (int ni = 0; ni < numstates; ni++)
+	     //{
+	     //	 alpha_nt[ni] /= dscale;
+	     //}
 	     dloglike += Math.log(dscale); 
 
              if (bscaleemissions)
@@ -6723,10 +7498,29 @@ public class ChromHMM
 	        scale[nt] = dscale;
                 //scale_t(s)=P(o_0,...,o_t|lambda) summed over all states
 
-	        for (int ns = 0; ns < numstates; ns++)
+	        if (bscalebeta)
 	        {
-                   alpha_nt[ns] /= dscale;
-		}
+	           for (int ns = 0; ns < numstates; ns++)
+	           {
+                      alpha_nt[ns] /= dscale;
+
+		      if ((alpha_nt[ns] < EPSILONSTATE)&&(emissionproducts_nobserveindex[ns]>0))//(ns < numstates-1))) 
+		      {
+		         alpha_nt[ns] = EPSILONSTATE;
+		      }
+		   }
+	        }
+      	        else
+	        {
+	           for (int ns = 0; ns < numstates; ns++)
+	           {
+                      alpha_nt[ns] /= dscale;
+		   }
+	        }
+	        //for (int ns = 0; ns < numstates; ns++)
+	        //{
+		//  alpha_nt[ns] /= dscale;
+		//}
 
       	        dloglike += Math.log(dscale);
 
@@ -6739,11 +7533,25 @@ public class ChromHMM
 	     //backward step
 	     //beta_t(s)=P(o_t+1,...,o_T|x_t=s,lambda)
 	     int nlastindex = numtime_nseq-1;
-	     double dinitval = 1.0/scale[nlastindex];
+	     double dinitval;
+	     if (bscalebeta)
+	     {
+		dinitval = 1.0/numstates;
+	     }
+	     else
+	     {
+                dinitval = 1.0/scale[nlastindex];
+	     }
+
              for (int ns = 0; ns < numstates; ns++)
 	     {
 	        beta_ntp1[ns] = dinitval;
 	     }
+	     //double dinitval = 1.0/scale[nlastindex];
+             //for (int ns = 0; ns < numstates; ns++)
+	     //{
+	     //  beta_ntp1[ns] = dinitval;
+	     //}
 
 	     double ddenom = 0;	       
 
@@ -6783,6 +7591,7 @@ public class ChromHMM
 		}
 
 		//double dscaleinv = 1.0/scale[nt];
+		double dsumbeta = 0;
 		double dscale_nt = scale[nt];
                 //scale_t(s)=P(o_0,...,o_t|lambda) summed over all states
 
@@ -6815,17 +7624,47 @@ public class ChromHMM
 		      }
 		   }
 
-		   double dratio = dtempsum/dscale_nt;
-		   if (dratio > Double.MAX_VALUE)
+		   if (bscalebeta)
 		   {
-		      beta_nt[ni] = Double.MAX_VALUE;
+		       beta_nt[ni] = dtempsum;
+		       dsumbeta += dtempsum;
 		   }
 		   else
 		   {
-		      beta_nt[ni] = dratio;
+		      double dratio = dtempsum/dscale_nt;
+		      if (dratio > Double.MAX_VALUE)
+		      {
+		         beta_nt[ni] = Double.MAX_VALUE;//dtempsum/dscale_nt;
+		      }
+		      else
+		      {
+		         beta_nt[ni] = dratio;
+		      }
 		   }
+		   //double dratio = dtempsum/dscale_nt;
+		   //if (dratio > Double.MAX_VALUE)
+		   //{
+		   //   beta_nt[ni] = Double.MAX_VALUE;
+		   //}
+		   //else
+		   //{
+		   //   beta_nt[ni] = dratio;
+		   //}
 		}		
 		
+	        if (bscalebeta)
+	        {
+                   for (int ni = 0; ni < numstates; ni++)
+	           {
+	               beta_nt[ni]/= dsumbeta;
+
+		       if (beta_nt[ni] < EPSILONSTATE)//&&(!bdummy))// || (ni < numstates-1))) 
+		       {
+		          beta_nt[ni] = EPSILONSTATE;
+		       }
+		   }
+		}
+	
                 ddenom = 0;
 		
 	        alpha_nt = alpha[nt];	     
@@ -7096,6 +7935,7 @@ public class ChromHMM
 	        for (int ns = 0; ns < numstates; ns++)
 	        {
 		   double[][] emissionprobs_ns = emissionprobs[ns];
+
 	           for (int nmark = 0; nmark < emissionprobs_ns.length; nmark++)
 	           {
 		      double[] emissionprobs_ns_nmark = emissionprobs_ns[nmark];
@@ -7144,7 +7984,10 @@ public class ChromHMM
 	  //dconvergediff is only enforced if greater thanor equal to 0
           dprevloglike = dloglike;       
 
-	  makeStateOrdering();
+	  if (borderrows)
+	  {
+	     makeStateOrdering();
+	  }
 
 	  if (bordercols)
 	  {
@@ -7463,19 +8306,38 @@ public class ChromHMM
 	     double[] alpha_nt = alpha[0];
 	     double dscale = 0;
 	     double[] emissionproducts_nobserveindex =emissionproducts[traindataObservedIndex_nseq[0]];
+
  	     for (int ns = 0; ns < numstates; ns++)
              {
 	        alpha_nt[ns] = probinit[ns] * emissionproducts_nobserveindex[ns];
 	        dscale += alpha_nt[ns];
 	     }
+	     
 	     scale[0] = dscale;
 
 	     //alpha_t(s)=P(o_0,...,o_t,x_t=s|lambda)
 	     //converts the alpha terms to probabilities
-	     for (int ni = 0; ni < numstates; ni++)
+	     if (bscalebeta)
 	     {
-		 alpha_nt[ni] /= dscale;
+	        for (int ns = 0; ns < numstates; ns++)
+	        {
+                   alpha_nt[ns] /= dscale;
+
+		   if ((alpha_nt[ns] < EPSILONSTATE)&&(emissionproducts_nobserveindex[ns]>0))// (ns < numstates-1))) 
+		   {
+		      alpha_nt[ns] = EPSILONSTATE;
+		   }
+		}
 	     }
+      	     else
+	     {
+	        for (int ns = 0; ns < numstates; ns++)
+	        {
+                   alpha_nt[ns] /= dscale;
+		}
+	     }
+
+
 	     dloglike += Math.log(dscale); 
 
              if (bscaleemissions)
@@ -7543,9 +8405,25 @@ public class ChromHMM
 	        scale[nt] = dscale;
                 //scale_t(s)=P(o_0,...,o_t|lambda) summed over all states
 
-	        for (int ns = 0; ns < numstates; ns++)
-	        {
-                   alpha_nt[ns] /= dscale;
+		if (bscalebeta)
+		{
+	           for (int ns = 0; ns < numstates; ns++)
+	           {
+                      alpha_nt[ns] /= dscale;
+
+		      //if ((alpha_nt[ns] < EPSILONSTATE)&&(!bdummy || (ns < numstates-1))) 
+		      if ((alpha_nt[ns] < EPSILONSTATE)&&(emissionproducts_nobserveindex[ns]>0))
+		      {
+		         alpha_nt[ns] = EPSILONSTATE;
+		      }
+		   }
+		}
+		else
+		{
+	           for (int ns = 0; ns < numstates; ns++)
+	           {
+                      alpha_nt[ns] /= dscale;
+		   }
 		}
 
       	        dloglike += Math.log(dscale);
@@ -7556,11 +8434,21 @@ public class ChromHMM
 	        }
 
 	     }
-	    
+	   
+
 	     //backward step
 	     //beta_t(s)=P(o_t+1,...,o_T|x_t=s,lambda)
 	     int nlastindex = numtime_nseq-1;
-	     double dinitval = 1.0/scale[nlastindex];
+	     double dinitval;
+	     if (bscalebeta)
+	     {
+		dinitval = 1.0/numstates;
+	     }
+	     else
+	     {
+                dinitval = 1.0/scale[nlastindex];
+	     }
+
              for (int ns = 0; ns < numstates; ns++)
 	     {
 	        beta_ntp1[ns] = dinitval;
@@ -7600,10 +8488,11 @@ public class ChromHMM
 
 		for (int ns = 0; ns < numstates; ns++)
 	        {
-		    tempproductbetaemiss[ns] = beta_ntp1[ns]*emissionproducts_combo_ntp1[ns];
+	           tempproductbetaemiss[ns] = beta_ntp1[ns]*emissionproducts_combo_ntp1[ns];		   
 		}
 
 		//double dscaleinv = 1.0/scale[nt];
+		double dsumbeta = 0;
 		double dscale_nt = scale[nt];
                 //scale_t(s)=P(o_0,...,o_t|lambda) summed over all states
 
@@ -7636,18 +8525,42 @@ public class ChromHMM
 		      }
 		   }
 
-		   double dratio = dtempsum/dscale_nt;
 
-		   if (dratio > Double.MAX_VALUE)
+
+		   if (bscalebeta)
 		   {
-		       beta_nt[ni] = Double.MAX_VALUE;//dtempsum/dscale_nt;
+		       beta_nt[ni] = dtempsum;
+		       dsumbeta += dtempsum;
 		   }
 		   else
 		   {
-		       beta_nt[ni] = dratio;
+		      double dratio = dtempsum/dscale_nt;
+		      if (dratio > Double.MAX_VALUE)
+		      {
+		         beta_nt[ni] = Double.MAX_VALUE;//dtempsum/dscale_nt;
+		      }
+		      else
+		      {
+		         beta_nt[ni] = dratio;
+		      }
 		   }
-		}		
+		}
+
 		
+		if (bscalebeta)
+		{
+                   for (int ni = 0; ni < numstates; ni++)
+		   {
+		      beta_nt[ni]/= dsumbeta;
+
+		      if (beta_nt[ni] < EPSILONSTATE)//&& (!bdummy))// || !ballemisszero))// (!bdummy || (ni < numstates-1)))
+		      { 
+		         beta_nt[ni] = EPSILONSTATE;
+		      }
+		   }
+		}
+				
+	     
                 ddenom = 0;
 		
 	        alpha_nt = alpha[nt];	     
@@ -7661,6 +8574,7 @@ public class ChromHMM
 	           ddenom += dval;
 	           gamma_nt[ns] = dval;
 		} 
+
 
 	        for (int ns = 0; ns < gamma_nt.length; ns++)
 	        {
@@ -7918,7 +8832,8 @@ public class ChromHMM
 	        for (int ns = 0; ns < numstates; ns++)
 	        {
 		   double[][] emissionprobs_ns = emissionprobs[ns];
-	           for (int nmark = 0; nmark < emissionprobs_ns.length; nmark++)
+
+	           for (int nmark = 0; nmark < emissionprobs_ns.length; nmark++) 
 	           {
 		      double[] emissionprobs_ns_nmark = emissionprobs_ns[nmark];
 		      //can't used a general gamma sum because of missing emission vals
@@ -7933,6 +8848,7 @@ public class ChromHMM
 	                 {
 	                    emissionprobs_ns_nmark[nbucket] += gammaksumstore[nitr][ns][nmark][nbucket];
 		         }
+
 
 		         if (bpseudo)
 		         {
@@ -7964,7 +8880,10 @@ public class ChromHMM
 	  //dconvergediff is only enforced if greater thanor equal to 0
           dprevloglike = dloglike;       
 
-	  makeStateOrdering();
+	  if (borderrows)
+	  {
+	     makeStateOrdering();
+	  }
 
 	  if (bordercols)
 	  {
@@ -8190,10 +9109,31 @@ public class ChromHMM
 
 	   //alpha_t(s)=P(o_0,...,o_t,x_t=s|lambda)
 	   //converts the alpha terms to probabilities
-	   for (int ni = 0; ni < numstates; ni++)
+
+	   if (bscalebeta)
 	   {
-	      alpha_nt[ni] /= dscale;
+	      for (int ns = 0; ns < numstates; ns++)
+	      {
+                 alpha_nt[ns] /= dscale;
+
+	         if ((alpha_nt[ns] < EPSILONSTATE)&&(emissionproducts_nobserveindex[ns]>0))//(ns < numstates-1))) 
+       	         {
+	            alpha_nt[ns] = EPSILONSTATE;
+	         }
+	      }
 	   }
+      	   else
+	   {
+	      for (int ns = 0; ns < numstates; ns++)
+	      {
+                 alpha_nt[ns] /= dscale;
+	      }
+	   }
+	   //for (int ni = 0; ni < numstates; ni++)
+	   //{
+	   //   alpha_nt[ni] /= dscale;
+	   //}
+
 	   dloglikeseq += Math.log(dscale); 
 
            if (bscaleemissions)
@@ -8208,6 +9148,7 @@ public class ChromHMM
 	      //the actual observed combination at position t	        
 	      double[] alpha_ntm1 = alpha[nt-1];
 	      alpha_nt = alpha[nt];
+
 	      
 	      dscale = 0;
 	      emissionproducts_nobserveindex = emissionproducts[traindataObservedIndex_nseq[nt]];
@@ -8250,10 +9191,25 @@ public class ChromHMM
 	      scale[nt] = dscale;
               //scale_t(s)=P(o_0,...,o_t|lambda) summed over all states
 
-	      for (int ns = 0; ns < numstates; ns++)
+	      if (bscalebeta)
 	      {
-                 alpha_nt[ns] /= dscale;
-              }
+	         for (int ns = 0; ns < numstates; ns++)
+	         {
+                    alpha_nt[ns] /= dscale;
+
+  		    if ((alpha_nt[ns] < EPSILONSTATE)&&(emissionproducts_nobserveindex[ns]>0))//(ns < numstates-1))) 
+		    {
+		       alpha_nt[ns] = EPSILONSTATE;
+		    }
+		 }
+	      }
+	      else
+	      {
+	         for (int ns = 0; ns < numstates; ns++)
+	         {
+                    alpha_nt[ns] /= dscale;
+		 }
+	      }
       	      dloglikeseq += Math.log(dscale);
 
               if (bscaleemissions)
@@ -8266,7 +9222,17 @@ public class ChromHMM
 	   //backward step
 	   //beta_t(s)=P(o_t+1,...,o_T|x_t=s,lambda)
            int nlastindex = numtime_nseq-1;
-           double dinitval = 1.0/scale[nlastindex];
+           double dinitval;
+
+	   if (bscalebeta)
+	   {
+	       dinitval = 1.0/numstates;
+	   }
+	   else
+	   {
+               dinitval = 1.0/scale[nlastindex];
+	   }
+
            for (int ns = 0; ns < numstates; ns++)
 	   {
 	      beta_ntp1[ns] = dinitval;
@@ -8309,6 +9275,7 @@ public class ChromHMM
 	         tempproductbetaemiss[ns] = beta_ntp1[ns]*emissionproducts_combo_ntp1[ns];
 	      }
 
+	      double dsumbeta = 0;
 	      //double dscaleinv = 1.0/scale[nt];
 	      double dscale_nt = scale[nt];
               //scale_t(s)=P(o_0,...,o_t|lambda) summed over all states
@@ -8341,17 +9308,38 @@ public class ChromHMM
 		    }
 		 }
 
-		 double dratio = dtempsum/dscale_nt;
-
-		 if (dratio > Double.MAX_VALUE)
+		 if (bscalebeta)
 		 {
-		    beta_nt[ni] = Double.MAX_VALUE;// dtempsum/dscale_nt;
+	            beta_nt[ni] = dtempsum;
+		    dsumbeta += dtempsum;
 		 }
-		 else
+	         else
 		 {
-		     beta_nt[ni] = dratio;// dtempsum/dscale_nt;
+		    double dratio = dtempsum/dscale_nt;
+
+		    if (dratio > Double.MAX_VALUE)
+		    {
+		       beta_nt[ni] = Double.MAX_VALUE;// dtempsum/dscale_nt;
+		    }
+		    else
+		    {
+		       beta_nt[ni] = dratio;// dtempsum/dscale_nt;
+		    }
 		 }
 	      }
+
+	      if (bscalebeta)
+	      {
+                 for (int ni = 0; ni < numstates; ni++)
+	         {
+	            beta_nt[ni]/= dsumbeta;
+
+		    if (beta_nt[ni] < EPSILONSTATE)//&&(!bdummy))// || (ni < numstates-1))) 
+		    {
+		       beta_nt[ni] = EPSILONSTATE;
+		    }
+		 }
+	      }		
 		
 	      ddenom = 0;
 		
@@ -8978,10 +9966,28 @@ public class ChromHMM
 
 	   //alpha_t(s)=P(o_0,...,o_t,x_t=s|lambda)
 	   //converts the alpha terms to probabilities
-	   for (int ni = 0; ni < numstates; ni++)
-	   {
-	      alpha_nt[ni] /= dscale;
+	   if (bscalebeta)
+           {
+	      for (int ns = 0; ns < numstates; ns++)
+	      {
+                 alpha_nt[ns] /= dscale;
+
+  		 if ((alpha_nt[ns] < EPSILONSTATE)&&(emissionproducts_nobserveindex[ns]>0))//(ns < numstates-1))) 
+	         {
+	            alpha_nt[ns] = EPSILONSTATE;
+		 }
+	      }
 	   }
+	   else
+	   {
+	      for (int ns = 0; ns < numstates; ns++)
+	      {
+                 alpha_nt[ns] /= dscale;
+	      }
+	   }
+	     
+
+
 	   dloglikeseq += Math.log(dscale); 
 
            if (bscaleemissions)
@@ -9039,10 +10045,29 @@ public class ChromHMM
 	      scale[nt] = dscale;
               //scale_t(s)=P(o_0,...,o_t|lambda) summed over all states
 
-	      for (int ns = 0; ns < numstates; ns++)
+	      if (bscalebeta)
 	      {
-                 alpha_nt[ns] /= dscale;
-              }
+	         for (int ns = 0; ns < numstates; ns++)
+	         {
+                    alpha_nt[ns] /= dscale;
+
+		    if ((alpha_nt[ns] < EPSILONSTATE)&&(emissionproducts_nobserveindex[ns]>0))//(ns < numstates-1))) 
+		    {
+		       alpha_nt[ns] = EPSILONSTATE;
+		    }
+		 }
+	      }
+      	      else
+	      {
+	         for (int ns = 0; ns < numstates; ns++)
+	         {
+                    alpha_nt[ns] /= dscale;
+		 }
+	      }
+	      //for (int ns = 0; ns < numstates; ns++)
+	      //{
+              //   alpha_nt[ns] /= dscale;
+              //}
 
       	      dloglikeseq += Math.log(dscale);
 
@@ -9055,11 +10080,25 @@ public class ChromHMM
 	   //backward step
 	   //beta_t(s)=P(o_t+1,...,o_T|x_t=s,lambda)
            int nlastindex = numtime_nseq-1;
-           double dinitval = 1.0/scale[nlastindex];
+	   double dinitval;
+	   if (bscalebeta)
+	   {
+	      dinitval = 1.0/numstates;
+	   }
+	   else
+	   {
+              dinitval = 1.0/scale[nlastindex];
+	   }
+
            for (int ns = 0; ns < numstates; ns++)
 	   {
 	      beta_ntp1[ns] = dinitval;
 	   }
+	   //double dinitval = 1.0/scale[nlastindex];
+	   //for (int ns = 0; ns < numstates; ns++)
+	   //{
+	   // beta_ntp1[ns] = dinitval;
+	   //}
 
 	   double ddenom = 0;	       
 
@@ -9098,6 +10137,7 @@ public class ChromHMM
 	         tempproductbetaemiss[ns] = beta_ntp1[ns]*emissionproducts_combo_ntp1[ns];
 	      }
 
+	      double dsumbeta = 0;
 	      //double dscaleinv = 1.0/scale[nt];
 	      double dscale_nt = scale[nt];
               //scale_t(s)=P(o_0,...,o_t|lambda) summed over all states
@@ -9130,17 +10170,47 @@ public class ChromHMM
 		    }
 		 }
 
-		 double dratio = dtempsum/dscale_nt;
+		 if (bscalebeta)
+		 {
+		    beta_nt[ni] = dtempsum;
+		    dsumbeta += dtempsum;
+		 }
+	         else
+		 {
+	            double dratio = dtempsum/dscale_nt;
+		    if (dratio > Double.MAX_VALUE)
+		    {
+		       beta_nt[ni] = Double.MAX_VALUE;//dtempsum/dscale_nt;
+		    }
+		    else
+		    {
+		       beta_nt[ni] = dratio;
+		    }
+		 }
+		 //double dratio = dtempsum/dscale_nt;
 
-		 if (dratio > Double.MAX_VALUE)
-		 {
-		     beta_nt[ni] = Double.MAX_VALUE;// dtempsum/dscale_nt;
-		 }
-		 else
-		 {
-		     beta_nt[ni] = dratio;//dtempsum/dscale_nt;
-		 }
+		 //if (dratio > Double.MAX_VALUE)
+		 //{
+		 //    beta_nt[ni] = Double.MAX_VALUE;// dtempsum/dscale_nt;
+		 //}
+		 //else
+		 //{
+		 //    beta_nt[ni] = dratio;//dtempsum/dscale_nt;
+		 //}
 	      }
+
+	      if (bscalebeta)
+	      {
+                 for (int ni = 0; ni < numstates; ni++)
+	         {
+	            beta_nt[ni]/= dsumbeta;
+
+		    if (beta_nt[ni] < EPSILONSTATE)//&&(!bdummy))// || (ni < numstates-1))) 
+		    {
+		       beta_nt[ni] = EPSILONSTATE;
+		    }
+		 }
+	      }		
 		
 	      ddenom = 0;
 		
@@ -9778,6 +10848,8 @@ public class ChromHMM
 	  for (int ns = 0; ns < numstates; ns++)
           {
 	      double[][] emissionprobs_ns = emissionprobs[ns];
+
+
 	      for (int nmark = 0; nmark < emissionprobs_ns.length; nmark++)
 	      {
 		  double[] emissionprobs_ns_nmark = emissionprobs_ns[nmark];
@@ -9838,7 +10910,10 @@ public class ChromHMM
 	  //dconvergediff is only enforced if greater thanor equal to 0
           dprevloglike = dloglike;       
 
-	  makeStateOrdering();
+	  if (borderrows)
+	  {
+	     makeStateOrdering();
+	  }
 
 	  if (bordercols)
 	  {
@@ -10390,6 +11465,7 @@ public class ChromHMM
 	  for (int ns = 0; ns < numstates; ns++)
           {
 	      double[][] emissionprobs_ns = emissionprobs[ns];
+
 	      for (int nmark = 0; nmark < emissionprobs_ns.length; nmark++)
 	      {
 		  double[] emissionprobs_ns_nmark = emissionprobs_ns[nmark];
@@ -10450,7 +11526,10 @@ public class ChromHMM
 	  //dconvergediff is only enforced if greater thanor equal to 0
           dprevloglike = dloglike;       
 
-	  makeStateOrdering();
+	  if (borderrows)
+	  {
+	     makeStateOrdering();
+	  }
 
 	  if (bordercols)
 	  {
@@ -10901,7 +11980,7 @@ public class ChromHMM
 	    }
 	}
 
-	Arrays.sort(chromfiles);//gives a deterministic reproducible starting order to the chromfiles
+	Arrays.sort(chromfiles);//gives a deterministic reproducible starting order to the chromfiles       
 	
 	//randomly orders the chromosome files to visit
 	RecIntDouble[] recA = new RecIntDouble[chromfiles.length];
@@ -11178,12 +12257,13 @@ public class ChromHMM
 
 	if (szcommand.equalsIgnoreCase("Version"))
 	{
-	    System.out.println("This is Version 1.17 of ChromHMM (c) Copyright 2008-2012 Massachusetts Institute of Technology");
+	    System.out.println("This is Version 1.18 of ChromHMM (c) Copyright 2008-2012 Massachusetts Institute of Technology");
 	}
         else if ((szcommand.equals("BinarizeBam"))||(szcommand.equalsIgnoreCase("BinarizeBed")))
 	{
 	    boolean bgzip = false;
 	    boolean bpairend = false;
+	    boolean bsplit = false;
 	    String szcontroldir=null;
 	    int nflankwidthcontrol = 5;
 	    int nshift = 100;
@@ -11201,8 +12281,10 @@ public class ChromHMM
 	    String szoutputsignaldir = null;
 	    int npseudocountcontrol = 1;
 	    boolean bpeaks = false;
-
+	    int numsplitbins = ChromHMM.DEFAULT_NUMSPLITBINS;
+	    int nsplitindex = -1;
 	    boolean bshift = false;
+	    boolean bflagsplitbins = false;
 
 	    int nargindex = 1;
 	    if (args.length <= 4)
@@ -11243,6 +12325,16 @@ public class ChromHMM
 		     {
 		         bgzip = true;
 		     }
+                     else if (args[nargindex].equals("-i"))
+		     {
+			 nsplitindex = Integer.parseInt(args[++nargindex]);
+		     }
+		     else if (args[nargindex].equals("-j"))
+		     {
+                         numsplitbins = Integer.parseInt(args[++nargindex]);
+			 bflagsplitbins = true;
+			 //bsplit = true;
+		     }
 		     else if (args[nargindex].equals("-n"))
 		     {
 		         nshift = Integer.parseInt(args[++nargindex]);
@@ -11267,6 +12359,10 @@ public class ChromHMM
 		     else if (args[nargindex].equals("-s"))
 		     {
 		        noffsetleft = Integer.parseInt(args[++nargindex]);
+		     }
+		     else if (args[nargindex].equals("-splitrows"))
+		     {
+			 bsplit = true;
 		     }
 		     else if (args[nargindex].equals("-strictthresh"))
 		     {
@@ -11323,6 +12419,12 @@ public class ChromHMM
 		bok = false;
 	    }
 
+	    if ((!bsplit)&& (bflagsplitbins))
+	    {
+	       bok = false;
+	    }
+
+
 	    if ((bok)&&(nargindex == args.length-4))
 	    {
 	       String szchromlengthfile = args[nargindex++];
@@ -11344,12 +12446,27 @@ public class ChromHMM
 		   szcontroldir = szmarkdir;
 	       }
 
-	       Preprocessing.makeBinaryDataFromBed(szchromlengthfile,szmarkdir,szcontroldir,nflankwidthcontrol,szcellmarkfiletable,
+	       if (nsplitindex >= 0)
+	       {
+		   if (bpeaks)
+		   {
+		      Preprocessing.makeBinaryDataFromPeaksSplit(szchromlengthfile, szmarkdir, szoutputbinarydir, szcellmarkfiletable,
+					                         nbinsize, bgzip, numsplitbins, nsplitindex, noffsetleft,noffsetright);
+		   }
+		   else
+		   {
+		      bok = false;
+		   }
+	       }
+	       else
+	       {
+	          Preprocessing.makeBinaryDataFromBed(szchromlengthfile,szmarkdir,szcontroldir,nflankwidthcontrol,szcellmarkfiletable,
 						nshift,bcenterinterval, noffsetleft,noffsetright,szoutputsignaldir,
 						szoutputbinarydir,szoutputcontroldir,
 					        dpoissonthresh,dfoldthresh,bcontainsthresh,
-						   npseudocountcontrol,nbinsize,szcolfields,bpeaks, dcountthresh,szcommand.equalsIgnoreCase("BinarizeBam"),bpairend, bgzip);	   
-	          
+					        npseudocountcontrol,nbinsize,szcolfields,bpeaks, dcountthresh,szcommand.equalsIgnoreCase("BinarizeBam"),
+						bpairend, bgzip, bsplit, numsplitbins);	   	          
+	       }
 	    }
 	    else
             {
@@ -11361,16 +12478,17 @@ public class ChromHMM
 	    {
 	       if (szcommand.equalsIgnoreCase("BinarizeBed"))
 	       {
+		   //v1.18 update
                   System.out.println("usage BinarizeBed [-b binsize][-c controldir][-center][-colfields chromosome,start,end[,strand]][-e offsetend][-f foldthresh]"+
-                                  "[-g signalthresh][-gzip][-n shift][-o outputcontroldir][-p poissonthresh][-peaks][-s offsetstart][-strictthresh][-t outputsignaldir]"+
+                                  "[-g signalthresh][-gzip][-n shift][-o outputcontroldir][-p poissonthresh][-peaks [-i splitindex]][-s offsetstart][-splitrows [-j numsplitbins]][-strictthresh][-t outputsignaldir]"+
                                   "[-u pseudocountcontrol][-w flankwidthcontrol] "+
                                   "chromosomelengthfile inputbeddir cellmarkfiletable outputbinarydir");
 	       }
 	       else
 	       {
 		   System.out.println("usage BinarizeBam [-b binsize][-c controldir][-e offsetend][-f foldthresh]"+
-                                  "[-g signalthresh][-gzip][-o outputcontroldir][-p poissonthresh][-paired|[-center][-n shift][-peaks]]"+
-                                  "[-s offsetstart][-strictthresh][-t outputsignaldir]"+
+                                  "[-g signalthresh][-gzip][-o outputcontroldir][-p poissonthresh][-paired|[-center][-n shift][-peaks [-i splitindex]]"+
+                                  "[-s offsetstart][-splitrows [-j numsplitbins]][-strictthresh][-t outputsignaldir]"+
                                   "[-u pseudocountcontrol][-w flankwidthcontrol] "+
 				      "chromosomelengthfile inputbamdir cellmarkfiletable outputbinarydir");
 	       }
@@ -11380,11 +12498,14 @@ public class ChromHMM
 	{
 	    boolean bcontainsthresh = true;
 	    boolean bgzip = false;
+	    boolean bsplit = false;
 	    double dfoldthresh = 0;
 	    double dcountthresh = 0;
 	    double dpoissonthresh = 0.0001;
 	    int nflankwidthcontrol = 5;
 	    int npseudocountcontrol = 1;
+	    int numsplitbins = ChromHMM.DEFAULT_NUMSPLITBINS;
+	    boolean bflagsplitbins = false;
 
 	    String szsignaldir = null;
 	    String szoutputdir = null;
@@ -11417,9 +12538,18 @@ public class ChromHMM
 		     {
 		        bgzip = true;
 		     }
+		     else if (args[nargindex].equals("-j"))
+		     {
+			 numsplitbins = Integer.parseInt(args[++nargindex]);
+			 bflagsplitbins = true;
+		     }
 		     else if (args[nargindex].equals("-p"))
 		     {
 		        dpoissonthresh = Double.parseDouble(args[++nargindex]);
+		     }
+		     else if (args[nargindex].equals("-splitrows"))
+		     {
+			 bsplit = true;
 		     }
 		     else if (args[nargindex].equals("-strictthresh"))
 		     {
@@ -11445,6 +12575,11 @@ public class ChromHMM
 	       {
 		   bok = false;
 	       }
+
+	       if ((!bsplit)&& (bflagsplitbins))
+	       {
+	          bok = false;
+	       }
 	    
 	       if ((bok)&&(nargindex == args.length-2))
 	       {
@@ -11464,12 +12599,12 @@ public class ChromHMM
 	          {
                      Preprocessing.makeBinaryDataFromSignalAgainstControl(szsignaldir,szcontroldir, szoutputdir,
 								   dpoissonthresh, dfoldthresh,bcontainsthresh, 
-									  nflankwidthcontrol,npseudocountcontrol, dcountthresh,bgzip);
+									  nflankwidthcontrol,npseudocountcontrol, dcountthresh,bgzip, bsplit, numsplitbins);
 	          }
 	          else
 	          {
-		      Preprocessing.makeBinaryDataFromSignalUniform(szsignaldir, szoutputdir, dpoissonthresh, 
-                                                                    dfoldthresh, bcontainsthresh,dcountthresh,bgzip);
+		     Preprocessing.makeBinaryDataFromSignalUniform(szsignaldir, szoutputdir, dpoissonthresh, 
+								   dfoldthresh, bcontainsthresh,dcountthresh,bgzip, bsplit, numsplitbins);
 	          }
 	       }
 	       else
@@ -11480,9 +12615,95 @@ public class ChromHMM
 
 	    if (!bok)
             {
-               System.out.println("usage BinarizeSignal [-c controldir][-f foldthresh][-g signalthresh][-gzip][-p poissonthresh][-strictthresh][-u pseudocountcontrol][-w flankwidth] signaldir outputdir");
+               System.out.println("usage BinarizeSignal [-c controldir][-f foldthresh][-g signalthresh][-gzip][-p poissonthresh][-splitrows [-j numsplitbins]][-strictthresh][-u pseudocountcontrol][-w flankwidth] signaldir outputdir");
             }	       
 	    
+	}
+	else if (szcommand.equalsIgnoreCase("MergeBinary"))
+	{
+
+	    boolean bgzip = false;
+	    int numsplitbins = ChromHMM.DEFAULT_NUMSPLITBINS;
+	    boolean bsplit = false;
+	    String szdirlistfile = null;
+
+	    String szinputdir = null;
+	    String szoutputdir = null;
+	    boolean bflagsplitbins = false;
+
+	    if (args.length <= 2)
+	    {
+		bok = false;
+	    }
+	    else
+	    {
+	       int nargindex = 1;
+               try
+	       {
+	          while (nargindex < args.length-2)
+	          {
+		     if (args[nargindex].equals("-f"))
+		     {
+			 szdirlistfile = args[++nargindex];
+		     }
+		     else if (args[nargindex].equals("-j"))
+		     {
+			numsplitbins = Integer.parseInt(args[++nargindex]);
+			bflagsplitbins = true;
+		        //bsplit = true;
+		     }
+		     else if (args[nargindex].equals("-splitrows"))
+		     {
+			bsplit = true;
+		     }
+                     else if (args[nargindex].equals("-gzip"))
+		     {
+		        bgzip = true;
+		     }
+		     else
+		     {
+		        bok = false;
+			break;
+		     }
+		     nargindex++;
+		  }
+	       }
+	       catch (NumberFormatException ex)
+	       {
+		   bok = false;
+	       }
+
+	       if ((!bsplit)&& (bflagsplitbins))
+	       {
+	          bok = false;
+	       }
+	    
+	       if ((bok)&&(nargindex == args.length-2))
+	       {
+	          szinputdir = args[nargindex++];
+	          szoutputdir = args[nargindex];
+
+		  File f = new File(szoutputdir);
+	          if (!f.exists())
+	          {
+	             if (!f.mkdirs())
+	             {
+		        throw new IllegalArgumentException(szoutputdir+" does not exist and could not be created!");
+		     }
+		  }		  
+	      
+		  Preprocessing.mergeBinarizedFiles(szinputdir, szoutputdir, szdirlistfile, bsplit, numsplitbins, bgzip);
+	       }
+	       else
+	       {
+		   bok = false;
+	       }
+	    }
+
+	    if (!bok)
+            {
+               System.out.println("usage MergeBinary [-f dirlistfile][-gzip][-splitrows [-j numsplitbins]] inputdir outputdir");
+            }	       
 	}
 	else if (szcommand.equalsIgnoreCase("CompareModels"))
 	{
@@ -11605,6 +12826,7 @@ public class ChromHMM
 	    boolean breadsegment = false;
 	    boolean bprintimage = true;
             boolean bscaleemissions = false;
+	    boolean bscalebeta = false;
 	    String szchromlengthfile = null;
 	    int nbinsize = ChromHMM.DEFAULT_BINSIZEBASEPAIRS;
 	    String szoutfileID = "";
@@ -11667,6 +12889,10 @@ public class ChromHMM
 		  {
 		     breadstatebyline = true;
 		  }
+                  else if (args[nargindex].equals("-scalebeta"))
+	          {
+		      bscalebeta = true;
+		  }
 		  else
 		  { 
 		     bok = false;
@@ -11697,7 +12923,8 @@ public class ChromHMM
 	       {
 		   ChromHMM theHMM = new ChromHMM(szinputdir, szsegmentdir,szinputfilelist,szconfusionfileprefix, 
                                                   szmodelfile, szoutfileID, nbinsize, breadposterior,
-						  breadsegments,breadstatebyline,szinclude,bappend, theColor,bprintimage,blowmem, bscaleemissions);
+						  breadsegments,breadstatebyline,szinclude,bappend, theColor,bprintimage,blowmem, 
+                                                  bscaleemissions,bscalebeta);
 
 		  if (blowmem)
 		  {
@@ -11705,7 +12932,7 @@ public class ChromHMM
 		  }
 		  else
 		  {
-		      theHMM.makeSegmentationConfusion();
+		     theHMM.makeSegmentationConfusion();
 		  }
 	       }
 
@@ -11718,7 +12945,7 @@ public class ChromHMM
 	    if (!bok)
 	    {
 		System.out.println("usage: EvalSubset [-append][-b binsize][-f inputfilelist][-i outfileID]"+
-                                   "[-lowmem][-many][-noimage][-readposterior|-readstatesbyline]"+
+                                   "[-lowmem][-many][-noimage][-readposterior|-readstatesbyline][-scalebeta]"+
                                    "  inputmodel inputdir segmentdir outconfusionfileprefix includemarks");
 	    }
         }
@@ -11729,12 +12956,15 @@ public class ChromHMM
 	    boolean bprintposterior = false;
 	    boolean bprintstatebyline = false;
 	    boolean bnoprintsegment = false;
+	    boolean bscalebeta = false;
 	    String szchromlengthfile = null;
 	    int nbinsize = ChromHMM.DEFAULT_BINSIZEBASEPAIRS;
+	    //int numsplitbins = ChromHMM.DEFAULT_NUMSPLITBINS;
 	    String szoutfileID = "";
 	    boolean blowmem = false;
 	    boolean bgzip = false;
 	    int nargindex = 1;
+	    boolean bsplit = false;
 
             try
 	    {
@@ -11756,6 +12986,11 @@ public class ChromHMM
 		  {
 		     szoutfileID = args[++nargindex];
 		  }
+		  //else if (args[nargindex].equals("-j"))
+	          //{
+	       	  //   numsplitbins = Integer.parseInt(args[++nargindex]);
+		  //   bsplit = true;
+		  //}
 		  else if (args[nargindex].equals("-l"))
 		  {
 		     szchromlengthfile = args[++nargindex];
@@ -11779,6 +13014,14 @@ public class ChromHMM
 		  else if (args[nargindex].equals("-printstatesbyline"))
 		  {
 		     bprintstatebyline = true;
+		  }
+                  else if (args[nargindex].equals("-scalebeta"))
+	          {
+		     bscalebeta = true;
+		  }
+                  else if (args[nargindex].equals("-splitrows"))
+	          {
+		     bsplit = true;
 		  }
 		  else
 		  { 
@@ -11836,7 +13079,7 @@ public class ChromHMM
 	       {
 
 		   ChromHMM theHMM = new ChromHMM(szinputdir, szinputfilelist,szchromlengthfile, szoutputdir, szmodelfile, szoutfileID, nbinsize, bprintposterior,
-						  bprintsegments,bprintstatebyline, blowmem,bscaleemissions, bgzip);
+						  bprintsegments,bprintstatebyline, blowmem,bscaleemissions, bgzip, bsplit, bscalebeta);
 
 		  if (blowmem)
 		  {
@@ -11860,7 +13103,7 @@ public class ChromHMM
 	    if (!bok)
 	    {
 		System.out.println("usage: MakeSegmentation [-b binsize][-f inputfilelist][-gzip][-i outfileID][-l chromosomelengthfile][-lowmem][-many][-nobed]"+
-                                   "[-printposterior][-printstatesbyline]"+
+                                   "[-printposterior][-printstatesbyline][-scalebeta][-splitrows]"+
                                    "  modelfile inputdir outputdir");
 	    }
 	}
@@ -12289,6 +13532,8 @@ public class ChromHMM
 	    boolean bscaleemissions = false;
 	    boolean bpseudo = false;
 	    boolean bgzip = false;
+	    boolean bsplit = false;
+	    int numsplitbins = ChromHMM.DEFAULT_NUMSPLITBINS;
 
 	    String szinputfilelist = null;
 	    String szchromlengthfile = null;
@@ -12296,11 +13541,13 @@ public class ChromHMM
 	    String szoutfileID = "";
 	    int nstateorder =ChromHMM.STATEORDER_EMISSION;
 	    boolean bnoordercols = false;
+	    boolean bnoorderrows = false;
 	    int nargindex = 1;
 	    int nmaxseconds = -1;
 	    int nmaxprocessors = 0;
 	    int numincludeseq = 0;
 	    boolean bnormalEM = false;
+	    boolean bscalebeta = false;
 
 	    int nr=ChromHMM.DEFAULTCOLOR_R;
 	    int ng=ChromHMM.DEFAULTCOLOR_G;
@@ -12375,6 +13622,11 @@ public class ChromHMM
 			 break;
 		     }
 		  }
+		  //else if (args[nargindex].equals("-j"))
+	          //{
+                  //   numsplitbins = Integer.parseInt(args[++nargindex]);
+		  //   bsplit = true;
+		  // }
 		  else if (args[nargindex].equals("-l"))
 		  {
 		      szchromlengthfile = args[++nargindex];
@@ -12449,6 +13701,10 @@ public class ChromHMM
 		  {
 		     nseed = Integer.parseInt(args[++nargindex]);
 		  }
+                  else if (args[nargindex].equals("-scalebeta"))
+		  {
+		      bscalebeta = true;
+		  }
 		  else if (args[nargindex].equals("-t"))
 		  {
 		     dloadsmoothtransition = Double.parseDouble(args[++nargindex]);
@@ -12457,9 +13713,17 @@ public class ChromHMM
 		  {
 		     bnoordercols = true;
 		  }
+                  else if (args[nargindex].equals("-holdroworder"))
+	          {
+		     bnoorderrows = true;
+		  }
 		  else if (args[nargindex].equals("-printstatebyline"))
 		  {
 		      bprintstatebyline = true;
+		  }
+                  else if (args[nargindex].equals("-splitrows"))
+	          {
+		      bsplit = true;
 		  }
 		  //else if (args[nargindex].equals("-u"))
 		  //{
@@ -12548,6 +13812,7 @@ public class ChromHMM
 
 	          boolean bprintsegments = !bnoprintsegment; 
 	          boolean bordercols = !bnoordercols;
+		  boolean borderrows = !bnoorderrows;
 		  if ((szoutfileID.equals(""))&&(ninitmethod == ChromHMM.INITMETHOD_RANDOM))
 		  {
 		      szoutfileID = ""+nseed;
@@ -12568,7 +13833,7 @@ public class ChromHMM
 						 szInitFile,dloadsmoothemission,dloadsmoothtransition,dinformationsmooth,
 					         nmaxiterations,dconvergediff,nmaxseconds, bprintposterior,bprintsegments,bprintstatebyline,
 						 nbinsize,szoutfileID,nstateorder,bordercols,nzerotransitionpower,theColor,bnormalEM, nmaxprocessors, 
-                                                 blowmem,numincludeseq,bprintimage,bscaleemissions, bpseudo, bgzip);
+                                                 blowmem,numincludeseq,bprintimage,bscaleemissions, bpseudo, bgzip, bsplit, borderrows, bscalebeta);
 	          theHMM.buildModel();
 
 
@@ -12843,9 +14108,9 @@ public class ChromHMM
 	    if (!bok)
 	    {
 		System.out.println("usage: LearnModel [-b binsize][-color r,g,b][-d convergedelta][-e loadsmoothemission][-f inputfilelist][-gzip][-h informationsmooth]"+
-                                     "[-holdcolumnorder][-i outfileID][-init information|random|load][-l chromosomelengthfile][-lowmem][-m modelinitialfile][-many]"+
-                                    "[-n numseq][-nobed][-nobrowser][-noenrich][-noimage][-p maxprocessors][-pseudo][-printposterior][-printstatebyline][-r maxiterations][-s seed]"+
-                                    "[-stateordering emission|transition]"+
+                                     "[-holdcolumnorder][-holdroworder][-i outfileID][-init information|random|load][-l chromosomelengthfile][-lowmem][-m modelinitialfile][-many]"+
+                                    "[-n numseq][-nobed][-nobrowser][-noenrich][-noimage][-p maxprocessors][-pseudo][-printposterior][-printstatebyline][-r maxiterations][-s seed][-scalebeta]"+
+                                    "[-splitrows][-stateordering emission|transition]"+
                                    "[-t loadsmoothtransition][-u coorddir][-v anchorfiledir][-x maxseconds][-z zerotransitionpower] inputdir outputdir numstates assembly");
 	    }
 	} 
@@ -12861,6 +14126,8 @@ public class ChromHMM
 	    boolean bnoprintsegment = false;
 	    boolean bprintimage = true;
 	    int nargindex = 1;
+	    String szreorderinbedfile = null;
+            String szreorderoutbedfile = null;
 
 	    int nr=ChromHMM.DEFAULTCOLOR_R;
 	    int ng=ChromHMM.DEFAULTCOLOR_G;
@@ -12906,6 +14173,25 @@ public class ChromHMM
 		      szstateorderingfile = args[++nargindex];
 		      nstateorder = ChromHMM.STATEORDER_USER;
 		  }
+                  else if (args[nargindex].equals("-r"))
+	          {
+		     szreorderinbedfile = args[++nargindex];
+		     if (nargindex + 1 == args.length)
+		     {
+			 bok = false;
+			 break;
+		     }
+		     else
+		     {
+		        szreorderoutbedfile = args[++nargindex];
+		     }
+
+		     if (szreorderinbedfile.equals(szreorderoutbedfile))
+		     {
+			 System.out.println("bedfilein cannot be the same as bedfileout");
+			 bok = false;
+		     }
+		  }
 		  else if (args[nargindex].equals("-stateordering"))
 		  {
                      String sztoken = args[++nargindex];
@@ -12939,6 +14225,10 @@ public class ChromHMM
 		bok = false;
 	    }
 
+	    if ((szstateorderingfile == null) && (szreorderinbedfile != null))
+	    {
+	       bok = false;
+	    }
 
 	    if (bok&&(nargindex==args.length-2))
 	    {
@@ -12959,7 +14249,7 @@ public class ChromHMM
 	          boolean bprintsegments = !bnoprintsegment; 
 	          boolean bordercols = !bnoordercols;
 		  ChromHMM theHMM = new ChromHMM(szInitFile, szoutputdir, szstateorderingfile, szcolumnorderingfile, szoutfileID,nstateorder,
-                                                 bordercols,theColor,szlabelmapping,bprintimage);
+                                                 bordercols,theColor,szlabelmapping,bprintimage, szreorderinbedfile, szreorderoutbedfile);
 		  theHMM.reorderModel();
 	       }
 	    }
@@ -12972,7 +14262,7 @@ public class ChromHMM
 	    {
 
 		System.out.println("usage: Reorder [-color r,g,b][-f columnorderingfile][-holdcolumnorder][-i outfileID]"+
-                                   "[-m labelmappingfile][-noimage][-o stateorderingfile][-stateordering emission|transition] inputmodel outputdir");
+                                   "[-m labelmappingfile][-noimage][-o stateorderingfile [-r bedfilein bedfileout]][-stateordering emission|transition] inputmodel outputdir");
 
 	    }
 	}
@@ -13093,7 +14383,7 @@ public class ChromHMM
 	else
 	{
 	    System.out.println("Need to specify the mode BinarizeBam|BinarizeBed|BinarizeSignal|CompareModels|ConvertGeneTable|EvalSubset|LearnModel|MakeBrowserFiles"+
-                               "|MakeSegmentation|NeighborhoodEnrichment|StatePruning|OverlapEnrichment|Reorder|Version");
+                               "|MakeSegmentation|MergeBinary|NeighborhoodEnrichment|StatePruning|OverlapEnrichment|Reorder|Version");
 
 	}
     }
