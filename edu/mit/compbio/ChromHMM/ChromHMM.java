@@ -547,11 +547,15 @@ public class ChromHMM
     String szreorderoutbedfile;
 
 
-
     /**
      * Indicate the beta's should be rescaled separately and also enforces that no beta value goes below STATEEPSILON or alpha if emission is greater than 0
      */
     boolean bscalebeta;
+
+    /**
+     * True if should also reorder the columns of the model file
+     */
+    boolean breordercolsmodel;
 
     ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
     /**
@@ -825,7 +829,8 @@ public class ChromHMM
       */
     public ChromHMM(String szInitFile, String szoutputdir, String szstateorderingfile, String szcolumnorderingfile,
                     String szoutfileID,int nstateorder,boolean bordercols,Color theColor,
-                    String szlabelmapping, boolean bprintimage,String szreorderinbedfile, String szreorderoutbedfile) throws IOException
+                    String szlabelmapping, boolean bprintimage,String szreorderinbedfile, String szreorderoutbedfile,
+                    boolean breordercolsmodel) throws IOException
     {
 	this.szcolumnorderingfile = szcolumnorderingfile;
 	this.szInitFile = szInitFile;
@@ -839,7 +844,7 @@ public class ChromHMM
 
 	this.szreorderinbedfile = szreorderinbedfile;
         this.szreorderoutbedfile = szreorderoutbedfile;
-
+	this.breordercolsmodel = breordercolsmodel;
         hmlabelExtend = new HashMap();
 	makeLabelMapping(szlabelmapping);
 
@@ -1728,11 +1733,23 @@ public class ChromHMM
 	   double[][] emissionprobs_stateordering_ni = emissionprobs[stateordering[ni]];
            for (int nj = 0; nj < emissionprobs_stateordering_ni.length; nj++)
 	   {
-	       double[] emissionprobs_stateordering_ni_nj = emissionprobs_stateordering_ni[nj];
-	       for (int nk = 0; nk < emissionprobs_stateordering_ni_nj.length; nk++)
-	       {
-	          pw.println("emissionprobs\t"+(ni+1)+"\t"+nj+"\t"+datasets[nj]+"\t"+nk+"\t"+emissionprobs_stateordering_ni_nj[nk]);
-	       }
+	      double[] emissionprobs_stateordering_ni_nj;
+	      String szdataset;
+	      if (breordercolsmodel)
+	      {
+	         emissionprobs_stateordering_ni_nj = emissionprobs_stateordering_ni[colordering[nj]];
+	         szdataset = datasets[colordering[nj]];
+	      }
+	      else
+	      {
+	         emissionprobs_stateordering_ni_nj = emissionprobs_stateordering_ni[nj];
+	         szdataset = datasets[nj];
+	      }
+
+	      for (int nk = 0; nk < emissionprobs_stateordering_ni_nj.length; nk++)
+	      {
+	          pw.println("emissionprobs\t"+(ni+1)+"\t"+nj+"\t"+szdataset+"\t"+nk+"\t"+emissionprobs_stateordering_ni_nj[nk]);	  
+	      }
 	   }
 	}
 	pw.close();
@@ -2964,13 +2981,15 @@ public class ChromHMM
 	    {
 		int nstate = Integer.parseInt(st.nextToken())-1;
 		int nmod = Integer.parseInt(st.nextToken());
+		String szdataset = st.nextToken();
 		if (datasets[nmod]==null)
 		{
-		    datasets[nmod] = st.nextToken();
+		    datasets[nmod] = szdataset;//st.nextToken();
 		}
-		else
+		else if (!szdataset.equals(datasets[nmod]))
 		{
-		    st.nextToken();
+		    throw new IllegalArgumentException("For mark "+nmod+" in model file found "+szdataset+", but expecting "+datasets[nmod]+"."
+                                                      +" This might be because columns of binarized file are in a different order from model learning.");
 		}
 		int nval = Integer.parseInt(st.nextToken());
 		double dprob = Double.parseDouble(st.nextToken());
@@ -3957,6 +3976,7 @@ public class ChromHMM
 	  String szLine;
 	  br.readLine(); //first line tells cell type and chromosome
 	  br.readLine();//flush mark header
+
 	  ArrayList aldata = new ArrayList();
 	  while ((szLine = br.readLine())!=null)
 	  {
@@ -11721,8 +11741,8 @@ public class ChromHMM
 	       int ntoken = 0;
 	       while (st.hasMoreTokens())
 	       {
-		   datasets[ntoken] = st.nextToken();
-		   ntoken++;
+		  datasets[ntoken] = st.nextToken();
+	          ntoken++;
 	       }
  	       //numdatasets is the number of marks we are integrating
       	       numdatasets = datasets.length; 
@@ -12067,8 +12087,8 @@ public class ChromHMM
 	       int ntoken = 0;
 	       while (st.hasMoreTokens())
 	       {
-		   datasets[ntoken] = st.nextToken();
-		   ntoken++;
+		  datasets[ntoken] = st.nextToken();
+		  ntoken++;
 	       }
 	    }
 	    else
@@ -12257,7 +12277,7 @@ public class ChromHMM
 
 	if (szcommand.equalsIgnoreCase("Version"))
 	{
-	    System.out.println("This is Version 1.18 of ChromHMM (c) Copyright 2008-2012 Massachusetts Institute of Technology");
+	    System.out.println("This is Version 1.19 of ChromHMM (c) Copyright 2008-2012 Massachusetts Institute of Technology");
 	}
         else if ((szcommand.equals("BinarizeBam"))||(szcommand.equalsIgnoreCase("BinarizeBed")))
 	{
@@ -13180,6 +13200,7 @@ public class ChromHMM
 	    boolean bbaseres = ChromHMM.DEFAULT_OVERLAPENRICHMENT_BBASERES; //boolean ChromHMM.DEFAULT_OVERLAPENRICHMENT_BBASERES = true;
 	    String szoutfile;
 	    boolean buniformheat = ChromHMM.DEFAULT_OVERLAPENRICHMENT_BUNIFORMHEAT; //boolean ChromHMM.DEFAULT_OVERLAPENRICHMENT_BUNIFORMHEAT = false;
+	    boolean bstringlabels = false;
 
 
 	    String sztitle = "Fold Enrichments";
@@ -13249,6 +13270,10 @@ public class ChromHMM
 		  {
 		     bcenter = true;
 		  }
+		  else if (args[nargindex].equals("-labels"))
+		  {
+		      bstringlabels = true;
+		  }
                   else if (args[nargindex].equals("-m"))
 		  {
 		      szlabelmapping = args[++nargindex];
@@ -13304,12 +13329,12 @@ public class ChromHMM
 		   if (blowmem)
 		   {
 		      StateAnalysis.enrichmentMaxLowMem(szinput, szinputcoorddir,szinputcoordlist,noffsetleft,noffsetright,nbinsize,  
-							bcenter, bunique,  busesignal,szcolfields,bbaseres, szoutfile,bcolscaleheat,theColor,sztitle, szlabelmapping, bprintimage);
+							bcenter, bunique,  busesignal,szcolfields,bbaseres, szoutfile,bcolscaleheat,theColor,sztitle, szlabelmapping, bprintimage,bstringlabels);
 		   }
 		   else
 		   {
 		      StateAnalysis.enrichmentMax(szinput, szinputcoorddir,szinputcoordlist,noffsetleft,noffsetright,nbinsize,  
-						  bcenter, bunique,  busesignal,szcolfields,bbaseres, szoutfile,bcolscaleheat,theColor,sztitle, szlabelmapping,bprintimage);
+						  bcenter, bunique,  busesignal,szcolfields,bbaseres, szoutfile,bcolscaleheat,theColor,sztitle, szlabelmapping,bprintimage,bstringlabels);
 		   }
 	       }
 	       else
@@ -13326,7 +13351,7 @@ public class ChromHMM
 	    if (!bok)
 	    {
 		System.out.println("usage OverlapEnrichment [-a cell][-b binsize][-binres][-color r,g,b][-center][-colfields chromosome,start,end[,signal]]"+
-                                   "[-e offsetend][-f coordlistfile][-lowmem][-m labelmappingfile]"+
+                                   "[-e offsetend][-f coordlistfile][-labels][-lowmem][-m labelmappingfile]"+
                                    "[-multicount][-noimage][-posterior][-s offsetstart][-signal][-t title][-uniformscale]"+
                                    " inputsegment inputcoorddir outfileprefix");
 	    }
@@ -13342,6 +13367,7 @@ public class ChromHMM
 	    String szlabelmapping = null;
 	    boolean busestrand =ChromHMM.DEFAULT_NEIGHBORHOOD_BUSESTRAND; 
 	    boolean busesignal = ChromHMM.DEFAULT_NEIGHBORHOOD_BUSESIGNAL; 
+	    boolean bstringlabels = false;
 	    String szcolfields = null;
 	    int noffsetanchor = ChromHMM.DEFAULT_NEIGHBORHOOD_NOFFSETANCHOR; 
 	    String szoutfile; 
@@ -13399,6 +13425,10 @@ public class ChromHMM
 		  else if (args[nargindex].equals("-l"))
 		  {
 		     numleft = Integer.parseInt(args[++nargindex]);
+		  }
+		  else if (args[nargindex].equals("-labels"))
+		  {
+		      bstringlabels = true;
 		  }
 		  else if (args[nargindex].equals("-lowmem"))
 		  {
@@ -13474,12 +13504,12 @@ public class ChromHMM
 		   if (blowmem)
 		   {
 	              StateAnalysis.neighborhoodMaxLowMem(szinput,szanchorpositions,nbinsize,numleft,numright,
-							  nspacing,busestrand,busesignal,szcolfields,noffsetanchor,szoutfile,theColor,sztitle,szlabelmapping, bprintimage);
+							  nspacing,busestrand,busesignal,szcolfields,noffsetanchor,szoutfile,theColor,sztitle,szlabelmapping, bprintimage, bstringlabels);
 		   }
 		   else
 		   {
 	              StateAnalysis.neighborhoodMax(szinput,szanchorpositions,nbinsize,numleft,numright,
-						    nspacing,busestrand,busesignal,szcolfields,noffsetanchor,szoutfile,theColor,sztitle,szlabelmapping, bprintimage);
+						    nspacing,busestrand,busesignal,szcolfields,noffsetanchor,szoutfile,theColor,sztitle,szlabelmapping, bprintimage, bstringlabels);
 		   }
 	       }
 	       else
@@ -13496,7 +13526,7 @@ public class ChromHMM
 	    if (!bok)
 	    {
 		System.out.println("usage NeighborhoodEnrichment [-a cell][-b binsize][-color r,g,b][-colfields chromosome,position[,optionalcol1|,optionalcol1,optionalcol2]"+
-                                  "[-l numleftintervals][-lowmem][-m labelmappingfile][-noimage][-nostrand]"+
+                                  "[-l numleftintervals][-labels][-lowmem][-m labelmappingfile][-noimage][-nostrand]"+
                                   "[-o anchoroffset][-posterior][-r numrightintervals]"+
                                   "[-s spacing][-signal][-t title] inputsegment anchorpositions outfileprefix");
 	    }
@@ -13998,7 +14028,7 @@ public class ChromHMM
 							  ChromHMM.DEFAULT_OVERLAPENRICHMENT_BCENTER, !ChromHMM.DEFAULT_OVERLAPENRICHMENT_BCOUNTMULTI, 
                                                           ChromHMM.DEFAULT_OVERLAPENRICHMENT_BUSESIGNAL,null,//szcolfields,
                                                           ChromHMM.DEFAULT_OVERLAPENRICHMENT_BBASERES, szoutputdir+"/"+szprefix+ChromHMM.SZOVERLAPEXTENSION,
-								       !ChromHMM.DEFAULT_OVERLAPENRICHMENT_BUNIFORMHEAT,theColor,"Fold Enrichment "+szprefix,null,bprintimage);
+								       !ChromHMM.DEFAULT_OVERLAPENRICHMENT_BUNIFORMHEAT,theColor,"Fold Enrichment "+szprefix,null,bprintimage, false);
 				  }
 				  else
 				  {
@@ -14010,7 +14040,7 @@ public class ChromHMM
 							  ChromHMM.DEFAULT_OVERLAPENRICHMENT_BCENTER, !ChromHMM.DEFAULT_OVERLAPENRICHMENT_BCOUNTMULTI, 
                                                           ChromHMM.DEFAULT_OVERLAPENRICHMENT_BUSESIGNAL,null,//szcolfields,
                                                           ChromHMM.DEFAULT_OVERLAPENRICHMENT_BBASERES, szoutputdir+"/"+szprefix+ChromHMM.SZOVERLAPEXTENSION,
-								 !ChromHMM.DEFAULT_OVERLAPENRICHMENT_BUNIFORMHEAT,theColor,"Fold Enrichment "+szprefix,null,bprintimage);
+								 !ChromHMM.DEFAULT_OVERLAPENRICHMENT_BUNIFORMHEAT,theColor,"Fold Enrichment "+szprefix,null,bprintimage, false);
 				  }
 				  String szoverlapoutfile = szprefix+ChromHMM.SZOVERLAPEXTENSION+".txt";
 				  if (bprintimage)
@@ -14059,7 +14089,7 @@ public class ChromHMM
 							     ChromHMM.DEFAULT_NEIGHBORHOOD_NUMRIGHT, nbinsize,//nspacing
                                            ChromHMM.DEFAULT_NEIGHBORHOOD_BUSESTRAND,ChromHMM.DEFAULT_NEIGHBORHOOD_BUSESIGNAL,null,//szcolfields,
                                            ChromHMM.DEFAULT_NEIGHBORHOOD_NOFFSETANCHOR,szoutputdir+"/"+szprefix+"_"+szanchorname+"_neighborhood",
-									    theColor,"Fold Enrichment "+szprefix+" "+szanchorname,null,bprintimage);
+									    theColor,"Fold Enrichment "+szprefix+" "+szanchorname,null,bprintimage,false);
 				     }
 				     else
 				     {
@@ -14068,7 +14098,7 @@ public class ChromHMM
 							     ChromHMM.DEFAULT_NEIGHBORHOOD_NUMRIGHT, nbinsize,//nspacing
                                            ChromHMM.DEFAULT_NEIGHBORHOOD_BUSESTRAND,ChromHMM.DEFAULT_NEIGHBORHOOD_BUSESIGNAL,null,//szcolfields,
                                            ChromHMM.DEFAULT_NEIGHBORHOOD_NOFFSETANCHOR,szoutputdir+"/"+szprefix+"_"+szanchorname+"_neighborhood",
-								      theColor,"Fold Enrichment "+szprefix+" "+szanchorname,null,bprintimage);
+								      theColor,"Fold Enrichment "+szprefix+" "+szanchorname,null,bprintimage,false);
 				     }
 				     String szneighborhoodoutfileprefix = szprefix+"_"+szanchorname+ChromHMM.SZNEIGHBORHOODEXTENSION;
 				   
@@ -14128,6 +14158,7 @@ public class ChromHMM
 	    int nargindex = 1;
 	    String szreorderinbedfile = null;
             String szreorderoutbedfile = null;
+	    boolean breordercolsmodel = false;
 
 	    int nr=ChromHMM.DEFAULTCOLOR_R;
 	    int ng=ChromHMM.DEFAULTCOLOR_G;
@@ -14167,6 +14198,10 @@ public class ChromHMM
                   else if (args[nargindex].equals("-noimage"))
 		  {
 		      bprintimage = false;
+		  }
+                  else if (args[nargindex].equals("-reordercolsmodelfile"))
+		  {
+		      breordercolsmodel = true;
 		  }
 		  else if (args[nargindex].equals("-o"))
 		  {
@@ -14249,7 +14284,8 @@ public class ChromHMM
 	          boolean bprintsegments = !bnoprintsegment; 
 	          boolean bordercols = !bnoordercols;
 		  ChromHMM theHMM = new ChromHMM(szInitFile, szoutputdir, szstateorderingfile, szcolumnorderingfile, szoutfileID,nstateorder,
-                                                 bordercols,theColor,szlabelmapping,bprintimage, szreorderinbedfile, szreorderoutbedfile);
+                                                 bordercols,theColor,szlabelmapping,bprintimage, szreorderinbedfile, 
+                                                 szreorderoutbedfile, breordercolsmodel);
 		  theHMM.reorderModel();
 	       }
 	    }
@@ -14262,7 +14298,7 @@ public class ChromHMM
 	    {
 
 		System.out.println("usage: Reorder [-color r,g,b][-f columnorderingfile][-holdcolumnorder][-i outfileID]"+
-                                   "[-m labelmappingfile][-noimage][-o stateorderingfile [-r bedfilein bedfileout]][-stateordering emission|transition] inputmodel outputdir");
+                                   "[-m labelmappingfile][-noimage][-o stateorderingfile [-r bedfilein bedfileout]][-reordercolsmodelfile][-stateordering emission|transition] inputmodel outputdir");
 
 	    }
 	}
