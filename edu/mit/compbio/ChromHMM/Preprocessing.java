@@ -576,9 +576,9 @@ public class Preprocessing
 		throw new IllegalArgumentException("In "+szcellmarkfiletable+" "+szLine+" does not have 3 columns, "+
                                                     "expecting 3 columns since peaks was specified");
 	    }
-	    String szcell = st.nextToken();
-	    String szmark = st.nextToken();
-	    String szfile = st.nextToken();
+	    String szcell = st.nextToken().trim(); //added trim in v1.20 to remove leading and trailing white space
+	    String szmark = st.nextToken().trim();
+	    String szfile = st.nextToken().trim();
 
 	    hscells.add(szcell);
 	    hsmarks.add(szmark);
@@ -888,13 +888,13 @@ public class Preprocessing
 	    {
 		throw new IllegalArgumentException("In "+szcellmarkfiletable+" "+szLine+" has less than 3 columns, expecting at least 3!");
 	    }
-	    String szcell = st.nextToken();
-	    String szmark = st.nextToken();
-	    String szfile = st.nextToken();
+	    String szcell = st.nextToken().trim(); //added in v1.20 to remove leading and trailing white space
+	    String szmark = st.nextToken().trim();
+	    String szfile = st.nextToken().trim();
 	    if (st.hasMoreTokens())
 	    {
 		//we have control data
-		szcontrolfile = st.nextToken();
+		szcontrolfile = st.nextToken().trim();
 		bcontrol = true;
 
 		//was hmfiles in version 1.00

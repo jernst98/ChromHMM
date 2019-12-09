@@ -822,6 +822,16 @@ public class ChromHMM
 	}
     }
 
+    ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    /**
+     * Constructor for API use of ChromHMM that starts with a model loaded from a file
+     */
+    public ChromHMM(String szInitFile) throws IOException
+    {
+
+	this.szInitFile = szInitFile;
+	loadModel();
+    }
 
     ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
      /**
@@ -6994,6 +7004,567 @@ public class ChromHMM
        }
     }
 
+
+    ///////////////////////////////////////////////////////////////////////////////////////////
+
+    /**
+     * API call to compute max state at position npos (0-based) given input data
+     */
+    public int getMaxStateAtPos(int[][] data, int npos) throws IOException
+    {
+
+       if ((npos < 0) || (npos >= data.length))
+       {
+	   throw new IllegalArgumentException(npos+" is not in range of data"); 
+       }
+
+       //number of non-zero transition required to be less than this at the more stringent cutoff 
+       //for trying to exploit sparsity in the transition matrix for efficiency gains
+       int nsparsecutoff = (int) (numstates * ChromHMM.SPARSECUTOFFRATIO);
+
+       //stores temporary product terms
+       double[] tempproductbetaemiss = new double[numstates];
+
+       //This stores the alpha values at each time point and number of states
+       double[][] alpha = new double[data.length][numstates];
+
+       //Temporary storage of the gamma's for each state
+       double[][] gamma = new double[data.length][numstates];
+
+       //Temporary storage of the beta values for each state
+       double[] beta_nt = new double[numstates];
+
+       //Temporary storage of the beta values for each state at the next time point
+       double[] beta_ntp1 = new double[numstates];
+
+       //stores the scaling value for each time point
+       double[] scale = new double[data.length];
+
+       //stores the transition probabilities for each column
+       double[][] coltransitionprobs = new double[numstates][numstates];
+       
+
+       //numdatasets is the number of marks we are integrating
+       int numdatasets = data[0].length; 
+
+       String[] szdataA = new String[data.length];
+       for (int nrow = 0; nrow < data.length; nrow++)
+       {
+          StringBuffer sb = new StringBuffer();
+		
+	  int[] data_nrow = data[nrow];
+	  for (int ncol = 0; ncol < numdatasets; ncol++)
+	  {
+	      int nval = data_nrow[ncol];
+		    
+	      if (nval == 0)
+	      {
+	         sb.append("0");
+	      }
+	      else if (nval == 1)
+	      {
+	         sb.append("1");
+	      }
+	      else if (nval == 2)
+	      {
+	         //this means missing
+		 sb.append("2");
+	      }
+	      else
+	      {
+	         throw new IllegalArgumentException("Unrecognized value "+nval+" in input data");
+	      }
+	  }
+	  szdataA[nrow] = sb.toString();
+       }
+
+       traindataObservedIndex = new int[1][data.length];
+       int[] traindataObservedIndex_nseq = traindataObservedIndex[0];
+
+       HashMap hmObserved = new HashMap();
+       int nobserved = 0;
+
+       for (int nrow = 0; nrow < szdataA.length; nrow++)
+       {
+          BigInteger theBigInteger = new BigInteger(szdataA[nrow],3);
+	  ObservedRec theObservedRec  = (ObservedRec) hmObserved.get(theBigInteger);
+
+	  if (theObservedRec == null)
+	  {
+	     //System.out.println(szmappingbyte.length());
+	     //storing a mapping from observed byte string to an integer index in alFlags and alObserved
+	     hmObserved.put(theBigInteger, new ObservedRec(nobserved,null));
+
+	     //saving this observed index
+	     traindataObservedIndex_nseq[nrow] = nobserved;
+
+	     //increments the number of observed combinations of marks
+	     nobserved++;
+	  }
+	  else
+	  {
+	     //storing the index of the flags associated with this row 
+	     traindataObservedIndex_nseq[nrow] = theObservedRec.nobserved;		
+	  }
+       }
+	    
+       //saving the mapping of signatures and chromsome observed on
+
+       //stores whether there is a present call at each location
+       traindataObservedValues = new boolean[nobserved][numdatasets];
+       //stores the emission probability for the i^th combination of marks in the j^th state
+       double[][] emissionproducts = new double[traindataObservedValues.length][numstates];
+
+
+       //stores whether the mark is not considered missing
+       traindataNotMissing = new boolean[nobserved][numdatasets];
+
+       Iterator hmObservedIterator = hmObserved.entrySet().iterator();
+       while (hmObservedIterator.hasNext())
+       {
+          Map.Entry pairs = (Map.Entry) hmObservedIterator.next();
+	  BigInteger theBigInteger = (BigInteger) pairs.getKey();
+	  String szmapping = theBigInteger.toString(3);  //getting back the mapping string
+
+	  ObservedRec theObservedRec = (ObservedRec) pairs.getValue();
+	  int ncurrindex = theObservedRec.nobserved;//this is an index on which obervation combination it is
+
+	  boolean[] traindataObservedValues_ncurrindex = traindataObservedValues[ncurrindex];
+	  boolean[] traindataNotMissing_ncurrindex = traindataNotMissing[ncurrindex]; 
+	    
+	  //if the mapping string is less than the number of data sets then 
+	  //there are leading 0's will set for leading 0's not missing and absent
+	  int numch = szmapping.length();
+	  int numleading0 = numdatasets - numch;
+	  for (int nj = 0; nj < numleading0; nj++)
+	  {
+             traindataObservedValues_ncurrindex[nj] = false;
+	     traindataNotMissing_ncurrindex[nj] = true;
+	  }
+
+	  int nmappedindex = numleading0; //starting from the leading 0 position
+	  for (int nj = 0; nj < numch; nj++)
+	  {
+	     char ch = szmapping.charAt(nj);
+
+	     if (ch == '0')
+	     {
+	        traindataObservedValues_ncurrindex[nmappedindex] = false;
+	        traindataNotMissing_ncurrindex[nmappedindex] = true;
+	     }
+	     else if (ch=='1')
+	     {
+	        traindataObservedValues_ncurrindex[nmappedindex] = true;
+		traindataNotMissing_ncurrindex[nmappedindex] = true;
+	     }
+	     else
+	     {
+	        //missing data
+		traindataObservedValues_ncurrindex[nmappedindex] = false;
+	        traindataNotMissing_ncurrindex[nmappedindex] = false;
+	     }
+	     nmappedindex++;
+	  }
+       }
+
+
+
+       if (bscaleemissions)
+       {
+          for (int ni = 0; ni < emissionproducts.length; ni++)
+	  {
+	     //this signature of marks is observed on the current chromosome so
+	     //updating its emission probabilities
+	     double[] emissionproducts_ni = emissionproducts[ni];
+	     boolean[] traindataObservedValues_ni = traindataObservedValues[ni];
+	     boolean[] traindataNotMissing_ni = traindataNotMissing[ni];
+
+	     for (int ns = 0; ns < numstates; ns++)
+	     {
+	        emissionproducts_ni[ns] = 1;
+	     }
+
+	     for (int nmod = 0; nmod < numdatasets; nmod++)
+	     {
+	        for (int ns = 0; ns < numstates; ns++)
+	        {
+	           if (traindataNotMissing_ni[nmod])
+	           {
+		      //we are include this marks emission probability
+		      if (traindataObservedValues_ni[nmod])
+		      {
+		         emissionproducts_ni[ns] *= emissionprobs[ns][nmod][1];
+		      }
+		      else
+		      {
+		         emissionproducts_ni[ns] *= emissionprobs[ns][nmod][0];
+		      }
+		   }
+			 // otherwise treated as missing omitting from product
+		}
+
+		double dmaxval = 0;
+		for (int ns = 0; ns < numstates; ns++)
+	        {
+	           if (emissionproducts_ni[ns] > dmaxval)
+		   {
+	              dmaxval = emissionproducts_ni[ns];
+		   }
+		}
+
+		if (dmaxval <=0)
+	        {
+	           for (int ns = 0; ns < numstates; ns++)
+	           {
+	              emissionproducts_ni[ns] = 1;
+		   }
+		}
+	        else
+	        {
+	           for (int ns = 0; ns < numstates; ns++)
+	           {
+	              emissionproducts_ni[ns]/= dmaxval;
+		   }
+		}
+	     }
+	  }
+       }	  
+       else
+       {
+          for (int ni = 0; ni < emissionproducts.length; ni++)
+          {
+	     //this signature of marks is observed on the current chromosome so
+	     //updating its emission probabilities
+	     double[] emissionproducts_ni = emissionproducts[ni];
+	     boolean[] traindataObservedValues_ni = traindataObservedValues[ni];
+	     boolean[] traindataNotMissing_ni = traindataNotMissing[ni];		  
+
+	     boolean ballzero = true;
+
+             for (int ns = 0; ns < numstates; ns++)
+	     {
+	        double dproduct = 1;
+	        double[][] emissionprobs_ni = emissionprobs[ns];
+
+		//going through all marks
+	        for (int nmod = 0; nmod < numdatasets; nmod++)
+	        {
+	           if (traindataNotMissing_ni[nmod])
+		   {
+	              //we have observed the mark
+		      if (traindataObservedValues_ni[nmod])
+		      {
+		         dproduct *= emissionprobs_ni[nmod][1];
+		      }
+		      else 
+	              {
+		         dproduct *= emissionprobs_ni[nmod][0];
+		      }
+		   }
+		   // otherwise treated as missing omitting from product
+		}
+	        emissionproducts_ni[ns] = dproduct;
+
+		if (dproduct >= EPSILONEMISSIONS)
+	        {
+	           ballzero = false;
+	        }
+	     }
+
+	     if (ballzero)
+	     {
+	        for (int ns = 0; ns < numstates; ns++)
+	        {
+		   emissionproducts_ni[ns] = EPSILONEMISSIONS;
+	        }
+	     }
+	  }
+       }
+
+       //initial probability in state s is initial probability times emission probability at first position
+       double[] alpha_nt = alpha[0];
+       double dscale = 0;
+       double[] emissionproducts_nobserveindex =emissionproducts[traindataObservedIndex_nseq[0]];
+       for (int ns = 0; ns < numstates; ns++)
+       {
+	   alpha_nt[ns] = probinit[ns] * emissionproducts_nobserveindex[ns];
+	   dscale += alpha_nt[ns];
+       }
+       scale[0] = dscale;
+
+       //alpha_t(s)=P(o_0,...,o_t,x_t=s|lambda)
+       //converts the alpha terms to probabilities
+       if (bscalebeta)
+       {
+          for (int ns = 0; ns < numstates; ns++)
+	  {
+	     alpha_nt[ns] /= dscale;
+
+	      if ((alpha_nt[ns] < EPSILONSTATE)&&(emissionproducts_nobserveindex[ns]>0))//(ns < numstates-1))) 
+       	      {
+	         alpha_nt[ns] = EPSILONSTATE;
+	      }
+	  }
+       }
+       else
+       {
+          for (int ns = 0; ns < numstates; ns++)
+	  {
+             alpha_nt[ns] /= dscale;
+          }
+       }
+	
+       //stores in coltransitionprobs the transpose of transitionprobs
+       for (int ni = 0; ni < numstates; ni++)
+       {
+          double[] coltransitionprobs_ni = coltransitionprobs[ni];
+          for (int nj = 0; nj < numstates; nj++)
+	  {
+             coltransitionprobs_ni[nj] = transitionprobs[nj][ni];
+	  }
+       }
+
+       //forward step
+       int numtime_nseq = data.length;
+
+
+       for (int nt = 1; nt < numtime_nseq; nt++)
+       {
+          //the actual observed combination at position t	        
+	  double[] alpha_ntm1 = alpha[nt-1];
+	  alpha_nt = alpha[nt];
+	      
+	  dscale = 0;
+	  emissionproducts_nobserveindex = emissionproducts[traindataObservedIndex_nseq[nt]];
+	  for (int ns = 0; ns < numstates; ns++)
+	  {
+	     //going through each state		   
+	     int transitionprobsnumCol_ns = transitionprobsnumCol[ns];
+	     int[] transitionprobsindexCol_ns = transitionprobsindexCol[ns];
+	     double[] coltransitionprobs_ns = coltransitionprobs[ns];
+
+	     double dtempsum = 0;
+             if (transitionprobsnumCol_ns < nsparsecutoff)
+	     {
+	        //if it is sparse enough then it is worth the extra array indirection here
+	        for (int nj = 0; nj < transitionprobsnumCol_ns; nj++)
+	        {
+	           //for each next state computing inner sum of all previous alpha and the transition probability
+	           //for all non-zero transitions into the state
+		   int nmappedindex = transitionprobsindexCol_ns[nj];
+		   dtempsum += coltransitionprobs_ns[nmappedindex]*alpha_ntm1[nmappedindex];
+		}
+	     }
+	     else
+	     {
+                for (int nj = 0; nj < numstates; nj++)
+	        {
+	           //for each next state computing inner sum of all previous alpha and the transition probability
+	           //for all transitions into the state
+	           dtempsum += coltransitionprobs_ns[nj]*alpha_ntm1[nj];
+		}
+	     }
+
+             //multiply the transition sum by the emission probability
+	     double dalphaval = dtempsum*emissionproducts_nobserveindex[ns];
+             alpha_nt[ns] = dalphaval;
+	     dscale += dalphaval;
+	  }
+
+	  //rescaling alpha
+          scale[nt] = dscale;
+          //scale_t(s)=P(o_0,...,o_t|lambda) summed over all states
+
+	  if (bscalebeta)
+          {
+             for (int ns = 0; ns < numstates; ns++)
+	     {
+                alpha_nt[ns] /= dscale;
+
+		if ((alpha_nt[ns] < EPSILONSTATE)&&(emissionproducts_nobserveindex[ns]>0))//(ns < numstates-1))) 
+	        {
+	           alpha_nt[ns] = EPSILONSTATE;
+		}
+	     }
+	  }
+      	  else
+	  {
+             for (int ns = 0; ns < numstates; ns++)
+	     {
+                alpha_nt[ns] /= dscale;
+	     }
+	  }
+	     // for (int ns = 0; ns < numstates; ns++)
+             // {
+	     //	  alpha_nt[ns] /= dscale;
+	     //}      	       
+       }
+	    
+       //backward step
+       //beta_t(s)=P(o_t+1,...,o_T|x_t=s,lambda)
+       int nlastindex = numtime_nseq-1;
+       double dinitval;
+       if (bscalebeta)
+       {
+          dinitval = 1.0/numstates;
+       }
+       else
+       {
+         dinitval = 1.0/scale[nlastindex];
+       }
+
+       for (int ns = 0; ns < numstates; ns++)
+       {
+          beta_ntp1[ns] = dinitval;
+       }
+
+	
+       int nmappedindexouter;
+
+
+       //gamma_nt - P(x=S| o_0,...,o_t)
+       //P(o_t+1,...,o_T|x_t=s,lambda) * P(o_0,...,o_t,x_t=s|lambda)
+       //double[] gamma_nt = gamma[nlastindex]; 
+       //for (int ns = 0; ns < gamma_nt.length; ns++)
+       //{
+       //   double dval = alpha[nlastindex][ns]*beta_ntp1[ns];
+       //   ddenom += dval;
+       //   gamma_nt[ns] = dval;
+       //}
+
+       //for (int ns = 0; ns < gamma_nt.length; ns++)
+       //{
+       //   gamma_nt[ns] /= ddenom;
+       //}
+ 
+
+       for (int nt = nlastindex - 1; nt >= npos; nt--) //only goes to npos not 0
+       {
+	   //gamma_nt = gamma[nt];
+	  int ntp1 = (nt+1);
+		   
+	  double[] emissionproducts_ncombo_ntp1 = emissionproducts[traindataObservedIndex_nseq[ntp1]];		
+          double dsumbeta = 0;
+	  double dscale_nt = scale[nt];
+
+	  for (int ns = 0; ns < numstates; ns++)
+          {
+             tempproductbetaemiss[ns] = beta_ntp1[ns]*emissionproducts_ncombo_ntp1[ns];
+	  }
+
+	  //double dscaleinv = 1.0/scale[nt];
+          //scale_t(s)=P(o_0,...,o_t|lambda) summed over all states
+	  for (int ni = 0; ni < numstates; ni++)
+	  {
+	     double dtempsum = 0;
+	     int[] transitionprobsindex_ni =  transitionprobsindex[ni];
+	     double[] transitionprobs_ni = transitionprobs[ni];
+	     int transitionprobsnum_ni = transitionprobsnum[ni];
+
+             if (transitionprobsnum_ni < nsparsecutoff)
+	     {
+	        //if it is sparse enough then it is worth the extra array indirection here
+	        for (int nj = 0; nj < transitionprobsnum_ni; nj++)
+	        {
+	           //for each state summing over transition probability to state j, emission probablity in j at next step
+	           //and probability of observing the remaining sequence
+		   nmappedindexouter = transitionprobsindex_ni[nj];
+	           dtempsum += transitionprobs_ni[nmappedindexouter]*tempproductbetaemiss[nmappedindexouter];			
+		}
+	     }
+	     else
+	     {
+                for (int nj = 0; nj < numstates; nj++)
+	        {
+	           //for each state summing over transition probability to state j, emission probablity in j at next step
+	           //and probability of observing the remaining sequence
+		   dtempsum += transitionprobs_ni[nj]*tempproductbetaemiss[nj];
+		}
+	     }
+
+	     if (bscalebeta)
+	     {
+	        beta_nt[ni] = dtempsum;
+       	        dsumbeta += dtempsum;
+	     }
+	     else
+	     {
+	        double dratio = dtempsum/dscale_nt;
+		if (dratio > Double.MAX_VALUE)
+	        {
+	           beta_nt[ni] = Double.MAX_VALUE;//dtempsum/dscale_nt;
+	        }
+	        else
+	        {
+	           beta_nt[ni] = dratio;
+      	        }
+	     }
+		  //double dratio = dtempsum/dscale_nt;
+		  //if (dratio > Double.MAX_VALUE)
+		  //{
+		  //    beta_nt[ni] = Double.MAX_VALUE;
+		  //}
+		  //else
+		  //{
+		  //    beta_nt[ni] = dratio;//dtempsum/dscale_nt;
+		  //}
+	  }
+
+	  if (bscalebeta)
+	  {
+             for (int ni = 0; ni < numstates; ni++)
+	     {
+	        beta_nt[ni]/= dsumbeta;
+
+		if (beta_nt[ni] < EPSILONSTATE)//&&(!bdummy))// || (ni < numstates-1))) 
+	        {
+	           beta_nt[ni] = EPSILONSTATE;
+	        }
+	     }
+	  }	
+
+	  //ddenom = 0;		
+          //alpha_nt = alpha[nt];
+	  beta_ntp1 = beta_nt;
+       }
+
+       //gamma_nt - P(x=S| o_0,...,o_t)
+       //P(o_t+1,...,o_T|x_t=s,lambda) * P(o_0,...,o_t,xt=s|lambda)
+
+       //for (int ns = 0; ns < gamma_nt.length; ns++)
+       //{
+       //   double dval = alpha_nt[ns]*beta_nt[ns];
+       //    ddenom += dval;
+       //   gamma_nt[ns] = dval;
+       //}
+
+       //for (int ns = 0; ns < gamma_nt.length; ns++)
+       //{
+       //  gamma_nt[ns]/=ddenom;       		  
+       //}
+       //}
+
+       double dmaxval = 0;
+       int nmaxstate = 0;
+       double[] alpha_npos = alpha[npos];
+       //double[] beta_npos = beta[npos];
+       //double[] gamma_npos = gamma[npos];
+
+
+       for (int ns = 0; ns < alpha_npos.length; ns++)
+       {
+	  double dval = alpha_npos[ns]*beta_ntp1[ns];// gamma_npos[ns];
+	  if (dval > dmaxval)
+          {
+             //best one found so far 
+	     dmaxval = dval;
+	     nmaxstate = ns;
+          }
+       }
+
+       return (nmaxstate+1);
+    }
+
     ///////////////////////////////////////////////////////////////////////////////////////////
     /**
      * This is the core procedure for learning the parameters of the model
@@ -11752,7 +12323,7 @@ public class ChromHMM
 		//Requires number of tokens to match
 		if (numtokens != datasets.length)
 		{
-		    throw new IllegalArgumentException(" numtokens "+numtokens+" does not match "+datasets.length);
+		    throw new IllegalArgumentException(" found a file with header with "+numtokens+" entries, which does not match another with "+datasets.length); //updated in v1.20 to be more informative
 		}
 
 		int ntoken = 0;
@@ -12096,7 +12667,7 @@ public class ChromHMM
 		//Requires number of tokens to match
 		if (numtokens != datasets.length)
 		{
-		    throw new IllegalArgumentException(" numtokens "+numtokens+" does not match "+datasets.length);
+		    throw new IllegalArgumentException(" found a file with header with "+numtokens+" entries, which does not match another with "+datasets.length); //updated in v1.20 to be more informative
 		}
 
 		int ntoken = 0;
@@ -12176,7 +12747,7 @@ public class ChromHMM
 		    hmObserved.put(theBigInteger, new ObservedRec(nobserved,flagA));
 
 		    //saving this observed index
-		    traindataObservedIndex[nfile][nrow] = nobserved;
+		    traindataObservedIndex_nfile[nrow] = nobserved; //change in 1.20 for efficiency to be_nfile
 
 		    //increments the number of observed combinations of marks
 		    nobserved++;
@@ -12277,7 +12848,7 @@ public class ChromHMM
 
 	if (szcommand.equalsIgnoreCase("Version"))
 	{
-	    System.out.println("This is Version 1.19 of ChromHMM (c) Copyright 2008-2012 Massachusetts Institute of Technology");
+	    System.out.println("This is Version 1.20 of ChromHMM (c) Copyright 2008-2012 Massachusetts Institute of Technology");
 	}
         else if ((szcommand.equals("BinarizeBam"))||(szcommand.equalsIgnoreCase("BinarizeBed")))
 	{
@@ -13079,18 +13650,18 @@ public class ChromHMM
 	              {
 	                 throw new IllegalArgumentException(szoutputdir+"POSTERIOR does not exist and could not be created!");
 		      }
-		   }		      
+		   }
+	       }//update in v1.20 to allow creating STATEBYLINE directory even if print posterior not asked for		      
 
-		   if (bprintstatebyline)
-		   {
-	              File fstatebyline = new File(szoutputdir+"/STATEBYLINE");
-	              if (!fstatebyline.exists())
-	              {
-	                 if (!fstatebyline.mkdirs())
-	                 {
-	                    throw new IllegalArgumentException(szoutputdir+" STATEBYLINE does not exist and could not be created!");
-			 }			  
-		      }
+	       if (bprintstatebyline)
+	       {
+	          File fstatebyline = new File(szoutputdir+"/STATEBYLINE");
+	          if (!fstatebyline.exists())
+	          {
+	             if (!fstatebyline.mkdirs())
+	             {
+	                throw new IllegalArgumentException(szoutputdir+" STATEBYLINE does not exist and could not be created!");
+		     }			  
 		  }
 	       }
 
@@ -13552,6 +14123,7 @@ public class ChromHMM
 	    double dinformationsmooth= 0.02;
 	    double dloadsmoothemission = 0.02;
 	    double dloadsmoothtransition = 0.5;
+	    boolean bautoopen = true;
 	    boolean bprintposterior = false;
 	    boolean bprintstatebyline = false;
 	    boolean bnoprintsegment = false;
@@ -13672,6 +14244,10 @@ public class ChromHMM
 		  else if (args[nargindex].equals("-n"))
 		  {
 		      numincludeseq = Integer.parseInt(args[++nargindex]);
+		  }
+                  else if (args[nargindex].equals("-noautoopen"))
+		  {
+		     bautoopen = false;
 		  }
 		  else if (args[nargindex].equals("-nobed"))
 		  {
@@ -14120,13 +14696,16 @@ public class ChromHMM
 		  }
 	          pwweb.close();
                  
-                  try
+		  if (bautoopen)
 		  {
-		     java.awt.Desktop.getDesktop().browse((new File(szwebpage)).toURI());
-		  }
-		  catch (Exception ex)
-		  {
-		      System.out.println("Warning could not automatically open in a browser "+szwebpage);
+                     try
+		     {
+		        java.awt.Desktop.getDesktop().browse((new File(szwebpage)).toURI());
+		     }
+		     catch (Exception ex)
+		     {
+		        System.out.println("Warning could not automatically open in a browser "+szwebpage);
+		     }
 		  }		 
 	       }
 	    }
@@ -14139,7 +14718,7 @@ public class ChromHMM
 	    {
 		System.out.println("usage: LearnModel [-b binsize][-color r,g,b][-d convergedelta][-e loadsmoothemission][-f inputfilelist][-gzip][-h informationsmooth]"+
                                      "[-holdcolumnorder][-holdroworder][-i outfileID][-init information|random|load][-l chromosomelengthfile][-lowmem][-m modelinitialfile][-many]"+
-                                    "[-n numseq][-nobed][-nobrowser][-noenrich][-noimage][-p maxprocessors][-pseudo][-printposterior][-printstatebyline][-r maxiterations][-s seed][-scalebeta]"+
+                                    "[-n numseq][-noautoopen][-nobed][-nobrowser][-noenrich][-noimage][-p maxprocessors][-pseudo][-printposterior][-printstatebyline][-r maxiterations][-s seed][-scalebeta]"+
                                     "[-splitrows][-stateordering emission|transition]"+
                                    "[-t loadsmoothtransition][-u coorddir][-v anchorfiledir][-x maxseconds][-z zerotransitionpower] inputdir outputdir numstates assembly");
 	    }
