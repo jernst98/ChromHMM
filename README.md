@@ -1,2 +1,2 @@
-See http://compbio.mit.edu/ChromHMM/ or http://www.biolchem.ucla.edu/labs/ernst/ChromHMM/ for more information on ChromHMM.
+See http://compbio.mit.edu/ChromHMM/ or https://ernstlab.biolchem.ucla.edu/ChromHMM/ for more information on ChromHMM.
 ========
