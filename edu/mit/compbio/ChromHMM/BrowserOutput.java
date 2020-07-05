@@ -385,7 +385,7 @@ public class BrowserOutput
 	     String szID = szFullID.substring(1); //this removes ordering type
 	     if (bfirst)
 	     {
-		 String szout = "track name=\""+szsegmentationname+"\" description=\" "+szsegmentationname+" ("+ChromHMM.convertCharOrderToStringOrder(szFullID.charAt(0))
+		 String szout = "track name=\""+szsegmentationname+"\" description=\""+szsegmentationname+" ("+ChromHMM.convertCharOrderToStringOrder(szFullID.charAt(0))
 		     +" ordered)"+"\" visibility=1 itemRgb=\"On\""+"\n";
 		 byte[] btformat = szout.getBytes();
 		 pwzip.write(btformat,0,btformat.length);
@@ -433,7 +433,7 @@ public class BrowserOutput
 	     String szID = szFullID.substring(1); //this removes ordering type
 	     if (bfirst)
 	     {
-	        pw.println("track name=\""+szsegmentationname+"\" description=\" "+szsegmentationname+" ("+ChromHMM.convertCharOrderToStringOrder(szFullID.charAt(0))
+	        pw.println("track name=\""+szsegmentationname+"\" description=\""+szsegmentationname+" ("+ChromHMM.convertCharOrderToStringOrder(szFullID.charAt(0))
                           +" ordered)"+"\" visibility=1 itemRgb=\"On\"");
 	        bfirst = false;
 	     }
@@ -559,7 +559,7 @@ public class BrowserOutput
        if (bgzip)
        {
 	  GZIPOutputStream pwzip = new GZIPOutputStream(new FileOutputStream(szoutputfileprefix+ChromHMM.SZBROWSEREXPANDEDEXTENSION+".bed.gz"));
-	  String szout = "track name=\"Expanded_"+szsegmentationname+"\" description=\" "+szsegmentationname+" ("+ChromHMM.convertCharOrderToStringOrder(szLabelFull.charAt(0))
+	  String szout = "track name=\"Expanded_"+szsegmentationname+"\" description=\""+szsegmentationname+" ("+ChromHMM.convertCharOrderToStringOrder(szLabelFull.charAt(0))
 	      +" ordered)"+"\" visibility=2 itemRgb=\"On\""+"\n";
 	  byte[] btformat = szout.getBytes();
 	  pwzip.write(btformat,0,btformat.length);
@@ -641,7 +641,7 @@ public class BrowserOutput
        else
        {
 	  PrintWriter pw = new PrintWriter(new FileWriter(szoutputfileprefix+ChromHMM.SZBROWSEREXPANDEDEXTENSION+".bed"));
-          pw.println("track name=\"Expanded_"+szsegmentationname+"\" description=\" "+szsegmentationname+" ("+ChromHMM.convertCharOrderToStringOrder(szLabelFull.charAt(0))
+          pw.println("track name=\"Expanded_"+szsegmentationname+"\" description=\""+szsegmentationname+" ("+ChromHMM.convertCharOrderToStringOrder(szLabelFull.charAt(0))
                           +" ordered)"+"\" visibility=2 itemRgb=\"On\"");
           int nbrowserend = (int) (((Integer)hmchromMax.get(szChroms[0])).intValue()*.001)+1;
           pw.println("browser position "+szChroms[0]+":1-"+nbrowserend);
@@ -677,6 +677,309 @@ public class BrowserOutput
 	         }
 
 	         pw.print(szChroms[nchrom]+"\t"+0+"\t"+nfinalend+"\t"+szoutlabel+"\t0\t.\t"+nmin+"\t"+nfinalend+"\t"+szcolor+"\t"+(nsize+1)+"\t");
+	         pw.print(0); //forcing the display to start at the beginning of the chromosome
+  	         for (int ni = 0; ni < nsize; ni++)
+	         {
+		    BeginEndRec theBeginEndRec = (BeginEndRec) alRecs.get(ni);
+        	    int ndiff = theBeginEndRec.nend - theBeginEndRec.nbegin;
+	            pw.print(",");
+	            pw.print(ndiff);
+	          }
+	          pw.print("\t");
+	          pw.print(0);
+	          for (int ni = 0; ni < nsize; ni++)
+                  {
+		     int nloc = ((BeginEndRec) alRecs.get(ni)).nbegin;
+		     pw.print(",");
+		     pw.print(nloc);
+	           }
+	           pw.println();
+	      }
+	  }
+	  pw.close();
+       }
+    }
+
+
+
+
+    //////////////////////////////////////////////////////////////////////////////////////////////////
+    /**
+     * Makes a single track browser view of the segmentation represented in szsegmentfile
+     * szcolormapping is a two or three column text file which maps state ID to R,G,B color triples and optionally a state label
+     * Name of segmentation in the browser file is given by szsegmentationame
+     * Output is a file named szoutputfileprefix_browserdense.bed of segmentation viewable with one state per row
+     */
+    public void makebrowserexpandedLowMem() throws IOException
+    {
+       if (bgzip)
+       {
+          System.out.println("Writing to file "+szoutputfileprefix+ChromHMM.SZBROWSEREXPANDEDEXTENSION+".bed.gz");
+       }
+       else
+       {
+          System.out.println("Writing to file "+szoutputfileprefix+ChromHMM.SZBROWSEREXPANDEDEXTENSION+".bed");
+       }
+
+       String szLine;
+
+       BufferedReader brsegment =  Util.getBufferedReader(szsegmentfile);
+
+       //stores set of chromosomes and labels
+       HashSet hschroms = new HashSet();
+       HashSet hslabels = new HashSet();
+
+       //stores for each chromosome the maximum coordinate
+       HashMap hmchromMax = new HashMap();
+
+
+       //maps a label without the prefix back to the full label
+       HashMap hmlabelToFull = new HashMap();
+
+       String szLabelFull=null;
+       while ((szLine = brsegment.readLine())!=null)
+       {
+	   StringTokenizer st = new StringTokenizer(szLine,"\t");
+	   String szchrom = st.nextToken();
+	   int nbegin = Integer.parseInt(st.nextToken());
+	   int nend = Integer.parseInt(st.nextToken());
+	   szLabelFull = st.nextToken();
+	   String szLabel = szLabelFull.substring(1);
+
+	   hmlabelToFull.put(szLabel, szLabelFull);
+
+	   hschroms.add(szchrom);
+	   hslabels.add(szLabel);
+	   //ArrayList alRecs = (ArrayList) hmcoords.get(szchrom+"\t"+szLabel);
+	   //if (alRecs ==null)
+	   //{
+	       //creating first entry for chromsome and coordinate
+	   //    alRecs = new ArrayList();
+	   //    hmcoords.put(szchrom+"\t"+szLabel,alRecs);
+	   //}
+	   //alRecs.add(new BeginEndRec(nbegin,nend));
+
+	   //potentially updating maximum coordinate for chromosome
+	   Object obj = ((Integer) hmchromMax.get(szchrom));	
+	   if (obj != null)
+           {
+              int nval = ((Integer) obj).intValue();
+	      
+              if (nend > nval)
+	      {
+	         hmchromMax.put(szchrom,Integer.valueOf(nend));
+              }
+	   }
+           else
+           {  
+              hmchromMax.put(szchrom,Integer.valueOf(nend));
+	   }
+       }
+       brsegment.close();
+
+      	
+       //gets all the state labels and sorts them
+       String[] szLabels = new String[hslabels.size()];
+       Iterator itrLabels = hslabels.iterator();
+       int nindex = 0;
+       while (itrLabels.hasNext())
+       {
+	   szLabels[nindex] = (String) itrLabels.next();
+	   nindex++;
+       }
+       Arrays.sort(szLabels, new LabelCompare());
+
+       //gets all the chromsomes and sorts them
+       String[] szChroms = new String[hschroms.size()];
+       Iterator itrChroms = hschroms.iterator();
+       nindex = 0;
+       while (itrChroms.hasNext())
+       {
+	   szChroms[nindex] = (String) itrChroms.next();
+	   nindex++;
+       }
+       Arrays.sort(szChroms);
+
+       if (bgzip)
+       {
+	  GZIPOutputStream pwzip = new GZIPOutputStream(new FileOutputStream(szoutputfileprefix+ChromHMM.SZBROWSEREXPANDEDEXTENSION+".bed.gz"));
+	  String szout = "track name=\"Expanded_"+szsegmentationname+"\" description=\""+szsegmentationname+" ("+ChromHMM.convertCharOrderToStringOrder(szLabelFull.charAt(0))
+	      +" ordered)"+"\" visibility=2 itemRgb=\"On\""+"\n";
+	  byte[] btformat = szout.getBytes();
+	  pwzip.write(btformat,0,btformat.length);
+
+          //pw.println("track name=\"Expanded_"+szsegmentationname+"\" description=\" "+szsegmentationname+" ("+ChromHMM.convertCharOrderToStringOrder(szLabelFull.charAt(0))
+	  //               +" ordered)"+"\" visibility=2 itemRgb=\"On\"");
+          int nbrowserend = (int) (((Integer)hmchromMax.get(szChroms[0])).intValue()*.001)+1;
+
+	  szout = "browser position "+szChroms[0]+":1-"+nbrowserend+"\n";
+	  btformat = szout.getBytes();
+          pwzip.write(btformat,0,btformat.length);
+          //pwzip.println("browser position "+szChroms[0]+":1-"+nbrowserend);
+
+	  for (int nchrom = 0; nchrom < szChroms.length; nchrom++)
+          {
+	      HashMap hmcoords = new HashMap();
+	      String szcurrchrom = szChroms[nchrom];
+
+              //stores the set of interval coordinates for each chromosome and label
+	      brsegment =  Util.getBufferedReader(szsegmentfile);
+              while ((szLine = brsegment.readLine())!=null)
+              {
+	         StringTokenizer st = new StringTokenizer(szLine,"\t");
+		 String szchrom = st.nextToken();
+	         if (szchrom.equals(szcurrchrom))
+	         {
+	            int nbegin = Integer.parseInt(st.nextToken());
+	            int nend = Integer.parseInt(st.nextToken());
+       	            szLabelFull = st.nextToken();
+	            String szLabel = szLabelFull.substring(1);
+
+		    ArrayList alRecs = (ArrayList) hmcoords.get(szLabel);
+	            if (alRecs ==null)
+	            {
+	               //creating first entry for chromsome and coordinate
+		       alRecs = new ArrayList();
+	               hmcoords.put(szLabel,alRecs);
+	            }
+       	            alRecs.add(new BeginEndRec(nbegin,nend));
+		 }
+	      }
+	      brsegment.close();
+
+
+	      //UCSC browser seems to reverse the ordering of browser track files
+	      for (int nlabel = szLabels.length-1; nlabel >=0; nlabel--)
+	      {
+		 String szcolor =  (String) hmcolor.get(""+szLabels[nlabel]);
+	         //omits those segment labels not observed at all on chromosome
+
+	         ArrayList alRecs  = (ArrayList) hmcoords.get(szLabels[nlabel]);
+	         if (alRecs == null) continue;
+
+                 int nmax = ((Integer) hmchromMax.get(szChroms[nchrom])).intValue();
+
+	         //this forces browser to display segment until the end of the chromosome
+	         alRecs.add(new BeginEndRec(nmax-1,nmax));
+
+	         int nsize = alRecs.size();
+	         int nmin = ((BeginEndRec) alRecs.get(0)).nbegin;
+	         int nfinalend = nmax;
+
+	         String szoutlabel;
+	         String szsuffix;
+	         if ((szsuffix = (String) hmlabelExtend.get((String) hmlabelToFull.get(szLabels[nlabel])))!=null)
+	         {
+		    szoutlabel = szLabels[nlabel]+"_"+szsuffix;
+	         }
+	         else
+	         {
+		    szoutlabel = szLabels[nlabel];
+	         }
+
+		 StringBuffer sbout = new StringBuffer();
+		 sbout.append(szcurrchrom+"\t"+0+"\t"+nfinalend+"\t"+szoutlabel+"\t0\t.\t"+nmin+"\t"+nfinalend+"\t"+szcolor+"\t"+(nsize+1)+"\t");
+	         //pw.print(szChroms[nchrom]+"\t"+0+"\t"+nfinalend+"\t"+szoutlabel+"\t0\t.\t"+nmin+"\t"+nfinalend+"\t"+szcolor+"\t"+(nsize+1)+"\t");
+	         //pw.print(0); //forcing the display to start at the beginning of the chromosome
+		 sbout.append(0);
+  	         for (int ni = 0; ni < nsize; ni++)
+	         {
+		    BeginEndRec theBeginEndRec = (BeginEndRec) alRecs.get(ni);
+        	    int ndiff = theBeginEndRec.nend - theBeginEndRec.nbegin;
+		    sbout.append(",");
+		    sbout.append(ndiff);
+	            //pw.print(",");
+	            //pw.print(ndiff);
+	          }
+		  sbout.append("\t");
+		  sbout.append(0);
+	          //pw.print("\t");
+	          //pw.print(0);
+	          for (int ni = 0; ni < nsize; ni++)
+                  {
+		     int nloc = ((BeginEndRec) alRecs.get(ni)).nbegin;
+		     sbout.append(",");
+		     sbout.append(nloc);
+		     //pw.print(",");
+		     //pw.print(nloc);
+	           }
+		  sbout.append("\n");
+	          // pw.println();
+		  btformat = sbout.toString().getBytes();
+		  pwzip.write(btformat,0,btformat.length);
+	      }
+	  }
+	  pwzip.finish();
+	  pwzip.close();
+       }
+       else
+       {
+	  PrintWriter pw = new PrintWriter(new FileWriter(szoutputfileprefix+ChromHMM.SZBROWSEREXPANDEDEXTENSION+".bed"));
+          pw.println("track name=\"Expanded_"+szsegmentationname+"\" description=\""+szsegmentationname+" ("+ChromHMM.convertCharOrderToStringOrder(szLabelFull.charAt(0))
+                          +" ordered)"+"\" visibility=2 itemRgb=\"On\"");
+          int nbrowserend = (int) (((Integer)hmchromMax.get(szChroms[0])).intValue()*.001)+1;
+          pw.println("browser position "+szChroms[0]+":1-"+nbrowserend);
+
+	  for (int nchrom = 0; nchrom < szChroms.length; nchrom++)
+          {
+	      String szcurrchrom = szChroms[nchrom];
+	      HashMap hmcoords = new HashMap();
+
+              //stores the set of interval coordinates for each chromosome and label
+	      brsegment =  Util.getBufferedReader(szsegmentfile);
+              while ((szLine = brsegment.readLine())!=null)
+              {
+		  StringTokenizer st = new StringTokenizer(szLine,"\t");
+		  String szchrom = st.nextToken();
+	          if (szchrom.equals(szcurrchrom))
+	          {
+		     int nbegin = Integer.parseInt(st.nextToken());
+		     int nend = Integer.parseInt(st.nextToken());
+		     szLabelFull = st.nextToken();
+		     String szLabel = szLabelFull.substring(1);
+
+		     ArrayList alRecs = (ArrayList) hmcoords.get(szLabel);
+	             if (alRecs ==null)
+	             {
+	               //creating first entry for chromsome and coordinate
+		       alRecs = new ArrayList();
+		       hmcoords.put(szLabel,alRecs);
+		     }
+		     alRecs.add(new BeginEndRec(nbegin,nend));
+		  }
+	      }
+	      brsegment.close();
+
+	      //UCSC browser seems to reverse the ordering of browser track files
+	      for (int nlabel = szLabels.length-1; nlabel >=0; nlabel--)
+	      {
+		  String szcolor =  (String) hmcolor.get(""+szLabels[nlabel]);
+
+	         //omits those segment labels not observed at all on chromosome
+	         ArrayList alRecs  = (ArrayList) hmcoords.get(szLabels[nlabel]);
+	         if (alRecs == null) continue;
+
+                 int nmax = ((Integer) hmchromMax.get(szChroms[nchrom])).intValue();
+
+	         //this forces browser to display segment until the end of the chromosome
+	         alRecs.add(new BeginEndRec(nmax-1,nmax));
+
+	         int nsize = alRecs.size();
+	         int nmin = ((BeginEndRec) alRecs.get(0)).nbegin;
+	         int nfinalend = nmax;
+
+	         String szoutlabel;
+	         String szsuffix;
+	         if ((szsuffix = (String) hmlabelExtend.get((String) hmlabelToFull.get(szLabels[nlabel])))!=null)
+	         {
+		    szoutlabel = szLabels[nlabel]+"_"+szsuffix;
+	         }
+	         else
+	         {
+		    szoutlabel = szLabels[nlabel];
+	         }
+
+	         pw.print(szcurrchrom+"\t"+0+"\t"+nfinalend+"\t"+szoutlabel+"\t0\t.\t"+nmin+"\t"+nfinalend+"\t"+szcolor+"\t"+(nsize+1)+"\t");
 	         pw.print(0); //forcing the display to start at the beginning of the chromosome
   	         for (int ni = 0; ni < nsize; ni++)
 	         {

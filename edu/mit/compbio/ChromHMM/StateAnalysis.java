@@ -685,13 +685,23 @@ public class StateAnalysis
 	BufferedReader brinputsegment = Util.getBufferedReader(szinputsegment);
 	while ((szLine = brinputsegment.readLine())!=null)
 	{
-	    StringTokenizer st = new StringTokenizer(szLine,"\t ");
+	    StringTokenizer st;
+	    if (bstringlabels)
+	    {
+	       st = new StringTokenizer(szLine,"\t");
+	    }
+	    else
+	    {
+	       st = new StringTokenizer(szLine,"\t ");
+	    } 
+
 	    String szchrom = st.nextToken();
 	    int nbegincoord = Integer.parseInt(st.nextToken());
 	    int nendcoord = Integer.parseInt(st.nextToken());
 	    if (nbegincoord % nbinsize != 0)
 	    {
-		throw new IllegalArgumentException("Binsize of "+nbinsize+" does not agree with input segment "+szLine);
+		throw new IllegalArgumentException("Binsize of "+nbinsize+" does not agree with coordinates in input segment "+szLine+". -b binsize should match parameter value to LearnModel or "+
+                                 "MakeSegmentation used to produce segmentation. If segmentation is derived from a lift over from another assembly, then the '-b 1' option should be used");
 	    }
 	    int nbegin = nbegincoord/nbinsize;
 	    int nend = (nendcoord-1)/nbinsize;
@@ -1289,13 +1299,23 @@ public class StateAnalysis
        BufferedReader brinputsegment = Util.getBufferedReader(szinputsegment);
        while ((szLine = brinputsegment.readLine())!=null)
        {
-          StringTokenizer st = new StringTokenizer(szLine,"\t ");
+	  StringTokenizer st;
+	  if (bstringlabels)
+	  {
+             st = new StringTokenizer(szLine,"\t");
+	  }
+	  else
+	  {
+	     st = new StringTokenizer(szLine,"\t ");
+          }
+
 	  String szchrom = st.nextToken();
 	  int nbegincoord = Integer.parseInt(st.nextToken());
 	  int nendcoord = Integer.parseInt(st.nextToken());
 	  if (nbegincoord % nbinsize != 0)
 	  {
-	     throw new IllegalArgumentException("Binsize of "+nbinsize+" does not agree with input segment "+szLine);
+		throw new IllegalArgumentException("Binsize of "+nbinsize+" does not agree with coordinates in input segment "+szLine+". -b binsize should match parameter value to LearnModel or "+
+                                 "MakeSegmentation used to produce segmentation. If segmentation is derived from a lift over from another assembly, then the '-b 1' option should be used");
 	  }
           //int nbegin = nbegincoord/nbinsize;
 	  int nend = (nendcoord-1)/nbinsize;
@@ -1431,7 +1451,16 @@ public class StateAnalysis
 	  brinputsegment = Util.getBufferedReader(szinputsegment);
 	  while ((szLine = brinputsegment.readLine())!=null)
 	  {
-	     StringTokenizer st = new StringTokenizer(szLine,"\t ");
+	     StringTokenizer st;
+	     if (bstringlabels)
+	     {
+	        st = new StringTokenizer(szLine,"\t");
+	     }
+	     else
+	     {
+	        st = new StringTokenizer(szLine,"\t ");
+	     }
+
 	     String szchrom = st.nextToken();
 	     if (!szchrom.equals(szchromwant)) 
 	        continue;
@@ -1862,7 +1891,7 @@ public class StateAnalysis
 	System.out.println("Writing to file "+szoutfile+".txt");
 	PrintWriter pw = new PrintWriter(new FileWriter(szoutfile+".txt"));
 
-	pw.print("state ("+szstateorder+" order)\tGenome %");
+	pw.print("State ("+szstateorder+" order)\tGenome %");
 	for (int nfile = 0; nfile < files.length; nfile++)
 	{
 	    pw.print("\t"+files[nfile]);
@@ -2209,7 +2238,15 @@ public class StateAnalysis
 	//this loops reads in the segmentation 
 	while ((szLine = brinputsegment.readLine())!=null)
 	{
-	    StringTokenizer st = new StringTokenizer(szLine,"\t ");
+	    StringTokenizer st;
+	    if (bstringlabels)
+	    {
+	       st = new StringTokenizer(szLine,"\t");
+	    }
+	    else
+	    {
+	       st = new StringTokenizer(szLine,"\t ");
+	    }
 	    String szchrom = st.nextToken();
             //assumes segments are in standard bed format which to get to 
 	    //0-based inclusive requires substract 1 from the end
@@ -2356,8 +2393,16 @@ public class StateAnalysis
 	   while ((szLine = brinputsegment.readLine())!=null)
 	   {
 	      //int numlines = alsegments.size();
+	      StringTokenizer st;
+	      if (bstringlabels)
+	      {
+	         st = new StringTokenizer(szLine,"\t");
+	      }
+	      else
+	      {
+	         st = new StringTokenizer(szLine,"\t ");
+	      }
 
-	      StringTokenizer st = new StringTokenizer(szLine,"\t ");
 	      String szchrom = st.nextToken();
 	      if (!szchromwant.equals(szchrom))
 		  continue;
@@ -2591,7 +2636,15 @@ public class StateAnalysis
 	//this loops reads in the segmentation 
 	while ((szLine = brinputsegment.readLine())!=null)
 	{
-	    StringTokenizer st = new StringTokenizer(szLine,"\t ");
+	    StringTokenizer st;
+	    if (bstringlabels)
+	    {
+	       st = new StringTokenizer(szLine,"\t");
+	    }
+	    else
+	    {
+		st = new StringTokenizer(szLine,"\t ");
+	    }
 	    String szchrom = st.nextToken();
             //assumes segments are in standard bed format which to get to 
 	    //0-based inclusive requires substract 1 from the end
@@ -3785,7 +3838,7 @@ public class StateAnalysis
 	String[] collabels = new String[theRecEmissionFileCompareA.length];
 
 
-	pwcompare.print("state");
+	pwcompare.print("State");
 	for (ncol = 0; ncol < theRecEmissionFileCompareA.length; ncol++)
 	{
 	    collabels[ncol] = ""+theRecEmissionFileCompareA[ncol].numstates;

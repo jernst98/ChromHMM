@@ -2487,6 +2487,12 @@ public class Preprocessing
 	       nfilecount++;
 	   }
        }
+
+       if (nfilecount == 0)
+       {
+          throw new IllegalArgumentException("No _signal files were found in directory "+szbinneddataDIR);
+       }
+
        String[] signalchromfiles = new String[nfilecount];
        int nfileindex = 0;
        for (int nfile = 0; nfile < allfiles.length; nfile++)
@@ -3110,6 +3116,12 @@ public class Preprocessing
 	       nfilecount++;
 	   }
        }
+
+       if (nfilecount == 0)
+       {
+          throw new IllegalArgumentException("No _signal files were found in directory "+szbinneddataDIR);
+       }
+
        String[] signalchromfiles = new String[nfilecount];
        int nfileindex = 0;
        for (int nfile = 0; nfile < allfiles.length; nfile++)
@@ -3979,7 +3991,10 @@ public class Preprocessing
 	   for (int ndir = 0; ndir < hmbrA.length; ndir++)
 	   {
 	       BufferedReader br = (BufferedReader) hmbrA[ndir].get(szcurrfile);
-	       br.close();
+	       if (br != null)
+	       {
+	          br.close();
+	       }
 	   }
 
        }

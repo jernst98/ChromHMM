@@ -1591,7 +1591,7 @@ public class ChromHMM
            System.out.println("Writing to file "+szfile);
 	}
 
-	pw.print("state ("+szorder+" order)");
+	pw.print("State ("+szorder+" order)");
 	for (int ni = 0; ni < datasets.length; ni++)
 	{
 	    pw.print("\t"+datasets[colordering[ni]]);
@@ -1644,7 +1644,7 @@ public class ChromHMM
 	   System.out.println("Writing to file "+szfile);
 	}
 
-	pw.print("state (from\\to) ("+szorder+" order)");
+	pw.print("State (from\\to) ("+szorder+" order)");
 	for (int ni = 0; ni < numstates; ni++)
 	{
 	    pw.print("\t"+(ni+1));
@@ -12848,7 +12848,7 @@ public class ChromHMM
 
 	if (szcommand.equalsIgnoreCase("Version"))
 	{
-	    System.out.println("This is Version 1.20 of ChromHMM (c) Copyright 2008-2012 Massachusetts Institute of Technology");
+	    System.out.println("This is Version 1.21 of ChromHMM (c) Copyright 2008-2012 Massachusetts Institute of Technology");
 	}
         else if ((szcommand.equals("BinarizeBam"))||(szcommand.equalsIgnoreCase("BinarizeBed")))
 	{
@@ -13308,39 +13308,47 @@ public class ChromHMM
 	    boolean bprintimage = true;
 
 	    int nargindex = 1;
-	    if (args.length == 5)
+
+	    if (args.length <= 2)
 	    {
 		bok = false;
-                try
-		{
-		   if (args[nargindex].equals("-color"))
-		   {
-		      String szcolor = args[++nargindex];
-		      StringTokenizer stcolor = new StringTokenizer(szcolor,",");
-		      if (stcolor.countTokens()==3)
-		      {
-		         nr = Integer.parseInt(stcolor.nextToken());
-			 ng = Integer.parseInt(stcolor.nextToken());
-			 nb = Integer.parseInt(stcolor.nextToken());
-		      }
-		      else
-		      {
-		         bok = false;
-		      }
-		   }
-		   else if (args[nargindex].equals("-noimage"))
-		   {
-		       bprintimage = false;
-		   }		
-		   else
-		   {
-		      bok = false;
-		   }
-		}
-		catch (NumberFormatException ex)
-		{
-		    bok = false;
-		}
+	    }
+	    else
+	    {
+               try
+	       {
+	          while (nargindex < args.length-3)
+		  {
+		     if (args[nargindex].equals("-color"))
+		     {
+		        String szcolor = args[++nargindex];
+		        StringTokenizer stcolor = new StringTokenizer(szcolor,",");
+		        if (stcolor.countTokens()==3)
+		        {
+		           nr = Integer.parseInt(stcolor.nextToken());
+			   ng = Integer.parseInt(stcolor.nextToken());
+		           nb = Integer.parseInt(stcolor.nextToken());
+			}
+		        else
+		        {
+		           bok = false;
+		        }
+		     }
+		     else if (args[nargindex].equals("-noimage"))
+		     {
+	                bprintimage = false;
+		     }	
+		     else
+		     {
+	                bok = false;
+		     }
+		     nargindex++;
+		  }
+	       }
+	       catch (NumberFormatException ex)
+	       {
+	          bok = false;
+	       }
 	    }
 	    
 	    if (nargindex != args.length-3)
@@ -13476,7 +13484,7 @@ public class ChromHMM
 		  {
 		     breadposterior = true;
 		  }
-		  else if (args[nargindex].equals("-readstatesbyline"))
+		  else if ((args[nargindex].equals("-readstatesbyline"))||(args[nargindex].equals("-readstatebyline")))
 		  {
 		     breadstatebyline = true;
 		  }
@@ -13602,7 +13610,7 @@ public class ChromHMM
 		  {
 		     bprintposterior = true;
 		  }
-		  else if (args[nargindex].equals("-printstatesbyline"))
+		  else if ((args[nargindex].equals("-printstatesbyline"))||(args[nargindex].equals("-printstatebyline")))
 		  {
 		     bprintstatebyline = true;
 		  }
@@ -13694,7 +13702,7 @@ public class ChromHMM
 	    if (!bok)
 	    {
 		System.out.println("usage: MakeSegmentation [-b binsize][-f inputfilelist][-gzip][-i outfileID][-l chromosomelengthfile][-lowmem][-many][-nobed]"+
-                                   "[-printposterior][-printstatesbyline][-scalebeta][-splitrows]"+
+                                   "[-printposterior][-printstatebyline][-scalebeta][-splitrows]"+
                                    "  modelfile inputdir outputdir");
 	    }
 	}
@@ -13703,7 +13711,7 @@ public class ChromHMM
 	    String szcolormapping = null;
 	    String szlabelmapping = null;
 	    boolean bgzip = false;
-	    
+	    boolean blowmem = false;
 	    int nargindex = 1;
 	    int numstates = -1;           
 
@@ -13721,6 +13729,10 @@ public class ChromHMM
 	       {
 		   //the -l is for backwards compatibility
 		   szlabelmapping = args[++nargindex];
+	       }
+	       else if (args[nargindex].equals("-lowmem"))
+	       {
+	          blowmem = true;
 	       }
                else if (args[nargindex].equals("-n"))
 	       {
@@ -13742,7 +13754,14 @@ public class ChromHMM
 	       BrowserOutput theBrowserOutput = new BrowserOutput(szsegmentfile,szcolormapping,szlabelmapping,
                                                                   szsegmentationname, szoutputfileprefix,numstates,bgzip);
 	       theBrowserOutput.makebrowserdense();
-	       theBrowserOutput.makebrowserexpanded();
+	       if (blowmem)
+	       {
+	          theBrowserOutput.makebrowserexpandedLowMem();
+	       }
+	       else
+	       {
+	          theBrowserOutput.makebrowserexpanded();
+	       }
 	    }
 	    else
 	    {
@@ -13751,7 +13770,7 @@ public class ChromHMM
 	    
 	    if (!bok)
 	    {
-		System.out.println("usage: MakeBrowserFiles [-c colormappingfile][-gzip][-m labelmappingfile][-n numstates] segmentfile segmentationname outputfileprefix");
+		System.out.println("usage: MakeBrowserFiles [-c colormappingfile][-gzip][-lowmem][-m labelmappingfile][-n numstates] segmentfile segmentationname outputfileprefix");
 	    }
 	}
 	else if (szcommand.equalsIgnoreCase("OverlapEnrichment"))
@@ -14323,7 +14342,7 @@ public class ChromHMM
 	          {
 		     bnoorderrows = true;
 		  }
-		  else if (args[nargindex].equals("-printstatebyline"))
+		  else if ((args[nargindex].equals("-printstatebyline"))||(args[nargindex].equals("-printstatesbyline")))
 		  {
 		      bprintstatebyline = true;
 		  }
@@ -14559,7 +14578,14 @@ public class ChromHMM
 										 szprefix,szoutputdir+"/"+szprefix,numstates,bgzip);
 
 			      theBrowserOutput.makebrowserdense();
-			      theBrowserOutput.makebrowserexpanded();
+			      if (blowmem)
+			      {
+			         theBrowserOutput.makebrowserexpandedLowMem();
+			      }
+			      else
+                              {
+			         theBrowserOutput.makebrowserexpanded();
+			      }
 
 			      if (bgzip)
 			      {
