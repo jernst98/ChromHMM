@@ -2911,7 +2911,7 @@ public class ChromHMM
 	}
 	chorder = st.nextToken().charAt(0);
 
-	if ((nstateorder != ChromHMM.STATEORDER_TRANSITION)&&(nstateorder != ChromHMM.STATEORDER_EMISSION))
+	if ((nstateorder != ChromHMM.STATEORDER_TRANSITION)&&(nstateorder != ChromHMM.STATEORDER_EMISSION)&&(nstateorder != ChromHMM.STATEORDER_FIXED))
 	{
 	   nstateorder = -1;
 	   for (int ni = 0; ni < ChromHMM.ORDERCHARS.length; ni++)
@@ -7029,7 +7029,7 @@ public class ChromHMM
        double[][] alpha = new double[data.length][numstates];
 
        //Temporary storage of the gamma's for each state
-       double[][] gamma = new double[data.length][numstates];
+       //double[][] gamma = new double[data.length][numstates];
 
        //Temporary storage of the beta values for each state
        double[] beta_nt = new double[numstates];
@@ -12848,10 +12848,11 @@ public class ChromHMM
 
 	if (szcommand.equalsIgnoreCase("Version"))
 	{
-	    System.out.println("This is Version 1.21 of ChromHMM (c) Copyright 2008-2012 Massachusetts Institute of Technology");
+	    System.out.println("This is Version 1.22 of ChromHMM (c) Copyright 2008-2012 Massachusetts Institute of Technology");
 	}
         else if ((szcommand.equals("BinarizeBam"))||(szcommand.equalsIgnoreCase("BinarizeBed")))
 	{
+	    boolean bstacked = false;
 	    boolean bgzip = false;
 	    boolean bpairend = false;
 	    boolean bsplit = false;
@@ -12876,6 +12877,12 @@ public class ChromHMM
 	    int nsplitindex = -1;
 	    boolean bshift = false;
 	    boolean bflagsplitbins = false;
+
+	    boolean bflagsplitcols = false;
+
+	    boolean bsplitcols = false;
+	    int nnummarksplit = 10; 
+	    int nmarksplitindex = -1; 
 
 	    int nargindex = 1;
 	    if (args.length <= 4)
@@ -12926,6 +12933,16 @@ public class ChromHMM
 			 bflagsplitbins = true;
 			 //bsplit = true;
 		     }
+		     else if (args[nargindex].equals("-k"))
+		     {
+                         nmarksplitindex = Integer.parseInt(args[++nargindex]);
+			 bflagsplitcols = true;
+		     }
+		     else if (args[nargindex].equals("-m"))
+		     {
+			 nnummarksplit = Integer.parseInt(args[++nargindex]);
+			 bflagsplitcols = true;
+		     }
 		     else if (args[nargindex].equals("-n"))
 		     {
 		         nshift = Integer.parseInt(args[++nargindex]);
@@ -12954,6 +12971,14 @@ public class ChromHMM
 		     else if (args[nargindex].equals("-splitrows"))
 		     {
 			 bsplit = true;
+		     }
+                     else if (args[nargindex].equals("-splitcols"))
+		     {
+		         bsplitcols = true;
+		     }
+                     else if (args[nargindex].equals("-stacked"))
+		     {
+		        bstacked = true;
 		     }
 		     else if (args[nargindex].equals("-strictthresh"))
 		     {
@@ -13015,6 +13040,12 @@ public class ChromHMM
 	       bok = false;
 	    }
 
+	    if ((!bsplitcols)&&(bflagsplitcols))
+	    {
+		bok = false;
+	    }
+
+
 
 	    if ((bok)&&(nargindex == args.length-4))
 	    {
@@ -13037,26 +13068,208 @@ public class ChromHMM
 		   szcontroldir = szmarkdir;
 	       }
 
+
+
+	       int nmaxsplit = 0;
+	       if (bsplitcols)
+	       {
+	          String szLineCellMark;
+		  int ncellmarkline = 0;
+
+		  BufferedReader brcellmark = Util.getBufferedReader(szcellmarkfiletable);
+		  HashSet hscombo = new HashSet();
+
+		  while ((szLineCellMark=brcellmark.readLine()) != null)
+	          {
+		     if (szLineCellMark.trim().equals("")) continue;
+
+		     StringTokenizer stcellmark = new StringTokenizer(szLineCellMark,"\t");
+
+		     if (stcellmark.countTokens() < 3)
+		     {
+		        throw new IllegalArgumentException("In "+szcellmarkfiletable+" "+szLineCellMark+" does not have at least three columns");
+		     }
+		     String szcell = stcellmark.nextToken().trim(); //added trim in v1.20 to remove leading and trailing white space
+		     String szmark = stcellmark.nextToken().trim();
+
+		     if (hscombo.contains(szcell+"\t"+szmark))
+		     {
+	                throw new IllegalArgumentException("In "+szcellmarkfiletable+" "+szcell+"\t"+szmark+" found twice, but -splitcols specified");
+		     }
+		     hscombo.add(szcell+"\t"+szmark);
+
+		     if (ncellmarkline % nnummarksplit == 0)
+		     {
+	                nmaxsplit++;
+		     }
+		     ncellmarkline++;
+		  }
+		  brcellmark.close();
+	       }
+
 	       if (nsplitindex >= 0)
 	       {
-		   if (bpeaks)
-		   {
-		      Preprocessing.makeBinaryDataFromPeaksSplit(szchromlengthfile, szmarkdir, szoutputbinarydir, szcellmarkfiletable,
-					                         nbinsize, bgzip, numsplitbins, nsplitindex, noffsetleft,noffsetright);
-		   }
-		   else
-		   {
-		      bok = false;
-		   }
+	          if (bpeaks)
+		  {
+	             if ((bsplitcols)&&(nmarksplitindex==-1))
+		     {
+	                //need to figure out maxsplit
+
+			for (nmarksplitindex = 0; nmarksplitindex < nmaxsplit; nmarksplitindex++)
+		        {
+			    String szoutputbinarydirsub = szoutputbinarydir+"/SET"+(nmarksplitindex+1);
+			    f = new File(szoutputbinarydirsub);
+			    if (!f.exists())
+		       	    {
+		      	       if (!f.mkdirs())
+			       {
+			          throw new IllegalArgumentException(szoutputbinarydirsub+" does not exist and could not be created!");
+			       }
+			    }
+
+			    Preprocessing.makeBinaryDataFromPeaksSplit(szchromlengthfile, szmarkdir, szoutputbinarydir, szcellmarkfiletable,
+					                         nbinsize, bgzip, numsplitbins, nsplitindex, noffsetleft,noffsetright,
+								       bsplitcols,nnummarksplit,nmarksplitindex,bstacked);
+			}
+		     }
+		     else
+		     {
+		        if (bsplitcols)
+		        {
+			   if (nmarksplitindex >= nmaxsplit)
+			   {
+			       throw new IllegalArgumentException("nmarksplitindex"+" value of "+nmarksplitindex+" is greater than the maximum of "+(nmaxsplit-1));
+			   }
+		           szoutputbinarydir = szoutputbinarydir+"/SET"+(nmarksplitindex+1);
+		           f = new File(szoutputbinarydir);
+		           if (!f.exists())
+		           {
+		              if (!f.mkdirs())
+		              {
+		                 throw new IllegalArgumentException(szoutputbinarydir+" does not exist and could not be created!");
+			      }
+			   }
+			}
+		     
+		        Preprocessing.makeBinaryDataFromPeaksSplit(szchromlengthfile, szmarkdir, szoutputbinarydir, szcellmarkfiletable,
+					                         nbinsize, bgzip, numsplitbins, nsplitindex, noffsetleft,noffsetright,
+								   bsplitcols,nnummarksplit,nmarksplitindex, bstacked);
+		     }
+		  }
+		  else
+		  {
+		     bok = false;
+		  }
 	       }
 	       else
 	       {
-	          Preprocessing.makeBinaryDataFromBed(szchromlengthfile,szmarkdir,szcontroldir,nflankwidthcontrol,szcellmarkfiletable,
+
+		  if ((bsplitcols)&&(nmarksplitindex==-1))
+		  {
+		      //going through all
+		      //need to figure out maxsplit
+
+		      for (nmarksplitindex = 0; nmarksplitindex < nmaxsplit; nmarksplitindex++)
+		      {
+			 String szoutputbinarydirsub = szoutputbinarydir+"/SET"+(nmarksplitindex+1);
+		         f = new File(szoutputbinarydirsub);
+		         if (!f.exists())
+		         {
+		            if (!f.mkdirs())
+		            {
+		               throw new IllegalArgumentException(szoutputbinarydirsub+" does not exist and could not be created!");
+			    }
+			 }
+
+			 String szoutputsignaldirsub = null;
+			 if (szoutputsignaldir != null)
+			 {
+			    szoutputsignaldirsub = szoutputsignaldir+"/SET"+(nmarksplitindex+1);
+		            f = new File(szoutputsignaldirsub);
+		            if (!f.exists())
+		            {
+		               if (!f.mkdirs())
+		               {
+		                  throw new IllegalArgumentException(szoutputsignaldirsub+" does not exist and could not be created!");
+			       }
+			    }
+			 }
+
+                         String szoutputcontroldirsub = null;
+			 if (szoutputcontroldirsub != null)
+			 {
+			    szoutputcontroldirsub = szoutputcontroldir+"/SET"+(nmarksplitindex+1);
+		            f = new File(szoutputcontroldirsub);
+		            if (!f.exists())
+		            {
+		               if (!f.mkdirs())
+		               {
+		                  throw new IllegalArgumentException(szoutputcontroldirsub+" does not exist and could not be created!");
+			       }
+			    }
+			 }
+		  
+	                 Preprocessing.makeBinaryDataFromBed(szchromlengthfile,szmarkdir,szcontroldir,nflankwidthcontrol,szcellmarkfiletable,
+						nshift,bcenterinterval, noffsetleft,noffsetright,szoutputsignaldir,
+						szoutputbinarydirsub,szoutputcontroldir,
+					        dpoissonthresh,dfoldthresh,bcontainsthresh,
+					        npseudocountcontrol,nbinsize,szcolfields,bpeaks, dcountthresh,szcommand.equalsIgnoreCase("BinarizeBam"),
+					       bpairend, bgzip, bsplit, numsplitbins, bsplitcols,nnummarksplit,nmarksplitindex, bstacked);	   	        
+		      }
+		  }
+		  else
+		  {
+		     if (bsplitcols)
+		     {
+			if (nmarksplitindex >= nmaxsplit)
+			{
+			    throw new IllegalArgumentException("nmarksplitindex"+" value of "+nmarksplitindex+" is greater than the maximum of "+(nmaxsplit-1));
+			}
+		        szoutputbinarydir = szoutputbinarydir+"/SET"+(nmarksplitindex+1);
+		        f = new File(szoutputbinarydir);
+		        if (!f.exists())
+		        {
+		           if (!f.mkdirs())
+		           {
+		              throw new IllegalArgumentException(szoutputbinarydir+" does not exist and could not be created!");
+			   }
+			}
+
+			if (szoutputsignaldir != null)
+			{
+			   szoutputsignaldir = szoutputsignaldir+"/SET"+(nmarksplitindex+1);
+		           f = new File(szoutputsignaldir);
+		           if (!f.exists())
+		           {
+		              if (!f.mkdirs())
+		              { 
+		                 throw new IllegalArgumentException(szoutputsignaldir+" does not exist and could not be created!");
+			      }
+			   }
+			}
+
+			if (szoutputcontroldir != null)
+			{
+			   szoutputcontroldir = szoutputcontroldir+"/SET"+(nmarksplitindex+1);
+		           f = new File(szoutputcontroldir);
+		           if (!f.exists())
+		           {
+		              if (!f.mkdirs())
+		              {
+		                 throw new IllegalArgumentException(szoutputcontroldir+" does not exist and could not be created!");
+			      }
+			   }
+			}
+		     }
+		  
+	             Preprocessing.makeBinaryDataFromBed(szchromlengthfile,szmarkdir,szcontroldir,nflankwidthcontrol,szcellmarkfiletable,
 						nshift,bcenterinterval, noffsetleft,noffsetright,szoutputsignaldir,
 						szoutputbinarydir,szoutputcontroldir,
 					        dpoissonthresh,dfoldthresh,bcontainsthresh,
 					        npseudocountcontrol,nbinsize,szcolfields,bpeaks, dcountthresh,szcommand.equalsIgnoreCase("BinarizeBam"),
-						bpairend, bgzip, bsplit, numsplitbins);	   	          
+					        bpairend, bgzip, bsplit, numsplitbins, bsplitcols,nnummarksplit,nmarksplitindex,bstacked);	   	          
+		   
+		  }
 	       }
 	    }
 	    else
@@ -13071,15 +13284,15 @@ public class ChromHMM
 	       {
 		   //v1.18 update
                   System.out.println("usage BinarizeBed [-b binsize][-c controldir][-center][-colfields chromosome,start,end[,strand]][-e offsetend][-f foldthresh]"+
-                                  "[-g signalthresh][-gzip][-n shift][-o outputcontroldir][-p poissonthresh][-peaks [-i splitindex]][-s offsetstart][-splitrows [-j numsplitbins]][-strictthresh][-t outputsignaldir]"+
+                                  "[-g signalthresh][-gzip][-n shift][-o outputcontroldir][-p poissonthresh][-peaks [-i splitrowindex]][-s offsetstart][-splitcols [-k splitcolindex][-m numsplitcols]][-splitrows [-j numsplitbins]][-stacked][-strictthresh][-t outputsignaldir]"+
                                   "[-u pseudocountcontrol][-w flankwidthcontrol] "+
                                   "chromosomelengthfile inputbeddir cellmarkfiletable outputbinarydir");
 	       }
 	       else
 	       {
 		   System.out.println("usage BinarizeBam [-b binsize][-c controldir][-e offsetend][-f foldthresh]"+
-                                  "[-g signalthresh][-gzip][-o outputcontroldir][-p poissonthresh][-paired|[-center][-n shift][-peaks [-i splitindex]]"+
-                                  "[-s offsetstart][-splitrows [-j numsplitbins]][-strictthresh][-t outputsignaldir]"+
+                                  "[-g signalthresh][-gzip][[-o outputcontroldir][-p poissonthresh][-paired|[-center][-n shift][-peaks [-i splitindex]]"+
+                                  "[-s offsetstart][-splitcols [-k splitcolindex][-m numsplitcols]][-splitrows [-j numsplitbins]][-stacked][-strictthresh][-t outputsignaldir]"+
                                   "[-u pseudocountcontrol][-w flankwidthcontrol] "+
 				      "chromosomelengthfile inputbamdir cellmarkfiletable outputbinarydir");
 	       }
@@ -13217,7 +13430,7 @@ public class ChromHMM
 	    int numsplitbins = ChromHMM.DEFAULT_NUMSPLITBINS;
 	    boolean bsplit = false;
 	    String szdirlistfile = null;
-
+	    String sztype = "binary";
 	    String szinputdir = null;
 	    String szoutputdir = null;
 	    boolean bflagsplitbins = false;
@@ -13236,6 +13449,10 @@ public class ChromHMM
 		     if (args[nargindex].equals("-f"))
 		     {
 			 szdirlistfile = args[++nargindex];
+		     }
+		     else if (args[nargindex].equals("-t"))
+		     {
+			 sztype = args[++nargindex];
 		     }
 		     else if (args[nargindex].equals("-j"))
 		     {
@@ -13282,8 +13499,7 @@ public class ChromHMM
 		        throw new IllegalArgumentException(szoutputdir+" does not exist and could not be created!");
 		     }
 		  }		  
-	      
-		  Preprocessing.mergeBinarizedFiles(szinputdir, szoutputdir, szdirlistfile, bsplit, numsplitbins, bgzip);
+		  Preprocessing.mergeBinarizedFiles(szinputdir, szoutputdir, szdirlistfile, bsplit, numsplitbins, bgzip, sztype);
 	       }
 	       else
 	       {
@@ -13293,7 +13509,7 @@ public class ChromHMM
 
 	    if (!bok)
             {
-               System.out.println("usage MergeBinary [-f dirlistfile][-gzip][-splitrows [-j numsplitbins]] inputdir outputdir");
+               System.out.println("usage MergeBinary [-f dirlistfile][-gzip][-splitrows [-j numsplitbins]][-t type] inputdir outputdir");
             }	       
 	}
 	else if (szcommand.equalsIgnoreCase("CompareModels"))
@@ -13366,7 +13582,7 @@ public class ChromHMM
 	    
 	    if (!bok)
 	    {
-	       System.out.println("usage CompareModels [-color r,g,b][-noimage] referencemodel comparedir outputprefix");
+	       System.out.println("usage CompareModels [-color r,g,b][-noimage] referencemodelemissions comparedir outputprefix");
 	    }	    
 	}
 	else if (szcommand.equalsIgnoreCase("StatePruning"))
@@ -14341,6 +14557,7 @@ public class ChromHMM
                   else if (args[nargindex].equals("-holdroworder"))
 	          {
 		     bnoorderrows = true;
+		     nstateorder = ChromHMM.STATEORDER_FIXED;
 		  }
 		  else if ((args[nargindex].equals("-printstatebyline"))||(args[nargindex].equals("-printstatesbyline")))
 		  {

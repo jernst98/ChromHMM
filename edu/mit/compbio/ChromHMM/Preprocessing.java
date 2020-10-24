@@ -524,7 +524,8 @@ public class Preprocessing
 
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     public static void makeBinaryDataFromPeaksSplit(String szchromlengthfile, String szmarkdir, String szoutputbinarydir, String szcellmarkfiletable, 
-						    int nbinsize, boolean bgzip, int numsplitbins, int nsplit, int noffsetleft, int noffsetright) throws IOException
+						    int nbinsize, boolean bgzip, int numsplitbins, int nsplit, int noffsetleft, int noffsetright,
+						    boolean bsplitcols,int nnummarksplit,int nmarksplitindex, boolean bstacked) throws IOException
     {
 	//reads in the chromosome length information file
 	//the first column of this file is the chromosome and the second is the chromsome length
@@ -567,29 +568,47 @@ public class Preprocessing
 	HashSet hsmarks = new HashSet(); //contains the names of all marks
 	HashMap hmfiles = new HashMap(); //contains a mapping from (cell type, mark) to the regular data file
 
+
+	int ncellmarkentry = 0;
+	int ncolsplitbegin = nnummarksplit*(nmarksplitindex);
+        int ncolsplitend = nnummarksplit*(nmarksplitindex+1);
+
 	while ((szLine = brcellmark.readLine())!=null)
 	{
 	    if (szLine.trim().equals("")) continue;
-	    StringTokenizer st = new StringTokenizer(szLine,"\t");
-	    if (st.countTokens() != 3)
-	    {
-		throw new IllegalArgumentException("In "+szcellmarkfiletable+" "+szLine+" does not have 3 columns, "+
+
+	    if ((!bsplitcols) || ((ncolsplitbegin<=ncellmarkentry)&&(ncellmarkentry<ncolsplitend)))
+	    {	    
+	       StringTokenizer st = new StringTokenizer(szLine,"\t");
+
+	       if (st.countTokens() != 3)
+	       {
+		  throw new IllegalArgumentException("In "+szcellmarkfiletable+" "+szLine+" does not have 3 columns, "+
                                                     "expecting 3 columns since peaks was specified");
-	    }
-	    String szcell = st.nextToken().trim(); //added trim in v1.20 to remove leading and trailing white space
-	    String szmark = st.nextToken().trim();
-	    String szfile = st.nextToken().trim();
+	       }
+	       String szcell = st.nextToken().trim(); //added trim in v1.20 to remove leading and trailing white space
+	       String szmark = st.nextToken().trim();
 
-	    hscells.add(szcell);
-	    hsmarks.add(szmark);
+	       if (bstacked)
+	       {
+		   szcell = "genome";
+		   szmark = szcell + "_" + szmark;
+	       }
 
-	    ArrayList alfiles = (ArrayList) hmfiles.get(szcell+"\t"+szmark);
-	    if (alfiles == null)
-	    {
-		alfiles = new ArrayList();
-	        hmfiles.put(szcell+"\t"+szmark,alfiles);
+	       String szfile = st.nextToken().trim();
+
+	       hscells.add(szcell);
+	       hsmarks.add(szmark);
+
+	       ArrayList alfiles = (ArrayList) hmfiles.get(szcell+"\t"+szmark);
+	       if (alfiles == null)
+	       {
+		  alfiles = new ArrayList();
+	          hmfiles.put(szcell+"\t"+szmark,alfiles);
+	       }
+	       alfiles.add(szfile);
 	    }
-	    alfiles.add(szfile);
+	    ncellmarkentry++;
 	}
 	brcellmark.close();
 	
@@ -834,7 +853,8 @@ public class Preprocessing
                                              String szoutputsignaldir,String szoutputbinarydir, String szoutputcontroldir, 
 					     double dpoissonthresh, double dfoldthresh,boolean bcontainsthresh, int npseudocountcontrol,int nbinsize,
 					     String szcolfields, boolean bpeaks, double dcountthresh, boolean bbinarizebam, boolean bpairend,
-					     boolean bgzip, boolean bsplit, int numsplitbins
+					     boolean bgzip, boolean bsplit, int numsplitbins,
+					     boolean bsplitcols,int nnummarksplit,int nmarksplitindex, boolean bstacked
                                             ) throws IOException
     {
 
@@ -880,60 +900,76 @@ public class Preprocessing
 	boolean bcontrol = false; //whether there is control data at all
 	String szcontrolfile;
 
+	int ncellmarkentry = 0;
+	int ncolsplitbegin = nnummarksplit*(nmarksplitindex);
+        int ncolsplitend = nnummarksplit*(nmarksplitindex+1);
+
 	while ((szLine = brcellmark.readLine())!=null)
 	{
 	    if (szLine.trim().equals("")) continue;
-	    StringTokenizer st = new StringTokenizer(szLine,"\t");
-	    if (st.countTokens() < 3)
-	    {
-		throw new IllegalArgumentException("In "+szcellmarkfiletable+" "+szLine+" has less than 3 columns, expecting at least 3!");
-	    }
-	    String szcell = st.nextToken().trim(); //added in v1.20 to remove leading and trailing white space
-	    String szmark = st.nextToken().trim();
-	    String szfile = st.nextToken().trim();
-	    if (st.hasMoreTokens())
-	    {
-		//we have control data
-		szcontrolfile = st.nextToken().trim();
-		bcontrol = true;
 
-		//was hmfiles in version 1.00
-	        ArrayList alfilescontrol = (ArrayList) hmfilescontrol.get(szcell+"\t"+szmark);
-	        if (alfilescontrol == null)
-	        {
-		   alfilescontrol = new ArrayList();
-		   hmfilescontrol.put(szcell+"\t"+szmark,alfilescontrol);
-		}
+	    if ((!bsplitcols) || ((ncolsplitbegin<=ncellmarkentry)&&(ncellmarkentry<ncolsplitend)))
+	    {	    
+	       StringTokenizer st = new StringTokenizer(szLine,"\t");
+	       if (st.countTokens() < 3)
+	       {
+		  throw new IllegalArgumentException("In "+szcellmarkfiletable+" "+szLine+" has less than 3 columns, expecting at least 3!");
+	       }
+	       String szcell = st.nextToken().trim(); //added in v1.20 to remove leading and trailing white space
+	       String szmark = st.nextToken().trim();
 
-		if (!alfilescontrol.contains(szcontrolfile))
-	        {
-		    //added in version 1.11 to only count control file once, if appearing multiple times
-		   alfilescontrol.add(szcontrolfile);
-		}
+	       if (bstacked)
+	       {
+		   szcell = "genome";
+		   szmark = szcell + "_" + szmark;
+	       }
 
-		HashSet hscellcontrol = (HashSet) hmfilescellcontrol.get(szcell);
-		if (hscellcontrol == null)
-		{
-		    hscellcontrol = new HashSet();
-		    hmfilescellcontrol.put(szcell, hscellcontrol);
-		}		
+	       String szfile = st.nextToken().trim();
+	       if (st.hasMoreTokens())
+	       {
+	          //we have control data
+		  szcontrolfile = st.nextToken().trim();
+		  bcontrol = true;
+
+		  //was hmfiles in version 1.00
+	          ArrayList alfilescontrol = (ArrayList) hmfilescontrol.get(szcell+"\t"+szmark);
+	          if (alfilescontrol == null)
+	          {
+		     alfilescontrol = new ArrayList();
+		     hmfilescontrol.put(szcell+"\t"+szmark,alfilescontrol);
+		  }
+
+		  if (!alfilescontrol.contains(szcontrolfile))
+	          {
+		     //added in version 1.11 to only count control file once, if appearing multiple times
+		     alfilescontrol.add(szcontrolfile);
+		  }
+
+		  HashSet hscellcontrol = (HashSet) hmfilescellcontrol.get(szcell);
+		  if (hscellcontrol == null)
+		  {
+		     hscellcontrol = new HashSet();
+		     hmfilescellcontrol.put(szcell, hscellcontrol);
+		  }		
 		
-	        hscellcontrol.add(szcontrolfile);		
-	    }
-	    else
-	    {
-		hscellnocontrol.add(szcell);
-	    }
-	    hscells.add(szcell);
-	    hsmarks.add(szmark);
+	          hscellcontrol.add(szcontrolfile);		
+	       }
+	       else
+	       {
+		  hscellnocontrol.add(szcell);
+	       }
+	       hscells.add(szcell);
+	       hsmarks.add(szmark);
 
-	    ArrayList alfiles = (ArrayList) hmfiles.get(szcell+"\t"+szmark);
-	    if (alfiles == null)
-	    {
-		alfiles = new ArrayList();
-	        hmfiles.put(szcell+"\t"+szmark,alfiles);
+	       ArrayList alfiles = (ArrayList) hmfiles.get(szcell+"\t"+szmark);
+	       if (alfiles == null)
+	       {
+		  alfiles = new ArrayList();
+	          hmfiles.put(szcell+"\t"+szmark,alfiles);
+	       }
+	       alfiles.add(szfile);
 	    }
-	    alfiles.add(szfile);
+	    ncellmarkentry++;	    
 	}
 	brcellmark.close();
 	
@@ -2679,6 +2715,10 @@ public class Preprocessing
 		  int[] grid_nchrom_nbin = grid_nchrom[nbin];
 		  int[] gridcontrol_nchrom_nbin = gridcontrol_nchrom[nbin];
 	          st = new StringTokenizer(szLine,"\t");
+		  if (st.countTokens() != nummarks)
+		  {
+		     throw new IllegalArgumentException("In "+szfilename+" did not find the expected "+nummarks+" marks in this line: "+szLine);
+		  }
 	          for (int nmark = 0; nmark < nummarks; nmark++)
                   {
 		      //reading in the regular data
@@ -3202,6 +3242,11 @@ public class Preprocessing
 	       {
 	          ntotallocs++;
 	          st = new StringTokenizer(szLine,"\t");
+		  if (st.countTokens() != nummarks)
+		  {
+		     throw new IllegalArgumentException("In "+szfilename+" did not find the expected "+nummarks+" marks in this line: "+szLine);
+		  }
+
 	          for (int nj = 0; nj < nummarks; nj++)
                   {
 		      double dval =  Double.parseDouble(st.nextToken());		      
@@ -3548,7 +3593,7 @@ public class Preprocessing
      * used to do a row split on the input files, including if only one subdirectory is provided and no merging is done.
      */
     public static void mergeBinarizedFiles(String szinputdir, String szoutputdir, String szdirlistfile,
-                                           boolean bsplit, int numsplitbins, boolean bgzip) throws IOException
+                                           boolean bsplit, int numsplitbins, boolean bgzip,String szfiletype) throws IOException
     {
        ArrayList aldirs = new ArrayList();
 
@@ -3620,7 +3665,8 @@ public class Preprocessing
            for (int nfile = 0; nfile < chromfilesall.length; nfile++)
 	   {
 	       String szcurrfile = chromfilesall[nfile];
-	      if ((szcurrfile.contains("_binary"))&&(!(new File(szcurrpath+"/"+szcurrfile)).isHidden()))
+	      //if ((szcurrfile.contains("_binary"))&&(!(new File(szcurrpath+"/"+szcurrfile)).isHidden()))
+	      if ((szcurrfile.contains("_"+szfiletype))&&(!(new File(szcurrpath+"/"+szcurrfile)).isHidden()))
 	      {
 	         //added hidden check in v.1.11
 		  //read first two lines
@@ -3655,7 +3701,8 @@ public class Preprocessing
 
            if (hmbrA[ndir].size() == 0)
 	   {
-	       throw new IllegalArgumentException("No files found in "+szcurrpath+" containing '_binary' that are not Hidden");
+	       //throw new IllegalArgumentException("No files found in "+szcurrpath+" containing '_binary' that are not Hidden");
+	       throw new IllegalArgumentException("No files found in "+szcurrpath+" containing '_"+szfiletype+"' that are not Hidden");
 	   }
        }
 
@@ -3706,7 +3753,6 @@ public class Preprocessing
 
        for (int nfile = 0; nfile < chromfilescombine.length; nfile++)
        {
-
 	   String szcurrfile = chromfilescombine[nfile];
 	   for (int ndir = 0; ndir < subdirall.length; ndir++)
 	   {
@@ -3739,7 +3785,8 @@ public class Preprocessing
 	         if (bgzip)
 	         {
 		     //System.out.println(szcell+"_"+szchrom+"."+nsplit);
-		    GZIPOutputStream pwzip = new GZIPOutputStream(new FileOutputStream(szoutputdir+"/"+szcell+"_"+szchrom+"."+nsplit+"_binary.txt.gz"));
+		     //GZIPOutputStream pwzip = new GZIPOutputStream(new FileOutputStream(szoutputdir+"/"+szcell+"_"+szchrom+"."+nsplit+"_binary.txt.gz"));
+		    GZIPOutputStream pwzip = new GZIPOutputStream(new FileOutputStream(szoutputdir+"/"+szcell+"_"+szchrom+"."+nsplit+"_"+szfiletype+".txt.gz"));
 										    //szfile));
 	            //PrintWriter pw = new PrintWriter(new FileWriter(szoutputdir+"/"+szcell+"_"+szmark+"_binary.txt"));
 	            //need to read here
@@ -3808,7 +3855,8 @@ public class Preprocessing
 		    //String szcell = st.nextToken();
 		    //String szmark = st.nextToken();
 		     //System.out.println(szcell+"_"+szchrom+"."+nsplit);
-	            PrintWriter pw = new PrintWriter(new FileWriter(szoutputdir+"/"+szcell+"_"+szchrom+"."+nsplit+"_binary.txt"));
+		     //PrintWriter pw = new PrintWriter(new FileWriter(szoutputdir+"/"+szcell+"_"+szchrom+"."+nsplit+"_binary.txt"));
+	            PrintWriter pw = new PrintWriter(new FileWriter(szoutputdir+"/"+szcell+"_"+szchrom+"."+nsplit+"_"+szfiletype+".txt"));
 	            //need to read here
 	            pw.println(szcell+"\t"+szchrom+"."+nsplit);
 	            pw.println(szmergedheader);
@@ -3868,7 +3916,8 @@ public class Preprocessing
 	   {
 	      if (bgzip)
 	      {
-		 GZIPOutputStream pwzip = new GZIPOutputStream(new FileOutputStream(szoutputdir+"/"+szcell+"_"+szchrom+"_binary.txt.gz"));
+		  //GZIPOutputStream pwzip = new GZIPOutputStream(new FileOutputStream(szoutputdir+"/"+szcell+"_"+szchrom+"_binary.txt.gz"));
+		 GZIPOutputStream pwzip = new GZIPOutputStream(new FileOutputStream(szoutputdir+"/"+szcell+"_"+szchrom+"_"+szfiletype+".txt.gz"));
 										    //szfile));
 	         //PrintWriter pw = new PrintWriter(new FileWriter(szoutputdir+"/"+szcell+"_"+szmark+"_binary.txt"));
 	         //need to read here
@@ -3934,7 +3983,8 @@ public class Preprocessing
 		  //StringTokenizer st = new StringTokenizer(chromfilescombine[nfile],"\t");
 		  //String szcell = st.nextToken();
 		  //String szmark = st.nextToken();
-	         PrintWriter pw = new PrintWriter(new FileWriter(szoutputdir+"/"+szcell+"_"+szchrom+"_binary.txt"));
+		  //PrintWriter pw = new PrintWriter(new FileWriter(szoutputdir+"/"+szcell+"_"+szchrom+"_binary.txt"));
+	         PrintWriter pw = new PrintWriter(new FileWriter(szoutputdir+"/"+szcell+"_"+szchrom+"_"+szfiletype+".txt"));
 	         //need to read here
 	         pw.println(szcell+"\t"+szchrom);
 	         pw.println(szmergedheader);

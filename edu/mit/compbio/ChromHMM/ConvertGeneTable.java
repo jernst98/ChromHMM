@@ -53,14 +53,23 @@ public class ConvertGeneTable
 	//String szchromlengths = args[4];
 	String szLine;
 	HashMap hmlengths = new HashMap();
-	BufferedReader brlength = new BufferedReader(new FileReader(szchromlengths));
+	//BufferedReader brlength = new BufferedReader(new FileReader(szchromlengths));
+	BufferedReader brlength = Util.getBufferedReader(szchromlengths);
 	while ((szLine = brlength.readLine())!=null)
 	{
-	    StringTokenizer st = new StringTokenizer(szLine,"\t");
+	    StringTokenizer st = new StringTokenizer(szLine,"\t ");
+            if (st.countTokens()==0)
+	    {
+	       throw new IllegalArgumentException("empty line found in "+szchromlengths);
+	    }
+            else if (st.countTokens()==1)
+	    {
+	       throw new IllegalArgumentException("Only one token found in line "+szLine+" of "+szchromlengths);
+	    }
 	    hmlengths.put(st.nextToken(),Integer.valueOf(st.nextToken()));
 	}
 	brlength.close();
-	BufferedReader br = new BufferedReader(new FileReader(sztable));
+        BufferedReader br = Util.getBufferedReader(sztable);
 
 
 	PrintWriter pwtss = null;
@@ -162,8 +171,11 @@ public class ConvertGeneTable
 	    if (!szexonStarts.equals("\t"))
 		st.nextToken();
 	    String szexonEnds = st.nextToken();
-	    if (!szexonEnds.equals("\t"))
-		st.nextToken();
+
+	    //removed 1.22
+	    //if (!szexonEnds.equals("\t"))
+	    //	st.nextToken();
+	    
 	    //String szscore = st.nextToken();
 	    //if (!szscore.equals("\t"))
 	    //st.nextToken();
