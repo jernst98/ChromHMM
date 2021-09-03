@@ -140,37 +140,37 @@ public class ConvertGeneTable
 	while ((szLine = br.readLine())!=null)
 	{
 	    StringTokenizer st = new StringTokenizer(szLine,"\t",true);
-	    String szbin = st.nextToken();
+	    String szbin = st.nextToken().trim();
 	    if (!szbin.equals("\t"))
-		st.nextToken();
-	    String szname = st.nextToken();
+		st.nextToken().trim();
+	    String szname = st.nextToken().trim();
 	    if (!szname.equals("\t"))
-		st.nextToken();
-	    String szchrom = st.nextToken();
+		st.nextToken().trim();
+	    String szchrom = st.nextToken().trim();
 	    if (!szchrom.equals("\t"))
-		st.nextToken();
-	    String szstrand = st.nextToken();
+		st.nextToken().trim();
+	    String szstrand = st.nextToken().trim();
 	    if (!szstrand.equals("\t"))
-		st.nextToken();
-	    String sztxStart = st.nextToken();
+		st.nextToken().trim();
+	    String sztxStart = st.nextToken().trim();
 	    if (!sztxStart.equals("\t"))
-		st.nextToken();
-	    String sztxEnd = st.nextToken();
+		st.nextToken().trim();
+	    String sztxEnd = st.nextToken().trim();
 	    if (!sztxEnd.equals("\t"))
-		st.nextToken();
-	    String szcdsStart = st.nextToken();
+		st.nextToken().trim();
+	    String szcdsStart = st.nextToken().trim();
 	    if (!szcdsStart.equals("\t"))
-		st.nextToken();
-	    String szcdsEnd = st.nextToken();
+		st.nextToken().trim();
+	    String szcdsEnd = st.nextToken().trim();
 	    if (!szcdsEnd.equals("\t"))
-		st.nextToken();
-	    String szexonCount = st.nextToken();
+		st.nextToken().trim();
+	    String szexonCount = st.nextToken().trim();
 	    if (!szexonCount.equals("\t"))
-		st.nextToken();
-	    String szexonStarts = st.nextToken();
+		st.nextToken().trim();
+	    String szexonStarts = st.nextToken().trim();
 	    if (!szexonStarts.equals("\t"))
-		st.nextToken();
-	    String szexonEnds = st.nextToken();
+		st.nextToken().trim();
+	    String szexonEnds = st.nextToken().trim();
 
 	    //removed 1.22
 	    //if (!szexonEnds.equals("\t"))
@@ -288,7 +288,7 @@ public class ConvertGeneTable
 
 	       while (stexonStarts.hasMoreTokens())
 	       {
-		  String szexonOut = szchrom+"\t"+stexonStarts.nextToken()+"\t"+stexonEnds.nextToken()+"\n";
+		  String szexonOut = szchrom+"\t"+stexonStarts.nextToken().trim()+"\t"+stexonEnds.nextToken().trim()+"\n";
 		  if (!hsexon.contains(szexonOut))
 		  {
                      byte[] btformat = szexonOut.getBytes();
@@ -340,7 +340,7 @@ public class ConvertGeneTable
 
 	       while (stexonStarts.hasMoreTokens())
 	       {
-		  String szexonOut = szchrom+"\t"+stexonStarts.nextToken()+"\t"+stexonEnds.nextToken();
+		  String szexonOut = szchrom+"\t"+stexonStarts.nextToken().trim()+"\t"+stexonEnds.nextToken().trim();
 
                   if (!hsexon.contains(szexonOut))
 		  {

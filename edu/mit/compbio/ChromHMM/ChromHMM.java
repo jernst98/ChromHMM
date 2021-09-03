@@ -814,8 +814,8 @@ public class ChromHMM
 	    while ((szLine = bridlabel.readLine())!=null)
 	    {
 		StringTokenizer st = new StringTokenizer(szLine,"\t");
-		String szID = st.nextToken();
-		String szLabelExtend = st.nextToken();
+		String szID = st.nextToken().trim();
+		String szLabelExtend = st.nextToken().trim();
 		hmlabelExtend.put(szID,szLabelExtend);
 	    }
 	    bridlabel.close();
@@ -1072,7 +1072,7 @@ public class ChromHMM
 	   String szLine;
 	   while ((szLine = brstate.readLine())!=null)
 	   {
-	       StringTokenizer st = new StringTokenizer(szLine,"\t");
+	       StringTokenizer st = new StringTokenizer(szLine,"\t ");
 	       int nold = Integer.parseInt(st.nextToken())-1;
 	       int nnew = Integer.parseInt(st.nextToken())-1;
 	       stateordering[nnew] = nold;
@@ -1156,8 +1156,8 @@ public class ChromHMM
 		    pwzip.write(btformat,0,btformat.length);
 		    continue;
 		}
-		StringBuffer sb = new StringBuffer(st.nextToken()+"\t"+st.nextToken()+"\t"+st.nextToken());
-		String szinstate = st.nextToken();
+		StringBuffer sb = new StringBuffer(st.nextToken().trim()+"\t"+st.nextToken().trim()+"\t"+st.nextToken().trim());
+		String szinstate = st.nextToken().trim();
 		String szoutstate;
 
 		if (!Character.isDigit(szinstate.charAt(0)))
@@ -1172,7 +1172,7 @@ public class ChromHMM
 
 		while (st.hasMoreTokens())
 		{
-		    sb.append("\t"+st.nextToken());
+		    sb.append("\t"+st.nextToken().trim());
 		}
 		sb.append("\n");
 
@@ -1199,8 +1199,8 @@ public class ChromHMM
 		    pw.println(szLine);
 		    continue;
 		}
-		pw.print(st.nextToken()+"\t"+st.nextToken()+"\t"+st.nextToken());
-		String szinstate = st.nextToken();
+		pw.print(st.nextToken().trim()+"\t"+st.nextToken().trim()+"\t"+st.nextToken().trim());
+		String szinstate = st.nextToken().trim();
 		String szoutstate;
 		if (!Character.isDigit(szinstate.charAt(0)))
 		{
@@ -1214,7 +1214,7 @@ public class ChromHMM
 
 		while (st.hasMoreTokens())
 		{
-		    pw.print("\t"+st.nextToken());
+		    pw.print("\t"+st.nextToken().trim());
 		}
 		pw.println();
 	    }
@@ -1902,7 +1902,7 @@ public class ChromHMM
 	       ArrayList aldata = new ArrayList();
 	       while ((szLine = br.readLine())!=null)
 	       {
-	          StringTokenizer st = new StringTokenizer(szLine,"\t");
+	          StringTokenizer st = new StringTokenizer(szLine,"\t ");
       	          StringBuffer sb = new StringBuffer();
 		
 	          for (int ncol = 0; ncol < numdatasets; ncol++)
@@ -1912,7 +1912,7 @@ public class ChromHMM
 	                throw new IllegalArgumentException("Found line without "+numdatasets+" values in file "+chromfiles[nseq]);
 		     }
 
-		     String sztoken = st.nextToken();
+		     String sztoken = st.nextToken();//.trim();
 		    
 		     if (sztoken.equals("0"))
 	             {
@@ -2903,13 +2903,13 @@ public class ChromHMM
         StringTokenizer st = new StringTokenizer(szLoadHeader,"\t");
 
 	//first token of the first line of the model file is assume to give the number of states
-	numstates = Integer.parseInt(st.nextToken());
-	numdatasets = Integer.parseInt(st.nextToken());
+	numstates = Integer.parseInt(st.nextToken().trim());
+	numdatasets = Integer.parseInt(st.nextToken().trim());
 	if (datasets ==null)
 	{
 	    datasets = new String[numdatasets];
 	}
-	chorder = st.nextToken().charAt(0);
+	chorder = st.nextToken().trim().charAt(0);
 
 	if ((nstateorder != ChromHMM.STATEORDER_TRANSITION)&&(nstateorder != ChromHMM.STATEORDER_EMISSION)&&(nstateorder != ChromHMM.STATEORDER_FIXED))
 	{
@@ -2964,20 +2964,20 @@ public class ChromHMM
 	while ((szLine = br.readLine())!=null)
 	{
 	    st = new StringTokenizer(szLine,"\t");
-	    String szvartype = st.nextToken();
+	    String szvartype = st.nextToken().trim();
 
 	    if (szvartype.equalsIgnoreCase("probinit"))
 	    {
 		//reading an inital probability
-		int nstate = Integer.parseInt(st.nextToken())-1;
-		double dprob = Double.parseDouble(st.nextToken());
+		int nstate = Integer.parseInt(st.nextToken().trim())-1;
+		double dprob = Double.parseDouble(st.nextToken().trim());
 		probinit[nstate] = dprob;
 	    }
 	    else if (szvartype.equalsIgnoreCase("transitionprobs"))
 	    {
-		int nfrom = Integer.parseInt(st.nextToken())-1;
-		int nto = Integer.parseInt(st.nextToken())-1;
-		double dprob = Double.parseDouble(st.nextToken());
+		int nfrom = Integer.parseInt(st.nextToken().trim())-1;
+		int nto = Integer.parseInt(st.nextToken().trim())-1;
+		double dprob = Double.parseDouble(st.nextToken().trim());
 		//this smooths the transition probability if dproceduresmmothtransition>0 using a weighted average with uniform 
 		transitionprobs[nfrom][nto] = dproceduresmoothtransition/((double) transitionprobs.length)+(1-dproceduresmoothtransition)*dprob;
 		if (transitionprobs[nfrom][nto] == 0)
@@ -2989,20 +2989,20 @@ public class ChromHMM
 	    }
 	    else if (szvartype.equalsIgnoreCase("emissionprobs"))
 	    {
-		int nstate = Integer.parseInt(st.nextToken())-1;
-		int nmod = Integer.parseInt(st.nextToken());
-		String szdataset = st.nextToken();
+		int nstate = Integer.parseInt(st.nextToken().trim())-1;
+		int nmod = Integer.parseInt(st.nextToken().trim());
+		String szdataset = st.nextToken().trim();
 		if (datasets[nmod]==null)
 		{
-		    datasets[nmod] = szdataset;//st.nextToken();
+		    datasets[nmod] = szdataset;//st.nextToken().trim();
 		}
 		else if (!szdataset.equals(datasets[nmod]))
 		{
 		    throw new IllegalArgumentException("For mark "+nmod+" in model file found "+szdataset+", but expecting "+datasets[nmod]+"."
                                                       +" This might be because columns of binarized file are in a different order from model learning.");
 		}
-		int nval = Integer.parseInt(st.nextToken());
-		double dprob = Double.parseDouble(st.nextToken());
+		int nval = Integer.parseInt(st.nextToken().trim());
+		double dprob = Double.parseDouble(st.nextToken().trim());
 		//smooths the emission probability if dproceduresmoothemission>0 using a weighted average with uniform
 		emissionprobs[nstate][nmod][nval] = dproceduresmoothemission/((double) numbuckets)+(1-dproceduresmoothemission)*dprob;
 	    }
@@ -3229,7 +3229,7 @@ public class ChromHMM
 	     int nline = 0;
 	     while ((szLinePosterior = brprobs.readLine())!=null)
 	     {
-		StringTokenizer stposterior = new StringTokenizer(szLinePosterior,"\t");
+		StringTokenizer stposterior = new StringTokenizer(szLinePosterior,"\t ");
 	        for (int nstate = 0; nstate < numstates; nstate++)
 	        {
 		   fullposterior[nline][nstate] = Double.parseDouble(stposterior.nextToken());
@@ -3288,13 +3288,13 @@ public class ChromHMM
 	     while ((szLineMax = brbed.readLine())!=null)
 	     {
 		 StringTokenizer stchrom = new StringTokenizer(szLineMax,"\t");
-		 String szchrom = stchrom.nextToken();
+		 String szchrom = stchrom.nextToken().trim();
 
 		 if (szchrom.equals(szcurrchrom))
 	         {
-		     int nbegin = Integer.parseInt(stchrom.nextToken())/nbinsize;
-		     int nend = (Integer.parseInt(stchrom.nextToken())-1)/nbinsize;
-		     int nstate = Integer.parseInt(stchrom.nextToken().substring(1))-1;		        		
+		     int nbegin = Integer.parseInt(stchrom.nextToken().trim())/nbinsize;
+		     int nend = (Integer.parseInt(stchrom.nextToken().trim())-1)/nbinsize;
+		     int nstate = Integer.parseInt(stchrom.nextToken().trim().substring(1))-1;		        		
 		     for (int nj = nbegin; nj <= nend; nj++)
 		     {
 			 fullmax[nj] = nstate;
@@ -3990,7 +3990,7 @@ public class ChromHMM
 	  ArrayList aldata = new ArrayList();
 	  while ((szLine = br.readLine())!=null)
 	  {
-	      StringTokenizer st = new StringTokenizer(szLine,"\t");
+	      StringTokenizer st = new StringTokenizer(szLine,"\t ");
 	      StringBuffer sb = new StringBuffer();
 
 	      for (int ncol = 0; ncol < numdatasets; ncol++)
@@ -4000,7 +4000,7 @@ public class ChromHMM
 		    throw new IllegalArgumentException("Found line without "+numdatasets+" values in file "+chromfiles[nordered_nseq]);
 		 }
 
-		 String sztoken = st.nextToken();
+		 String sztoken = st.nextToken();//.trim();
 
 		 if (sztoken.equals("0"))
 		 {
@@ -4138,7 +4138,7 @@ public class ChromHMM
 	     int nline = 0;
 	     while ((szLinePosterior = brprobs.readLine())!=null)
 	     {
-		StringTokenizer stposterior = new StringTokenizer(szLinePosterior,"\t");
+		StringTokenizer stposterior = new StringTokenizer(szLinePosterior,"\t ");
 	        for (int nstate = 0; nstate < numstates; nstate++)
 	        {
 		   fullposterior[nline][nstate] = Double.parseDouble(stposterior.nextToken());
@@ -4197,13 +4197,13 @@ public class ChromHMM
 	     while ((szLineMax = brbed.readLine())!=null)
 	     {
 		 StringTokenizer stchrom = new StringTokenizer(szLineMax,"\t");
-		 String szchrom = stchrom.nextToken();
+		 String szchrom = stchrom.nextToken().trim();
 
 		 if (szchrom.equals(szcurrchrom))
 	         {
-		     int nbegin = Integer.parseInt(stchrom.nextToken())/nbinsize;
-		     int nend = (Integer.parseInt(stchrom.nextToken())-1)/nbinsize;
-		     int nstate = Integer.parseInt(stchrom.nextToken().substring(1))-1;		        		
+		     int nbegin = Integer.parseInt(stchrom.nextToken().trim())/nbinsize;
+		     int nend = (Integer.parseInt(stchrom.nextToken().trim())-1)/nbinsize;
+		     int nstate = Integer.parseInt(stchrom.nextToken().trim().substring(1))-1;		        		
 		     for (int nj = nbegin; nj <= nend; nj++)
 		     {
 			 fullmax[nj] = nstate;
@@ -4983,7 +4983,7 @@ public class ChromHMM
 	   ArrayList aldata = new ArrayList();
 	   while ((szLine = br.readLine())!=null)
 	   {
-	      StringTokenizer st = new StringTokenizer(szLine,"\t");
+	      StringTokenizer st = new StringTokenizer(szLine,"\t ");
       	      StringBuffer sb = new StringBuffer();
 		
 	      for (int ncol = 0; ncol < numdatasets; ncol++)
@@ -5168,12 +5168,12 @@ public class ChromHMM
 
 		    String szout = cellSeq[nordered_nseq]+"\t"+szactualchrom+"\n";
                     byte[] btformat = szout.getBytes();
-                    pwprobszip.write(btformat,0,btformat.length);
+                    pwmaxzip.write(btformat,0,btformat.length); //fix 1.23
 	            //pwmax.println(cellSeq[nordered_nseq]+"\t"+chromSeq[nordered_nseq]);
 
 		    szout = "MaxState "+chorder+"\n";
 		    btformat = szout.getBytes();
-                    pwprobszip.write(btformat,0,btformat.length);
+                    pwmaxzip.write(btformat,0,btformat.length); //fix 1.23
 	            //pwmax.println("MaxState "+chorder);
 		 }
 
@@ -7703,7 +7703,7 @@ public class ChromHMM
 	      ArrayList aldata = new ArrayList();
 	      while ((szLine = br.readLine())!=null)
 	      {
-	         StringTokenizer st = new StringTokenizer(szLine,"\t");
+	         StringTokenizer st = new StringTokenizer(szLine,"\t ");
 		 StringBuffer sb = new StringBuffer();
 		
 		 for (int ncol = 0; ncol < numdatasets; ncol++)
@@ -7713,7 +7713,7 @@ public class ChromHMM
 	      	       throw new IllegalArgumentException("Found line without "+numdatasets+" values in file "+chromfiles[nseq]);
 		    }
 
-		    String sztoken = st.nextToken();
+		    String sztoken = st.nextToken();//.trim();
 		    
 		    if (sztoken.equals("0"))
 		    {
@@ -10265,7 +10265,7 @@ public class ChromHMM
 	      ArrayList aldata = new ArrayList();
 	      while ((szLine = br.readLine())!=null)
 	      {
-	         StringTokenizer st = new StringTokenizer(szLine,"\t");
+	         StringTokenizer st = new StringTokenizer(szLine,"\t ");
 		 StringBuffer sb = new StringBuffer();
 		
 		 for (int ncol = 0; ncol < numdatasets; ncol++)
@@ -10275,7 +10275,7 @@ public class ChromHMM
 	      	       throw new IllegalArgumentException("Found line without "+numdatasets+" values in file "+chromfiles_nseq);
 		    }
 
-		    String sztoken = st.nextToken();
+		    String sztoken = st.nextToken();//.trim();
 		    
 		    if (sztoken.equals("0"))
 		    {
@@ -12286,12 +12286,12 @@ public class ChromHMM
 	       throw new IllegalArgumentException("First line must contain cell type and chromosome. No entries found.");
 	    }
 
-	    cellSeq[nfile] = st.nextToken();
+	    cellSeq[nfile] = st.nextToken().trim();//added trim in version 1.23
 	    if (!st.hasMoreTokens())
 	    {
 		throw new IllegalArgumentException("First line must contain cell type and chromosome. Only one entry found.");
 	    }
-	    chromSeq[nfile] = st.nextToken();
+	    chromSeq[nfile] = st.nextToken().trim();//added trim in version 1.23
 
 	    if (st.hasMoreTokens())
 	    {
@@ -12312,7 +12312,7 @@ public class ChromHMM
 	       int ntoken = 0;
 	       while (st.hasMoreTokens())
 	       {
-		  datasets[ntoken] = st.nextToken();
+		  datasets[ntoken] = st.nextToken().trim();
 	          ntoken++;
 	       }
  	       //numdatasets is the number of marks we are integrating
@@ -12330,7 +12330,7 @@ public class ChromHMM
 		//Gives warning if a header column does not match
 	        while (st.hasMoreTokens())
 	        {
-		   String sztoken = st.nextToken();
+		   String sztoken = st.nextToken().trim();
 	           if (!datasets[ntoken].equals(sztoken))
 		   {
 		       System.out.println("WARNING headers do not match between "+chromfiles[nfile]+" and "+chromfiles[0]);
@@ -12632,12 +12632,12 @@ public class ChromHMM
 	       throw new IllegalArgumentException("First line must contain cell type and chromosome. No entries found.");
 	    }
 
-	    cellSeq[nfile] = st.nextToken();
+	    cellSeq[nfile] = st.nextToken().trim(); //added trim in version 1.23
 	    if (!st.hasMoreTokens())
 	    {
 		throw new IllegalArgumentException("First line must contain cell type and chromosome. Only one entry found.");
 	    }
-	    chromSeq[nfile] = st.nextToken();
+	    chromSeq[nfile] = st.nextToken().trim(); //added trim in version 1.23
 
 	    if (st.hasMoreTokens())
 	    {
@@ -12658,7 +12658,7 @@ public class ChromHMM
 	       int ntoken = 0;
 	       while (st.hasMoreTokens())
 	       {
-		  datasets[ntoken] = st.nextToken();
+		  datasets[ntoken] = st.nextToken().trim();
 		  ntoken++;
 	       }
 	    }
@@ -12674,7 +12674,7 @@ public class ChromHMM
 		//Gives warning if a header column does not match
 	        while (st.hasMoreTokens())
 	        {
-		   String sztoken = st.nextToken();
+		   String sztoken = st.nextToken().trim();
 	           if (!datasets[ntoken].equals(sztoken))
 		   {
 		       System.out.println("WARNING headers do not match between "+chromfiles[nfile]+" and "+chromfiles[0]);
@@ -12689,7 +12689,7 @@ public class ChromHMM
 	    ArrayList aldata = new ArrayList();
 	    while ((szLine = br.readLine())!=null)
 	    {
-		st = new StringTokenizer(szLine,"\t");
+		st = new StringTokenizer(szLine,"\t ");
 		StringBuffer sb = new StringBuffer();
 		
 		for (int ncol = 0; ncol < numdatasets; ncol++)
@@ -12700,7 +12700,7 @@ public class ChromHMM
 			throw new IllegalArgumentException("Found line without "+numdatasets+" values in file "+chromfiles[nfile]);
 		    }
 
-		    String sztoken = st.nextToken();
+		    String sztoken = st.nextToken();//.trim();
 		    
 		    if (sztoken.equals("0"))
 		    {
@@ -12848,13 +12848,14 @@ public class ChromHMM
 
 	if (szcommand.equalsIgnoreCase("Version"))
 	{
-	    System.out.println("This is Version 1.22 of ChromHMM (c) Copyright 2008-2012 Massachusetts Institute of Technology");
+	    System.out.println("This is Version 1.23 of ChromHMM (c) Copyright 2008-2012 Massachusetts Institute of Technology");
 	}
         else if ((szcommand.equals("BinarizeBam"))||(szcommand.equalsIgnoreCase("BinarizeBed")))
 	{
 	    boolean bstacked = false;
 	    boolean bgzip = false;
 	    boolean bpairend = false;
+	    boolean bmixed = false;
 	    boolean bsplit = false;
 	    String szcontroldir=null;
 	    int nflankwidthcontrol = 5;
@@ -13012,6 +13013,10 @@ public class ChromHMM
 		     {
 			 bpairend = true;
 		     }
+		     else if ((args[nargindex].equals("-mixed"))&&(szcommand.equalsIgnoreCase("BinarizeBam")))
+		     {
+			 bmixed = true;
+		     }
 		     else if (args[nargindex].equals("-w"))
 		     {
 		        nflankwidthcontrol = Integer.parseInt(args[++nargindex]);
@@ -13030,7 +13035,7 @@ public class ChromHMM
 	       } 	       
 	    }
 
-	    if ((bpairend) && (bcenterinterval||bshift||bpeaks))
+	    if ((bpairend) && (bmixed||bcenterinterval||bshift||bpeaks))
 	    {
 		bok = false;
 	    }
@@ -13214,7 +13219,7 @@ public class ChromHMM
 						szoutputbinarydirsub,szoutputcontroldir,
 					        dpoissonthresh,dfoldthresh,bcontainsthresh,
 					        npseudocountcontrol,nbinsize,szcolfields,bpeaks, dcountthresh,szcommand.equalsIgnoreCase("BinarizeBam"),
-					       bpairend, bgzip, bsplit, numsplitbins, bsplitcols,nnummarksplit,nmarksplitindex, bstacked);	   	        
+							     bpairend, bgzip, bsplit, numsplitbins, bsplitcols,nnummarksplit,nmarksplitindex, bstacked, bmixed);	   	        
 		      }
 		  }
 		  else
@@ -13267,7 +13272,7 @@ public class ChromHMM
 						szoutputbinarydir,szoutputcontroldir,
 					        dpoissonthresh,dfoldthresh,bcontainsthresh,
 					        npseudocountcontrol,nbinsize,szcolfields,bpeaks, dcountthresh,szcommand.equalsIgnoreCase("BinarizeBam"),
-					        bpairend, bgzip, bsplit, numsplitbins, bsplitcols,nnummarksplit,nmarksplitindex,bstacked);	   	          
+							 bpairend, bgzip, bsplit, numsplitbins, bsplitcols,nnummarksplit,nmarksplitindex,bstacked,bmixed);	   	          
 		   
 		  }
 	       }
@@ -13291,7 +13296,7 @@ public class ChromHMM
 	       else
 	       {
 		   System.out.println("usage BinarizeBam [-b binsize][-c controldir][-e offsetend][-f foldthresh]"+
-                                  "[-g signalthresh][-gzip][[-o outputcontroldir][-p poissonthresh][-paired|[-center][-n shift][-peaks [-i splitindex]]"+
+                                  "[-g signalthresh][-gzip][[-o outputcontroldir][-p poissonthresh][-paired|[-mixed][-center][-n shift][-peaks [-i splitindex]]"+
                                   "[-s offsetstart][-splitcols [-k splitcolindex][-m numsplitcols]][-splitrows [-j numsplitbins]][-stacked][-strictthresh][-t outputsignaldir]"+
                                   "[-u pseudocountcontrol][-w flankwidthcontrol] "+
 				      "chromosomelengthfile inputbamdir cellmarkfiletable outputbinarydir");
@@ -13541,9 +13546,9 @@ public class ChromHMM
 		        StringTokenizer stcolor = new StringTokenizer(szcolor,",");
 		        if (stcolor.countTokens()==3)
 		        {
-		           nr = Integer.parseInt(stcolor.nextToken());
-			   ng = Integer.parseInt(stcolor.nextToken());
-		           nb = Integer.parseInt(stcolor.nextToken());
+		           nr = Integer.parseInt(stcolor.nextToken().trim());
+			   ng = Integer.parseInt(stcolor.nextToken().trim());
+		           nb = Integer.parseInt(stcolor.nextToken().trim());
 			}
 		        else
 		        {
@@ -13659,9 +13664,9 @@ public class ChromHMM
 		     StringTokenizer stcolor = new StringTokenizer(szcolor,",");
 		     if (stcolor.countTokens()==3)
 		     {
-		        nr = Integer.parseInt(stcolor.nextToken());
-		        ng = Integer.parseInt(stcolor.nextToken());
-		        nb = Integer.parseInt(stcolor.nextToken());
+		        nr = Integer.parseInt(stcolor.nextToken().trim());
+		        ng = Integer.parseInt(stcolor.nextToken().trim());
+		        nb = Integer.parseInt(stcolor.nextToken().trim());
 		     }
 		     else
 		     {
@@ -14039,9 +14044,9 @@ public class ChromHMM
 		     StringTokenizer stcolor = new StringTokenizer(szcolor,",");
 		     if (stcolor.countTokens()==3)
 		     {
-			nr = Integer.parseInt(stcolor.nextToken());
-			ng = Integer.parseInt(stcolor.nextToken());
-			nb = Integer.parseInt(stcolor.nextToken());
+			nr = Integer.parseInt(stcolor.nextToken().trim());
+			ng = Integer.parseInt(stcolor.nextToken().trim());
+			nb = Integer.parseInt(stcolor.nextToken().trim());
 		     }
 		     else
 		     {
@@ -14211,9 +14216,9 @@ public class ChromHMM
 		     StringTokenizer stcolor = new StringTokenizer(szcolor,",");
 		     if (stcolor.countTokens()==3)
 		     {
-			nr = Integer.parseInt(stcolor.nextToken());
-			ng = Integer.parseInt(stcolor.nextToken());
-			nb = Integer.parseInt(stcolor.nextToken());
+			nr = Integer.parseInt(stcolor.nextToken().trim());
+			ng = Integer.parseInt(stcolor.nextToken().trim());
+			nb = Integer.parseInt(stcolor.nextToken().trim());
 		     }
 		     else
 		     {
@@ -14404,9 +14409,9 @@ public class ChromHMM
 		     StringTokenizer stcolor = new StringTokenizer(szcolor,",");
 		     if (stcolor.countTokens()==3)
 		     {
-		        nr = Integer.parseInt(stcolor.nextToken());
-		        ng = Integer.parseInt(stcolor.nextToken());
-		        nb = Integer.parseInt(stcolor.nextToken());
+		        nr = Integer.parseInt(stcolor.nextToken().trim());
+		        ng = Integer.parseInt(stcolor.nextToken().trim());
+		        nb = Integer.parseInt(stcolor.nextToken().trim());
 		     }
 		     else
 		     {
@@ -14996,9 +15001,9 @@ public class ChromHMM
 		     StringTokenizer stcolor = new StringTokenizer(szcolor,",");
 		     if (stcolor.countTokens()==3)
 		     {
-		        nr = Integer.parseInt(stcolor.nextToken());
-		        ng = Integer.parseInt(stcolor.nextToken());
-		        nb = Integer.parseInt(stcolor.nextToken());
+		        nr = Integer.parseInt(stcolor.nextToken().trim());
+		        ng = Integer.parseInt(stcolor.nextToken().trim());
+		        nb = Integer.parseInt(stcolor.nextToken().trim());
 		     }
 		     else
 		     {

@@ -1,4 +1,3 @@
-
 /**
  * ChromHMM - automating chromatin state discovery and characterization
  * Copyright (C) 2008-2012 Massachusetts Institute of Technology
@@ -89,7 +88,8 @@ public class Preprocessing
     private static void loadGrid(int[][][] grid,boolean[] bpresent, boolean[] bpresentmarks, String[] marks,int nshift, int nbinsize,
                                  boolean bcenterinterval,int noffsetleft,
 				 int noffsetright,HashMap hmfiles, String szcell, String szmarkdir,HashMap hmchrom, 
-                                 int ninitval, String szcolfields,boolean bpeaks,boolean bcontrol, boolean bbinarizebam, boolean bpairend) throws IOException
+                                 int ninitval, String szcolfields,boolean bpeaks,boolean bcontrol, boolean bbinarizebam, 
+                                 boolean bpairend,boolean bmixed) throws IOException
     {
 	int nummarks = grid[0][0].length;
 	//initalizes all values in grid to ninitval
@@ -122,12 +122,12 @@ public class Preprocessing
           {
              throw new IllegalArgumentException(" invalid number of column fields in "+szcolfields+" expecting 3 or 4 integers");
           }
-          nchromcol = Integer.parseInt(stcolfields.nextToken());
-          nbegincol = Integer.parseInt(stcolfields.nextToken());
-          nendcol = Integer.parseInt(stcolfields.nextToken());
+          nchromcol = Integer.parseInt(stcolfields.nextToken().trim());
+          nbegincol = Integer.parseInt(stcolfields.nextToken().trim());
+          nendcol = Integer.parseInt(stcolfields.nextToken().trim());
           if (!bcenterinterval)
           {
-             nstrandcol = Integer.parseInt(stcolfields.nextToken());
+             nstrandcol = Integer.parseInt(stcolfields.nextToken().trim());
           }
 
 	  nmaxindex = Math.max(nchromcol,Math.max(nbegincol,Math.max(nendcol, nstrandcol)));
@@ -195,7 +195,133 @@ public class Preprocessing
 		     SamReader samReader = srf.open(new File(szmarkdir+"/"+szfile));
 		     SAMRecordIterator iter = samReader.iterator();
 
-		     if (bpairend)
+		     if (bmixed)
+		     {
+			 //added in v1.23 to handle mixed
+		        while (iter.hasNext())
+		        {
+			   SAMRecord rec= iter.next();
+
+			   if (rec.getReadPairedFlag())
+			   {
+
+			      if ((rec.getProperPairFlag()) && rec.getFirstOfPairFlag()&&(!rec.getReadUnmappedFlag()))
+			      {
+			         int nstartorig  = rec.getAlignmentStart()-1;
+			         int nendorig = rec.getAlignmentEnd();
+			         String szchrom = rec.getReferenceName();
+			         boolean bnegstrand = rec.getReadNegativeStrandFlag();
+			         int ninsertsize = rec.getInferredInsertSize();
+
+		                 Integer objInt = (Integer) hmchrom.get(szchrom);
+
+		                 //if we don't have the chromosome for the read will ignore it
+	                         if (objInt != null)
+	                         {
+		                    int nchrom = objInt.intValue();
+			            int nbin;
+
+				    //no center mode in paired end
+
+		                    if (bnegstrand) 
+		                    {		   
+				       //"-"   
+				       //was nshift
+		                       nbin = (nendorig-noffsetright+ninsertsize/2)/nbinsize;	
+				       //ninsertsize can be negative so adding
+                                       //removed one from here may need it for backwards consistency		      		       		      	    
+				    }
+				    else
+				    {
+				       //"+"
+				       //was nshift
+		                       nbin = (nstartorig-noffsetleft+ninsertsize/2)/nbinsize; 
+				    }
+				     //}
+		   
+		                    if ((nbin>=0)&&(nbin < grid[nchrom].length))
+	                            {
+		                       //increment bin count if falls into valid interval
+	                               grid[nchrom][nbin][nmark]++;
+		                       //we do have this chromosome
+	                               bpresent[nchrom] = true;			    
+			               bdatafound = true;
+				    }
+				 }
+			      }
+			   }
+			   else
+			   {
+			      //treat it as single end
+			      int nstartorig  = rec.getAlignmentStart()-1;
+		      	      int nendorig = rec.getAlignmentEnd();
+			      String szchrom = rec.getReferenceName();
+			      boolean bnegstrand = rec.getReadNegativeStrandFlag();
+			      boolean bunmapped = rec.getReadUnmappedFlag();
+
+			      if (bunmapped)
+			      {
+			         continue;
+			      }
+
+		              Integer objInt = (Integer) hmchrom.get(szchrom);
+
+			      //if we don't have the chromosome for the read will ignore it
+	                      if (objInt != null)
+	                      {
+		                 int nchrom = objInt.intValue();
+			         int nbin;
+
+		                 if (bpeaks)
+		                 {
+			            int nstart = Math.max(0,(nstartorig-noffsetleft)/nbinsize); 
+			            int nend = Math.min(grid[nchrom].length-1, (nendorig-noffsetright)/nbinsize);		      
+
+			            for (nbin = nstart; nbin <= nend; nbin++)
+	                            {
+		                       //increment bin count if falls into valid interval
+	                               grid[nchrom][nbin][nmark]++;
+		                       //we do have this chromosome
+	                               bpresent[nchrom] = true;			    
+			               bdatafound = true;
+				    }
+				 }
+		                 else
+		                 {
+		                    if (bcenterinterval)
+		                    {
+		                       //uses the center of the interval which is useful if read is already extended
+		                       nbin = (nstartorig-noffsetleft+nendorig-noffsetright)/(2*nbinsize);
+				    }
+		                    else
+		                    {
+		                       if (bnegstrand) 
+		                       {		   
+				          //"-"   
+		                          nbin = (nendorig-noffsetright-nshift)/nbinsize;	
+                                          //removed one from here may need it for backwards consistency		      		       		     	    
+				       }
+				       else
+				       {
+			                  //"+"
+		                          nbin = (nstartorig-noffsetleft+nshift)/nbinsize; 
+				       }
+				    }
+		   
+		                    if ((nbin>=0)&&(nbin < grid[nchrom].length))
+	                            {
+		                       //increment bin count if falls into valid interval
+	                               grid[nchrom][nbin][nmark]++;
+		                       //we do have this chromosome
+	                               bpresent[nchrom] = true;			    
+			               bdatafound = true;
+				    }
+				 }
+			      }
+			   }
+			}		       
+		     }
+		     else if (bpairend)
 		     {
 		        while (iter.hasNext())
 		        {
@@ -411,7 +537,7 @@ public class Preprocessing
 		          {
 		             throw new IllegalArgumentException("Empty line found in "+szmarkdir+"/"+szfile);
 			  }
-		          String szchrom = st.nextToken();
+		          String szchrom = st.nextToken();//.trim();
 		          Integer objInt = (Integer) hmchrom.get(szchrom);
 
 		          //if we don't have the chromosome for the read will ignore it
@@ -423,13 +549,13 @@ public class Preprocessing
 		                throw new IllegalArgumentException("Missing begin coordinate in "+szmarkdir+"/"+szfile);
 			     }
 
-			     String szbegin = st.nextToken();
+			     String szbegin = st.nextToken();//.trim();
 
 		             if (!st.hasMoreTokens())
 		             {
 		                throw new IllegalArgumentException("Missing end coordinate in "+szmarkdir+"/"+szfile);
 			     }
-			     String szend = st.nextToken();
+			     String szend = st.nextToken();//.trim();
 			     int nbin;
 
 		             if (bpeaks)
@@ -460,11 +586,11 @@ public class Preprocessing
 				      throw new IllegalArgumentException("strand column expected, but not found in "+szmarkdir+"/"+szfile);
 				   }
 		                   //looks for strand in sixth column or last column if less than six
-	                           String szstrand = st.nextToken();
+	                           String szstrand = st.nextToken();//.trim();
 	                           if (st.hasMoreTokens())
-	                              szstrand = st.nextToken();
+				       szstrand = st.nextToken();//.trim();
 	                           if (st.hasMoreTokens())
-	    	                      szstrand = st.nextToken();
+				       szstrand = st.nextToken();//.trim();
 			     	 	      
 		                   if (szstrand.equals("+"))
 		                   {		      
@@ -548,13 +674,13 @@ public class Preprocessing
 	    {
 		throw new IllegalArgumentException("empty line found in "+szchromlengthfile);
 	    }
-	    chroms[ni] = st.nextToken();
+	    chroms[ni] = st.nextToken();//.trim();
 
 	    if (!st.hasMoreTokens())
 	    {
 		throw new IllegalArgumentException("missing chromosome length for "+allines.get(ni)+" in "+szchromlengthfile);
 	    }
-	    int nlength = Integer.parseInt(st.nextToken());
+	    int nlength = Integer.parseInt(st.nextToken());//.trim());
             int numbins = nlength/nbinsize;
             //if (nlength % nbinsize !=0)  //removed pre 1.18 to be consistent from binarizing directly
             //    numbins++;
@@ -606,7 +732,12 @@ public class Preprocessing
 		  alfiles = new ArrayList();
 	          hmfiles.put(szcell+"\t"+szmark,alfiles);
 	       }
-	       alfiles.add(szfile);
+
+	       if (!alfiles.contains(szfile))
+	       {
+		   //added in v1.23 to only count once a given file
+	          alfiles.add(szfile);
+	       }
 	    }
 	    ncellmarkentry++;
 	}
@@ -675,11 +806,11 @@ public class Preprocessing
 	  	    {
 		       StringTokenizer st = new StringTokenizer(szLine,"\t");
 		       if (st.countTokens() == 0) continue;
-		       String szchrom = st.nextToken();
+		       String szchrom = st.nextToken().trim();
 		       if (szchrom.equals(szcurrchrom))
 		       {
-			  int nbegin = (Integer.parseInt(st.nextToken())-noffsetleft)/nbinsize;
-			  int nend = (Integer.parseInt(st.nextToken())-noffsetright)/nbinsize; //updated -1 from pre-release 1.18
+			  int nbegin = (Integer.parseInt(st.nextToken().trim())-noffsetleft)/nbinsize;
+			  int nend = (Integer.parseInt(st.nextToken().trim())-noffsetright)/nbinsize; //updated -1 from pre-release 1.18
 
 			  //need to update
 			  int nactualbegin = nbegin;
@@ -854,7 +985,7 @@ public class Preprocessing
 					     double dpoissonthresh, double dfoldthresh,boolean bcontainsthresh, int npseudocountcontrol,int nbinsize,
 					     String szcolfields, boolean bpeaks, double dcountthresh, boolean bbinarizebam, boolean bpairend,
 					     boolean bgzip, boolean bsplit, int numsplitbins,
-					     boolean bsplitcols,int nnummarksplit,int nmarksplitindex, boolean bstacked
+					     boolean bsplitcols,int nnummarksplit,int nmarksplitindex, boolean bstacked, boolean bmixed
                                             ) throws IOException
     {
 
@@ -879,13 +1010,13 @@ public class Preprocessing
 	    {
 		throw new IllegalArgumentException("empty line found in "+szchromlengthfile);
 	    }
-	    chroms[ni] = st.nextToken();
+	    chroms[ni] = st.nextToken();//.trim();
 	    hmchrom.put(chroms[ni], Integer.valueOf(ni));
 	    if (!st.hasMoreTokens())
 	    {
 		throw new IllegalArgumentException("missing chromosome length for "+allines.get(ni)+" in "+szchromlengthfile);
 	    }
-	    lengths[ni] = Integer.parseInt(st.nextToken());
+	    lengths[ni] = Integer.parseInt(st.nextToken());//.trim());
 	}
 
 
@@ -967,7 +1098,12 @@ public class Preprocessing
 		  alfiles = new ArrayList();
 	          hmfiles.put(szcell+"\t"+szmark,alfiles);
 	       }
-	       alfiles.add(szfile);
+
+	       if (!alfiles.contains(szfile))
+	       {
+		   //added in v1.23 to only count once a given file
+	          alfiles.add(szfile);
+	       }
 	    }
 	    ncellmarkentry++;	    
 	}
@@ -1050,7 +1186,7 @@ public class Preprocessing
 
 	    //loading data for the cell type
 	    loadGrid(grid,bpresent,bpresentmarks,marks,nshift,nbinsize,bcenterinterval,noffsetleft,
-		     noffsetright,hmfiles,szcell,szmarkdir,hmchrom,0,szcolfields,bpeaks,false,bbinarizebam, bpairend);
+		     noffsetright,hmfiles,szcell,szmarkdir,hmchrom,0,szcolfields,bpeaks,false,bbinarizebam, bpairend,bmixed);
 	    if (bcontrolfile)
 	    {
 	       if ((gridcontrol[0] == null)||(gridcontrol[0][0].length !=numcontrolmarks))
@@ -1066,7 +1202,7 @@ public class Preprocessing
 
 	       //we have control data loading cell type data for that
 	       loadGrid(gridcontrol,bpresentcontrol,bpresentmarkscontrol,marks,nshift,nbinsize,bcenterinterval,noffsetleft,noffsetright,
-                        hmfilescontrol,szcell,szcontroldir,hmchrom,npseudocountcontrol,szcolfields,bpeaks,true,bbinarizebam,bpairend);
+                        hmfilescontrol,szcell,szcontroldir,hmchrom,npseudocountcontrol,szcolfields,bpeaks,true,bbinarizebam,bpairend,bmixed);
 	    }
 	    
 
@@ -2566,7 +2702,7 @@ public class Preprocessing
 		   throw new IllegalArgumentException(szcontrolDIR+"/"+allfilescontrol[nfile]+" header line must have two columns delimited by a tab found only one in "+
 						      szheader);
 	       }
-	       String szkey = st.nextToken()+"\t"+st.nextToken();
+	       String szkey = st.nextToken().trim()+"\t"+st.nextToken().trim();
 	       hmcontrol.put(szkey,allfilescontrol[nfile]);
 	       brcontrol.close();
 	   }
@@ -2588,7 +2724,7 @@ public class Preprocessing
 	       throw new IllegalArgumentException(signalchromfiles[nfile]+" is empty!");
 	   }
 	   StringTokenizer st = new StringTokenizer(szLine,"\t"); 
-	   szcurrcell = st.nextToken();
+	   szcurrcell = st.nextToken().trim();
 	   br.close();
 
           ArrayList al = (ArrayList) hmcellsToIndex.get(szcurrcell);
@@ -2641,7 +2777,7 @@ public class Preprocessing
 		   throw new IllegalArgumentException("Only found one entry for line "+szHeaderLine1+" in file "+szbinneddataDIR+"/"+szfilename
 						      +" expecting 2");
 	       }
-	       String szchrom = stheader.nextToken();
+	       String szchrom = stheader.nextToken().trim();
 	       chroms[nchrom] = szchrom;
 	       String szcontrolfilename = (String) hmcontrol.get(szcell+"\t"+szchrom);
 	       if (szcontrolfilename == null)
@@ -2714,7 +2850,7 @@ public class Preprocessing
 	       {
 		  int[] grid_nchrom_nbin = grid_nchrom[nbin];
 		  int[] gridcontrol_nchrom_nbin = gridcontrol_nchrom[nbin];
-	          st = new StringTokenizer(szLine,"\t");
+	          st = new StringTokenizer(szLine,"\t ");//updated in 1.23
 		  if (st.countTokens() != nummarks)
 		  {
 		     throw new IllegalArgumentException("In "+szfilename+" did not find the expected "+nummarks+" marks in this line: "+szLine);
@@ -2731,7 +2867,7 @@ public class Preprocessing
 		      throw new IllegalArgumentException("The number of lines in the control file "+
 			     szcontrolDIR+"/"+szfilename+" does not match that in the signal file "+szbinneddataDIR+"/"+szcontrolfilename); 
 		  }
-	          st = new StringTokenizer(szLineControl,"\t");
+	          st = new StringTokenizer(szLineControl,"\t ");
 	          for (int nmark = 0; nmark < nummarkscontrol; nmark++)
                   {
 		      //reading in the control data
@@ -3186,7 +3322,7 @@ public class Preprocessing
 	       throw new IllegalArgumentException(szbinneddataDIR+"/"+signalchromfiles[nfile]+" does not contain any data!");
 	   }
 	   StringTokenizer st = new StringTokenizer(szLine,"\t"); 
-	   String szcurrcell = st.nextToken();
+	   String szcurrcell = st.nextToken().trim();
 	   br.close();
 
            ArrayList al = (ArrayList) hmcellsToIndex.get(szcurrcell);
@@ -3241,7 +3377,7 @@ public class Preprocessing
  	       while ((szLine = br.readLine())!=null)
 	       {
 	          ntotallocs++;
-	          st = new StringTokenizer(szLine,"\t");
+	          st = new StringTokenizer(szLine,"\t ");
 		  if (st.countTokens() != nummarks)
 		  {
 		     throw new IllegalArgumentException("In "+szfilename+" did not find the expected "+nummarks+" marks in this line: "+szLine);
@@ -3249,7 +3385,7 @@ public class Preprocessing
 
 	          for (int nj = 0; nj < nummarks; nj++)
                   {
-		      double dval =  Double.parseDouble(st.nextToken());		      
+		      double dval =  Double.parseDouble(st.nextToken());//.trim());		      
 		      sumtags[nj] += dval;
 		  }
 	       }
@@ -3314,8 +3450,8 @@ public class Preprocessing
 	             String szLine;
 		     int nbin = 0;
 		     int nsplit = 0;
-		     String szcurrcell = st.nextToken();
-		     String szchrom = st.nextToken();
+		     String szcurrcell = st.nextToken().trim();
+		     String szchrom = st.nextToken().trim();
 		     boolean bopen = false;
 		     GZIPOutputStream pwzip = null;
 
@@ -3339,12 +3475,12 @@ public class Preprocessing
 			   bopen = true;
 			}
 	              
-                        st = new StringTokenizer(szLine,"\t");
+                        st = new StringTokenizer(szLine,"\t ");
 		        StringBuffer sbout = new StringBuffer();
 
 	                for (int ncol = 0; ncol < nummarks-1; ncol++)
 	                {
-		           double dval = Double.parseDouble(st.nextToken());
+			   double dval = Double.parseDouble(st.nextToken());//.trim());
 		           if (dval == -1)
 	                   {
 			      sbout.append("2\t");
@@ -3362,7 +3498,7 @@ public class Preprocessing
 			   }
 			}
 
-		        double dval = Double.parseDouble(st.nextToken());
+		        double dval = Double.parseDouble(st.nextToken());//.trim());
 		        if (dval == -1)
 		        {
 			   sbout.append("2\n");
@@ -3400,7 +3536,7 @@ public class Preprocessing
 		  }
 		  else
 		  {
-		     String szfile = szoutputDIR+"/"+st.nextToken()+"_"+st.nextToken()+"_binary.txt.gz";
+		     String szfile = szoutputDIR+"/"+st.nextToken().trim()+"_"+st.nextToken().trim()+"_binary.txt.gz";
 		     System.out.println("Writing to file "+szfile);
 		     GZIPOutputStream pwzip = new GZIPOutputStream(new FileOutputStream(szfile));
 		     //PrintWriter pw = new PrintWriter(new FileWriter(szfile));
@@ -3415,12 +3551,12 @@ public class Preprocessing
 		     String szLine;
 		     while ((szLine = br.readLine())!=null)
 		     {
-		        st = new StringTokenizer(szLine,"\t");
+		        st = new StringTokenizer(szLine,"\t ");
 		        StringBuffer sbout = new StringBuffer();
 
 		        for (int ncol = 0; ncol < nummarks-1; ncol++)
 			{
-		           double dval = Double.parseDouble(st.nextToken());
+			    double dval = Double.parseDouble(st.nextToken());//.trim());
 			   if (dval == -1)
 			   {
 		              sbout.append("2\t");
@@ -3438,7 +3574,7 @@ public class Preprocessing
 			   }
 			}
 
-			double dval = Double.parseDouble(st.nextToken());
+			double dval = Double.parseDouble(st.nextToken());//.trim());
 		        if (dval == -1)
 		        {
 			    sbout.append("2\n");
@@ -3470,8 +3606,8 @@ public class Preprocessing
 		  {
 		     int nbin = 0;
 		     int nsplit = 0;
-		     String szcurrcell = st.nextToken();
-		     String szchrom = st.nextToken();
+		     String szcurrcell = st.nextToken().trim();
+		     String szchrom = st.nextToken().trim();
 		     boolean bopen = false;
 		     PrintWriter pw = null;
 	             String szLine;
@@ -3489,10 +3625,10 @@ public class Preprocessing
 			    bopen = true;
 		        }
 
-	                st = new StringTokenizer(szLine,"\t");
+	                st = new StringTokenizer(szLine,"\t ");
 	                for (int ncol = 0; ncol < nummarks-1; ncol++)
 	                {
-		           double dval = Double.parseDouble(st.nextToken());
+			    double dval = Double.parseDouble(st.nextToken());//.trim());
 		           if (dval == -1)
 	                   {
 			      pw.print("2\t");
@@ -3507,7 +3643,7 @@ public class Preprocessing
 		           }
 		        }
 
-		        double dval = Double.parseDouble(st.nextToken());
+		        double dval = Double.parseDouble(st.nextToken());//.trim());
 		        if (dval == -1)
 		        {
 		           pw.println("2");
@@ -3538,7 +3674,7 @@ public class Preprocessing
 		  }
 		  else
 		  {
-	             String szfile = szoutputDIR+"/"+st.nextToken()+"_"+st.nextToken()+"_binary.txt";
+		     String szfile = szoutputDIR+"/"+st.nextToken().trim()+"_"+st.nextToken().trim()+"_binary.txt";
 	             System.out.println("Writing to file "+szfile);
 	             PrintWriter pw = new PrintWriter(new FileWriter(szfile));
 	             pw.println(szChromCellLine);
@@ -3546,10 +3682,10 @@ public class Preprocessing
 	             String szLine;
 	             while ((szLine = br.readLine())!=null)
 	             {
-	                st = new StringTokenizer(szLine,"\t");
+	                st = new StringTokenizer(szLine,"\t ");
 	                for (int ncol = 0; ncol < nummarks-1; ncol++)
 	                {
-		           double dval = Double.parseDouble(st.nextToken());
+			   double dval = Double.parseDouble(st.nextToken());//.trim());
 		           if (dval == -1)
 	                   {
 			      pw.print("2\t");
@@ -3564,7 +3700,7 @@ public class Preprocessing
 		           }
 		        }
 
-		        double dval = Double.parseDouble(st.nextToken());
+		        double dval = Double.parseDouble(st.nextToken());//.trim());
 		        if (dval == -1)
 		        {
 		           pw.println("2");
@@ -3671,7 +3807,10 @@ public class Preprocessing
 	         //added hidden check in v.1.11
 		  //read first two lines
 		  //maps the first line to the buffered reader
-                  BufferedReader brfile = Util.getBufferedReader(szcurrpath+"/"+szcurrfile);
+		  //updating in v1.23 so not so many open files at once
+		  String szpathfile = szcurrpath+"/"+szcurrfile;
+                  //BufferedReader brfile = Util.getBufferedReader(szcurrpath+"/"+szcurrfile);
+                  BufferedReader brfile = Util.getBufferedReader(szpathfile);//szcurrpath+"/"+szcurrfile);
 		  String szheader1 = brfile.readLine();
 		  if (szheader1 == null)
 		  {
@@ -3684,6 +3823,7 @@ public class Preprocessing
 		  }
 
                   String szheader2 = brfile.readLine();
+		  brfile.close();
 
 		  if (szheader2A[ndir] == null)
 		  {
@@ -3693,7 +3833,7 @@ public class Preprocessing
 		  {
 		      throw new IllegalArgumentException("Inconsistent header lines in "+szcurrpath+" found "+szheader2+" and "+szheader2A[ndir]);
 		  }
-		  hmbrA[ndir].put(szheader1, brfile);
+		  hmbrA[ndir].put(szheader1, szpathfile);//brfile);
 
 		  hsfiles.add(szheader1);
 	      }
@@ -3711,10 +3851,29 @@ public class Preprocessing
        //sbmergedheader.append(szheader2A[0]);
        String[] notpresent = new String[szheader2A.length];
 
+       //added in v1.23 to only count mark once
+       HashSet hsmarkpresent = new HashSet();
+
        for (int ndir = 0; ndir < szheader2A.length; ndir++)
        {
 	   StringTokenizer st = new StringTokenizer(szheader2A[ndir], "\t");
            int ntokens =  st.countTokens();
+
+	   //added in v1.23 to only count mark once
+	   while (st.hasMoreTokens())
+	   {
+	      String szmarktoken = st.nextToken().trim();
+	      if (hsmarkpresent.contains(szmarktoken))
+	      {
+	         throw new IllegalArgumentException("Feature "+szmarktoken+" is not unique. Found in multiple files being merged");
+       	      }
+	      else
+	      {
+		  hsmarkpresent.add(szmarktoken);
+	      }
+	   }
+
+
 	   StringBuffer sbnotpresent = new StringBuffer();
 	   sbnotpresent.append("0");
 	   for (int na = 1; na <ntokens; na++)
@@ -3756,8 +3915,10 @@ public class Preprocessing
 	   String szcurrfile = chromfilescombine[nfile];
 	   for (int ndir = 0; ndir < subdirall.length; ndir++)
 	   {
-	      BufferedReader br = (BufferedReader) hmbrA[ndir].get(szcurrfile);
-	      if (br == null)
+	       //BufferedReader br = (BufferedReader) hmbrA[ndir].get(szcurrfile);
+	      String szpathfile = (String) hmbrA[ndir].get(szcurrfile);
+	      //if (br == null)
+	      if (szpathfile == null)
 	      {
 		  System.out.println("Warning directory "+szinputdir+"/"+subdirall[ndir]+" does not contain file "+szcurrfile+" going to treat as not present");
 		  bpresent[ndir] = false;
@@ -3766,14 +3927,16 @@ public class Preprocessing
 	      else
 	      {
 		  bpresent[ndir] = true;
-		  brfiles[ndir] = br;
+		  brfiles[ndir] = Util.getBufferedReader(szpathfile);//br;
+		  brfiles[ndir].readLine();
+		  brfiles[ndir].readLine();
 	      }
 	   }
 
 
 	   StringTokenizer st = new StringTokenizer(chromfilescombine[nfile],"\t");
-           String szcell = st.nextToken();
-           String szchrom = st.nextToken();
+           String szcell = st.nextToken().trim();
+           String szchrom = st.nextToken().trim();
 
 
 	   if (bsplit)
@@ -4038,12 +4201,24 @@ public class Preprocessing
 	      }
 	   }
 
-	   for (int ndir = 0; ndir < hmbrA.length; ndir++)
+
+
+	   //  for (int ndir = 0; ndir < hmbrA.length; ndir++)
+	   //{
+	   //    BufferedReader br = (BufferedReader) hmbrA[ndir].get(szcurrfile);
+	   //    if (br != null)
+	   //    {
+	   //       br.close();
+	   //    }
+	   //}
+
+
+	   for (int ndir = 0; ndir < brfiles.length; ndir++)
 	   {
-	       BufferedReader br = (BufferedReader) hmbrA[ndir].get(szcurrfile);
-	       if (br != null)
+	       //BufferedReader br = (BufferedReader) hmbrA[ndir].get(szcurrfile);
+	       if (brfiles[ndir] != null)
 	       {
-	          br.close();
+	          brfiles[ndir].close();
 	       }
 	   }
 

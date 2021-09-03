@@ -248,6 +248,11 @@ public class StateAnalysis
 
 	      int nactualindex = 0;
 	      files = new String[nnonhiddencount];// dir.list(); 
+	      if (nnonhiddencount == 0)
+	      {
+	         throw new IllegalArgumentException("No files found in "+szinputcoorddir);
+	      }
+
               for (int nfile = 0; nfile < filesWithHidden.length; nfile++)
 	      {
 	         if (!(new File(filesWithHidden[nfile])).isHidden())
@@ -307,7 +312,7 @@ public class StateAnalysis
 		if (szHeader == null)
 		    throw new IllegalArgumentException(szposteriordir+"/"+szposteriorfiles_nfile+" is empty!");
 		StringTokenizer st =new StringTokenizer(szHeader,"\t");
-		String szcurrcell = st.nextToken();
+		String szcurrcell = st.nextToken().trim();
 		if ((!szcurrcell.equals(szcell))&&(!szcell.equals("")))
 		{
 		    brposterior.close();
@@ -315,7 +320,7 @@ public class StateAnalysis
 		else
 		{
 		   bposteriorfound = true;
-		   String szchrom = st.nextToken();
+		   String szchrom = st.nextToken().trim();
 
 		   int numlines = 0;
 		   szLine = brposterior.readLine();
@@ -327,7 +332,7 @@ public class StateAnalysis
 	           int numcurrstates = st.countTokens();
 	           if (bfirst)
 	           {
-		      chorder = st.nextToken().charAt(0);
+		      chorder = st.nextToken().trim().charAt(0);
 		      bfirst = false;
 		      nfirstindex = nfile;
 		      numposteriorstates = numcurrstates;
@@ -360,7 +365,7 @@ public class StateAnalysis
 		      float[] posterior_nline = posterior[nline];
                       for (int nstate = 0; nstate < numposteriorstates; nstate++)
                       {
-		         float fval = Float.parseFloat(st.nextToken());
+		         float fval = Float.parseFloat(st.nextToken().trim());
 		         posterior_nline[nstate] = fval;
 		         tallylabel[nstate] += fval;
 		      }
@@ -381,13 +386,13 @@ public class StateAnalysis
 	              {
 		         //gets the start and end coordinates
 		         StringTokenizer stcolfields = new StringTokenizer(szcolfields,",");
-		         nchromindex = Integer.parseInt(stcolfields.nextToken());
-		         nstartindex = Integer.parseInt(stcolfields.nextToken());
-		         nendindex = Integer.parseInt(stcolfields.nextToken());
+		         nchromindex = Integer.parseInt(stcolfields.nextToken().trim());
+		         nstartindex = Integer.parseInt(stcolfields.nextToken().trim());
+		         nendindex = Integer.parseInt(stcolfields.nextToken().trim());
 
 	                 if (busesignal)
 	                 {
-		            nsignalindex = Integer.parseInt(stcolfields.nextToken());
+		            nsignalindex = Integer.parseInt(stcolfields.nextToken().trim());
 			 }
 		      }
 
@@ -695,9 +700,9 @@ public class StateAnalysis
 	       st = new StringTokenizer(szLine,"\t ");
 	    } 
 
-	    String szchrom = st.nextToken();
-	    int nbegincoord = Integer.parseInt(st.nextToken());
-	    int nendcoord = Integer.parseInt(st.nextToken());
+	    String szchrom = st.nextToken().trim();
+	    int nbegincoord = Integer.parseInt(st.nextToken().trim());
+	    int nendcoord = Integer.parseInt(st.nextToken().trim());
 	    if (nbegincoord % nbinsize != 0)
 	    {
 		throw new IllegalArgumentException("Binsize of "+nbinsize+" does not agree with coordinates in input segment "+szLine+". -b binsize should match parameter value to LearnModel or "+
@@ -705,7 +710,7 @@ public class StateAnalysis
 	    }
 	    int nbegin = nbegincoord/nbinsize;
 	    int nend = (nendcoord-1)/nbinsize;
-	    szlabel = st.nextToken();
+	    szlabel = st.nextToken().trim();
 
 	    short slabel = -1;
 	    if (bstringlabels)
@@ -783,7 +788,7 @@ public class StateAnalysis
 	          }
 	          catch (NumberFormatException ex2)
 	          {
-		     throw new IllegalArgumentException("In fourth column neither state number or ID file found in segmentation file. Use '-labels' option to run overlap enrichment treating fourth column as labels");
+		     throw new IllegalArgumentException("In fourth column neither state number or ID found in segmentation file. Use '-labels' option to run overlap enrichment treating fourth column as labels");
 	          }
 	       }
 
@@ -872,6 +877,11 @@ public class StateAnalysis
 
 	       int nactualindex = 0;
 	       files = new String[nnonhiddencount];// dir.list(); 
+	       if (nnonhiddencount == 0)
+	       {
+		   throw new IllegalArgumentException("No files found in "+szinputcoorddir);
+	       }
+
                for (int nfile = 0; nfile < filesWithHidden.length; nfile++)
 	       {
 	          if (!(new File(filesWithHidden[nfile])).isHidden())
@@ -925,13 +935,13 @@ public class StateAnalysis
 	    if (szcolfields  != null)
 	    {
 	       StringTokenizer stcolfields = new StringTokenizer(szcolfields,",");
-	       nchromindex = Integer.parseInt(stcolfields.nextToken());
-	       nstartindex = Integer.parseInt(stcolfields.nextToken());
-	       nendindex = Integer.parseInt(stcolfields.nextToken());
+	       nchromindex = Integer.parseInt(stcolfields.nextToken().trim());
+	       nstartindex = Integer.parseInt(stcolfields.nextToken().trim());
+	       nendindex = Integer.parseInt(stcolfields.nextToken().trim());
 
 	       if (busesignal)
 	       {
-		   nsignalindex = Integer.parseInt(stcolfields.nextToken());
+		   nsignalindex = Integer.parseInt(stcolfields.nextToken().trim());
 	       }
 	    }
 
@@ -1244,6 +1254,11 @@ public class StateAnalysis
 
 	     int nactualindex = 0;
 	     files = new String[nnonhiddencount];// dir.list(); 
+	     if (nnonhiddencount == 0)
+	     {
+	        throw new IllegalArgumentException("No files found in "+szinputcoorddir);
+	     }
+
              for (int nfile = 0; nfile < filesWithHidden.length; nfile++)
 	     {
 	        if (!(new File(filesWithHidden[nfile])).isHidden())
@@ -1309,9 +1324,9 @@ public class StateAnalysis
 	     st = new StringTokenizer(szLine,"\t ");
           }
 
-	  String szchrom = st.nextToken();
-	  int nbegincoord = Integer.parseInt(st.nextToken());
-	  int nendcoord = Integer.parseInt(st.nextToken());
+	  String szchrom = st.nextToken().trim();
+	  int nbegincoord = Integer.parseInt(st.nextToken().trim());
+	  int nendcoord = Integer.parseInt(st.nextToken().trim());
 	  if (nbegincoord % nbinsize != 0)
 	  {
 		throw new IllegalArgumentException("Binsize of "+nbinsize+" does not agree with coordinates in input segment "+szLine+". -b binsize should match parameter value to LearnModel or "+
@@ -1319,7 +1334,7 @@ public class StateAnalysis
 	  }
           //int nbegin = nbegincoord/nbinsize;
 	  int nend = (nendcoord-1)/nbinsize;
-          szlabel = st.nextToken();
+          szlabel = st.nextToken().trim();
 	  short slabel;
 
 
@@ -1398,7 +1413,7 @@ public class StateAnalysis
 		}
 	        catch (NumberFormatException ex2)
 	        {
-                   throw new IllegalArgumentException("In fourth column neither state number or ID file found in segmentation file. Use '-labels' option to run overlap enrichment treating fourth column as labels");
+                   throw new IllegalArgumentException("In fourth column neither state number or ID found in segmentation file. Use '-labels' option to run overlap enrichment treating fourth column as labels");
 		}
 	     }
 
@@ -1461,12 +1476,12 @@ public class StateAnalysis
 	        st = new StringTokenizer(szLine,"\t ");
 	     }
 
-	     String szchrom = st.nextToken();
+	     String szchrom = st.nextToken().trim();
 	     if (!szchrom.equals(szchromwant)) 
 	        continue;
 
-	     int nbegincoord = Integer.parseInt(st.nextToken());
-	     int nendcoord = Integer.parseInt(st.nextToken());
+	     int nbegincoord = Integer.parseInt(st.nextToken().trim());
+	     int nendcoord = Integer.parseInt(st.nextToken().trim());
 
 	     //if (nbegincoord % nbinsize != 0)
 	     // {
@@ -1474,7 +1489,7 @@ public class StateAnalysis
 	     //}
 	     int nbegin = nbegincoord/nbinsize;
 	     int nend = (nendcoord-1)/nbinsize;
-	     szlabel = st.nextToken();
+	     szlabel = st.nextToken().trim();
 	     short slabel = -1;
 
 	     if (bstringlabels)
@@ -1528,7 +1543,7 @@ public class StateAnalysis
 		   }
 		   catch (NumberFormatException ex2)
 		   {
-		      throw new IllegalArgumentException("In fourth column neither state number or ID file found in segmentation file. Use '-labels' option to run overlap enrichment treating fourth column as labels");
+		      throw new IllegalArgumentException("In fourth column neither state number or ID found in segmentation file. Use '-labels' option to run overlap enrichment treating fourth column as labels");
 	           }
 		}
 	     }
@@ -1571,13 +1586,13 @@ public class StateAnalysis
 	     if (szcolfields  != null)
 	     {
 	        StringTokenizer stcolfields = new StringTokenizer(szcolfields,",");
-		nchromindex = Integer.parseInt(stcolfields.nextToken());
-		nstartindex = Integer.parseInt(stcolfields.nextToken());
-		nendindex = Integer.parseInt(stcolfields.nextToken());
+		nchromindex = Integer.parseInt(stcolfields.nextToken().trim());
+		nstartindex = Integer.parseInt(stcolfields.nextToken().trim());
+		nendindex = Integer.parseInt(stcolfields.nextToken().trim());
 
 	        if (busesignal)
 	        {
-	           nsignalindex = Integer.parseInt(stcolfields.nextToken());
+	           nsignalindex = Integer.parseInt(stcolfields.nextToken().trim());
 	        }
 	     }
 
@@ -1854,8 +1869,8 @@ public class StateAnalysis
 	   while ((szLine = bridlabel.readLine())!=null)
            {
 	      StringTokenizer st = new StringTokenizer(szLine,"\t");
-	      String szID = st.nextToken();
-	      String szLabelExtend = st.nextToken();
+	      String szID = st.nextToken().trim();
+	      String szLabelExtend = st.nextToken().trim();
 	      hmlabelExtend.put(szID,szLabelExtend);
 	   }
 	   bridlabel.close();
@@ -1887,6 +1902,11 @@ public class StateAnalysis
         nf5.setMaximumFractionDigits(5);
 	nf5.setGroupingUsed(false);
 	nf5.setMinimumFractionDigits(5);
+
+        NumberFormat nf10 = NumberFormat.getInstance();
+        nf10.setMaximumFractionDigits(10);
+	nf10.setGroupingUsed(false);
+	nf10.setMinimumFractionDigits(10);
 
 	System.out.println("Writing to file "+szoutfile+".txt");
 	PrintWriter pw = new PrintWriter(new FileWriter(szoutfile+".txt"));
@@ -1963,7 +1983,7 @@ public class StateAnalysis
 	pw.print("Base\t100");
         for (int nfile = 0; nfile < tallyoverlaplabel.length; nfile++)
 	{
-	    pw.print("\t"+nf5.format(100*(dsumoverlaplabel[nfile]/dsumlabel)));
+	    pw.print("\t"+nf10.format(100*(dsumoverlaplabel[nfile]/dsumlabel)));
 	}
 	pw.println();
 	pw.close();
@@ -2134,10 +2154,10 @@ public class StateAnalysis
 	   if (szcolfields != null)
            {
 	       StringTokenizer stcolfields = new StringTokenizer(szcolfields,",");
-	       nchromindex = Integer.parseInt(stcolfields.nextToken());
-	       npositionindex = Integer.parseInt(stcolfields.nextToken());
-	       nstrandindex = Integer.parseInt(stcolfields.nextToken());
-	       nsignalindex = Integer.parseInt(stcolfields.nextToken());
+	       nchromindex = Integer.parseInt(stcolfields.nextToken().trim());
+	       npositionindex = Integer.parseInt(stcolfields.nextToken().trim());
+	       nstrandindex = Integer.parseInt(stcolfields.nextToken().trim());
+	       nsignalindex = Integer.parseInt(stcolfields.nextToken().trim());
 	   }
 	}
         else if (busestrand && !busesignal)
@@ -2145,9 +2165,9 @@ public class StateAnalysis
 	   if (szcolfields != null)
            {
 	       StringTokenizer stcolfields = new StringTokenizer(szcolfields,",");
-	       nchromindex = Integer.parseInt(stcolfields.nextToken());
-	       npositionindex = Integer.parseInt(stcolfields.nextToken());
-	       nstrandindex = Integer.parseInt(stcolfields.nextToken());
+	       nchromindex = Integer.parseInt(stcolfields.nextToken().trim());
+	       npositionindex = Integer.parseInt(stcolfields.nextToken().trim());
+	       nstrandindex = Integer.parseInt(stcolfields.nextToken().trim());
 	   }
 	}
         else if (!busestrand && busesignal)
@@ -2155,9 +2175,9 @@ public class StateAnalysis
 	   if (szcolfields != null)
 	   {
 	      StringTokenizer stcolfields = new StringTokenizer(szcolfields,",");
-	      nchromindex = Integer.parseInt(stcolfields.nextToken());
-	      npositionindex = Integer.parseInt(stcolfields.nextToken());
-	      nsignalindex = Integer.parseInt(stcolfields.nextToken());
+	      nchromindex = Integer.parseInt(stcolfields.nextToken().trim());
+	      npositionindex = Integer.parseInt(stcolfields.nextToken().trim());
+	      nsignalindex = Integer.parseInt(stcolfields.nextToken().trim());
 	   }
 	   else //if (szcolfields == null)
            {
@@ -2169,8 +2189,8 @@ public class StateAnalysis
 	   if (szcolfields != null)
 	   {
 	      StringTokenizer stcolfields = new StringTokenizer(szcolfields,",");
-	      nchromindex = Integer.parseInt(stcolfields.nextToken());
-	      npositionindex = Integer.parseInt(stcolfields.nextToken());
+	      nchromindex = Integer.parseInt(stcolfields.nextToken().trim());
+	      npositionindex = Integer.parseInt(stcolfields.nextToken().trim());
 	   }
 	}
 
@@ -2211,6 +2231,7 @@ public class StateAnalysis
     {
 
 
+	boolean bchrommatch =  false;//added in 1.23 to check for chromosome matches
 	//an array of chromosome names
 	ArrayList alchromindex = new ArrayList();
 
@@ -2247,13 +2268,13 @@ public class StateAnalysis
 	    {
 	       st = new StringTokenizer(szLine,"\t ");
 	    }
-	    String szchrom = st.nextToken();
+	    String szchrom = st.nextToken().trim();
             //assumes segments are in standard bed format which to get to 
 	    //0-based inclusive requires substract 1 from the end
-	    //int nbegin = Integer.parseInt(st.nextToken())/nbinsize; 
-	    st.nextToken();
-	    int nend = (Integer.parseInt(st.nextToken())-1)/nbinsize; 
-	    szlabel = st.nextToken();
+	    //int nbegin = Integer.parseInt(st.nextToken().trim())/nbinsize; 
+	    st.nextToken().trim();
+	    int nend = (Integer.parseInt(st.nextToken().trim())-1)/nbinsize; 
+	    szlabel = st.nextToken().trim();
 	    short slabel;
 
 	    if (bstringlabels)
@@ -2326,7 +2347,7 @@ public class StateAnalysis
 	          }
 	          catch (NumberFormatException ex2)
 	          {
-	             throw new IllegalArgumentException("In fourth column neither state number or ID file found in segmentation file. Use '-labels' option to run overlap enrichment treating fourth column as labels");
+	             throw new IllegalArgumentException("In fourth column neither state number or ID found in segmentation file. Use '-labels' option to run overlap enrichment treating fourth column as labels");
 	          }
 	       }
 	    
@@ -2403,14 +2424,16 @@ public class StateAnalysis
 	         st = new StringTokenizer(szLine,"\t ");
 	      }
 
-	      String szchrom = st.nextToken();
+	      String szchrom = st.nextToken().trim();
 	      if (!szchromwant.equals(szchrom))
 		  continue;
+
+	      bchrommatch = true;
               //assumes segments are in standard bed format which to get to 
 	      //0-based inclusive requires substract 1 from the end
-	      int nbegin = Integer.parseInt(st.nextToken())/nbinsize;
-	      int nend = (Integer.parseInt(st.nextToken())-1)/nbinsize; 
-	      szlabel = st.nextToken();
+	      int nbegin = Integer.parseInt(st.nextToken().trim())/nbinsize;
+	      int nend = (Integer.parseInt(st.nextToken().trim())-1)/nbinsize; 
+	      szlabel = st.nextToken().trim();
 	      short slabel = -1;
 
 	      if (bstringlabels)
@@ -2464,7 +2487,7 @@ public class StateAnalysis
 		    }
 		    catch (NumberFormatException ex2)
 		    {
-		       throw new IllegalArgumentException("In fourth column neither state number or ID file found in segmentation file. Use '-labels' option to run overlap enrichment treating fourth column as labels");
+		       throw new IllegalArgumentException("In fourth column neither state number or ID found in segmentation file. Use '-labels' option to run overlap enrichment treating fourth column as labels");
 		    }
 	         }
 	      }
@@ -2575,6 +2598,12 @@ public class StateAnalysis
            brcoords.close(); 	    
 	}
 
+	if (!bchrommatch)
+	{
+	    throw new IllegalArgumentException("No chromosome name matches found between "+szanchorpositions+
+                                               " and those in the segmentation file.");
+	}
+
 	outputneighborhood(tallyoverlaplabel,tallylabel,dsumoverlaplabel,szoutfile,nspacing,numright,
                            numleft,theColor,ChromHMM.convertCharOrderToStringOrder(szlabel.charAt(0)),sztitle,0,
                            szlabelmapping,szlabel.charAt(0), bprintimage, bstringlabels, hmIndexToLabel);
@@ -2610,6 +2639,7 @@ public class StateAnalysis
 					String sztitle,String szlabelmapping, boolean bprintimage,boolean  bstringlabels) throws IOException
     {
 	//highmem
+	boolean bchrommatch =  false;//added in 1.23 to check for chromosome matches
 	//stores all the segments in the data
 	ArrayList alsegments = new ArrayList();
 
@@ -2645,12 +2675,12 @@ public class StateAnalysis
 	    {
 		st = new StringTokenizer(szLine,"\t ");
 	    }
-	    String szchrom = st.nextToken();
+	    String szchrom = st.nextToken().trim();
             //assumes segments are in standard bed format which to get to 
 	    //0-based inclusive requires substract 1 from the end
-	    int nbegin = Integer.parseInt(st.nextToken())/nbinsize;
-	    int nend = (Integer.parseInt(st.nextToken())-1)/nbinsize; 
-	    szlabel = st.nextToken();
+	    int nbegin = Integer.parseInt(st.nextToken().trim())/nbinsize;
+	    int nend = (Integer.parseInt(st.nextToken().trim())-1)/nbinsize; 
+	    szlabel = st.nextToken().trim();
 	    short slabel = -1;
 
 	    if (bstringlabels)
@@ -2728,7 +2758,7 @@ public class StateAnalysis
 	          }
 	          catch (NumberFormatException ex2)
 	          {
-		     throw new IllegalArgumentException("In fourth column neither state number or ID file found in segmentation file. Use '-labels' option to run overlap enrichment treating fourth column as labels");
+		     throw new IllegalArgumentException("In fourth column neither state number or ID found in segmentation file. Use '-labels' option to run overlap enrichment treating fourth column as labels");
 		  }
 	       }
 
@@ -2854,6 +2884,7 @@ public class StateAnalysis
 	   {
 	      int nchrom = objChrom.intValue();
 	      short[] labels_nchrom = labels[nchrom];
+	      bchrommatch = true;
 
 	      if (bposstrand)
 	      {
@@ -2886,6 +2917,13 @@ public class StateAnalysis
 	   }
 	}
         brcoords.close(); 	    
+
+
+	if (!bchrommatch)
+	{
+	    throw new IllegalArgumentException("No chromosome name matches found between "+szanchorpositions+
+                                               " and those in the segmentation file.");
+	}
 
 	outputneighborhood(tallyoverlaplabel,tallylabel,dsumoverlaplabel,szoutfile,nspacing,numright,
                            numleft,theColor,ChromHMM.convertCharOrderToStringOrder(szlabel.charAt(0)),sztitle,0,
@@ -2920,6 +2958,8 @@ public class StateAnalysis
 					     boolean busestrand, boolean busesignal,String szcolfields, int noffsetanchor,
 					   String szoutfile,Color theColor,String sztitle,String szlabelmapping, boolean bprintimage) throws IOException
     {
+
+	boolean bchrommatch =  false;//added in 1.23 to check for chromosome matches
 	//posterior here is really signal just using equivalent variable names
 	//list of possible posterior files
 	File posteriordir = new File(szposteriordir);
@@ -2959,7 +2999,7 @@ public class StateAnalysis
 	           throw new IllegalArgumentException(szposteriordir+"/"+szposteriorfiles_nfile+" is empty!");
 	        }
 		StringTokenizer st =new StringTokenizer(szLine,"\t");
-		String szcurrcell = st.nextToken();
+		String szcurrcell = st.nextToken().trim();
 		if ((!szcurrcell.equals(szcell))&&(!szcell.equals("")))
 		{
 		    brposterior.close();
@@ -2970,7 +3010,7 @@ public class StateAnalysis
 
   	           //must match cell type or consistent with empty cell type
 
-		   String szchrom = st.nextToken();
+		   String szchrom = st.nextToken().trim();
 	    
 		   int numlines = 0;
 		   szLine = brposterior.readLine(); //gets state header
@@ -2982,7 +3022,7 @@ public class StateAnalysis
 		   int numcurrstates = st.countTokens();
 	           if (bfirst)
 	           {
-		       chorder = st.nextToken().charAt(0);
+		       chorder = st.nextToken().trim().charAt(0);
 		       bfirst = false;
 		       nfirstindex = nfile;
 		       numposteriorstates = numcurrstates;
@@ -3036,6 +3076,7 @@ public class StateAnalysis
 
 	              if (szreadchrom.equals(szchrom))
 	              {  
+			 bchrommatch = true;
 	                 int nanchor = (Integer.parseInt(szLineA[theAnchorIndex.npositionindex])-noffsetanchor);
 	                 boolean bposstrand = true;
 	                 if (busestrand)
@@ -3120,6 +3161,12 @@ public class StateAnalysis
 	{
 	    throw new IllegalArgumentException("No posterior file found for cell type "+szcell);
 	}   
+
+	if (!bchrommatch)
+	{
+	    throw new IllegalArgumentException("No chromosome name matches found between "+szanchorpositions+
+                                               " and those in the segmentation file.");
+	}
  
 	outputneighborhoodsignal(tallyoverlaplabel,tallylabel,dsumoverlaplabel,numlocs,szoutfile,nspacing,numright,
 				 numleft,theColor,ChromHMM.convertCharOrderToStringOrder(chorder),sztitle,szmarknames,szlabelmapping,chorder,bprintimage);
@@ -3154,6 +3201,7 @@ public class StateAnalysis
 					      String szoutfile,Color theColor,String sztitle,String szlabelmapping, boolean bprintimage) throws IOException
     {
 
+	boolean bchrommatch =  false;//added in 1.23 to check for chromosome matches
 	//list of possible posterior files
 	File posteriordir = new File(szposteriordir);
 	if (!posteriordir.exists())
@@ -3191,7 +3239,7 @@ public class StateAnalysis
 	           throw new IllegalArgumentException(szposteriordir+"/"+szposteriorfiles_nfile+" is empty!");
 	        }
 		StringTokenizer st =new StringTokenizer(szLine,"\t");
-		String szcurrcell = st.nextToken();
+		String szcurrcell = st.nextToken().trim();
 		if ((!szcurrcell.equals(szcell))&&(!szcell.equals("")))
 		{
 		    brposterior.close();
@@ -3202,7 +3250,7 @@ public class StateAnalysis
 
   	           //must match cell type or consistent with empty cell type
 
-		   String szchrom = st.nextToken();
+		   String szchrom = st.nextToken().trim();
 	    
 		   int numlines = 0;
 		   szLine = brposterior.readLine(); //gets state header
@@ -3214,7 +3262,7 @@ public class StateAnalysis
 		   int numcurrstates = st.countTokens();
 	           if (bfirst)
 	           {
-		       chorder = st.nextToken().charAt(0);
+		       chorder = st.nextToken().trim().charAt(0);
 		       bfirst = false;
 		       nfirstindex = nfile;
 		       numposteriorstates = numcurrstates;
@@ -3268,6 +3316,7 @@ public class StateAnalysis
 
 	              if (szreadchrom.equals(szchrom))
 	              {  
+			 bchrommatch = true;
 	                 int nanchor = (Integer.parseInt(szLineA[theAnchorIndex.npositionindex])-noffsetanchor);
 	                 boolean bposstrand = true;
 	                 if (busestrand)
@@ -3350,6 +3399,12 @@ public class StateAnalysis
 	{
 	    throw new IllegalArgumentException("No posterior file found for cell type "+szcell);
 	}   
+
+	if (!bchrommatch)
+	{
+	    throw new IllegalArgumentException("No chromosome name matches found between "+szanchorpositions+
+                                               " and those in the segmentation file.");
+	}
  
 	outputneighborhood(tallyoverlaplabel,tallylabel,dsumoverlaplabel,szoutfile,nspacing,numright,
                            numleft,theColor,ChromHMM.convertCharOrderToStringOrder(chorder),sztitle,1,
@@ -3442,10 +3497,13 @@ public class StateAnalysis
 		      //copying over the contents
 		      heatmapreduce[nkeepindex][ncol] = heatmapfold[nstate][ncol];
 		  }
-		  rowlabels[nkeepindex] = stheader.nextToken();//""+(nstate+1);
+		  rowlabels[nkeepindex] = stheader.nextToken().trim();//""+(nstate+1);
 		  nkeepindex++;
 	      }
-	      stheader.nextToken();
+	      else //added in 1.23
+	      {
+	         stheader.nextToken();
+	      }
 	   }
 	   heatmapfold = heatmapreduce;
 	}
@@ -3454,7 +3512,7 @@ public class StateAnalysis
 	    rowlabels = new String[tallyoverlaplabel[0].length];
 	    for (int ni = 0; ni < rowlabels.length; ni++)
 	    {
-		rowlabels[ni] = ""+stheader.nextToken();
+		rowlabels[ni] = ""+stheader.nextToken().trim();
 	    }
 	}
 
@@ -3672,11 +3730,11 @@ public class StateAnalysis
 
 	//maps each mark identifier to a consistent indext value
 	HashMap hmNameToID = new HashMap();
-	String szaxis = stheader.nextToken();
+	String szaxis = stheader.nextToken().trim();
 	int ncol = 0;
 	while (stheader.hasMoreTokens())
 	{
-	    hmNameToID.put(stheader.nextToken(), Integer.valueOf(ncol));
+	    hmNameToID.put(stheader.nextToken().trim(), Integer.valueOf(ncol));
 	    ncol++;
 	}
 
@@ -3703,10 +3761,10 @@ public class StateAnalysis
 		throw new IllegalArgumentException("Expecting "+numstatesmain+" lines in "+szmainmodelfile+" found fewer.");
 	    }
 	    StringTokenizer stLine = new StringTokenizer(szLine,"\t");
-	    rowlabels[nstate] = stLine.nextToken();
+	    rowlabels[nstate] = stLine.nextToken().trim();
 	    for (ncol = 0; ncol < numcols; ncol++)
 	    {
-	       emissionparamsmain[nstate][ncol] = Double.parseDouble(stLine.nextToken());
+	       emissionparamsmain[nstate][ncol] = Double.parseDouble(stLine.nextToken().trim());
 	    }
 	}
 	bremissions.close();
@@ -3759,7 +3817,7 @@ public class StateAnalysis
 	           ncol  = 0;
 		   while (stheader.hasMoreTokens())
 		   {
-		       mappedcol[ncol] = ((Integer) hmNameToID.get(stheader.nextToken())).intValue();
+		       mappedcol[ncol] = ((Integer) hmNameToID.get(stheader.nextToken().trim())).intValue();
 		       ncol++;
 		   }
 		}
@@ -3779,7 +3837,7 @@ public class StateAnalysis
 		    for (ncol = 0; ncol < numcols; ncol++)
 		    {
 			//storing the emission parameter for
-			theRecEmissionFile.emissionparams[nstate][mappedcol[ncol]] = Double.parseDouble(stLine.nextToken());
+			theRecEmissionFile.emissionparams[nstate][mappedcol[ncol]] = Double.parseDouble(stLine.nextToken().trim());
 		    }
 		}
 		//adds a record for this emission file containing the parameters, number of states, and number of marks

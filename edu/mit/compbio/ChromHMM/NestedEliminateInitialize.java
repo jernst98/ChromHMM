@@ -80,10 +80,10 @@ public class NestedEliminateInitialize
 		      if (szLine.startsWith("emission"))
 		      {
 			  StringTokenizer stemiss = new StringTokenizer(szLine,"\t");
-			  stemiss.nextToken();
-			  stemiss.nextToken();
-			  stemiss.nextToken();
-			  String szmark = stemiss.nextToken();
+			  stemiss.nextToken().trim();
+			  stemiss.nextToken().trim();
+			  stemiss.nextToken().trim();
+			  String szmark = stemiss.nextToken().trim();
 			  
 			  Object objInt = hmNameToID.get(szmark);
 			  if (objInt ==null)
@@ -140,10 +140,10 @@ public class NestedEliminateInitialize
 	          if (szLine.startsWith("emissionprobs"))
 		  {
 		      st = new StringTokenizer(szLine,"\t");
-		      st.nextToken();
-		      int nstate = Integer.parseInt(st.nextToken())-1;
-		      st.nextToken();
-		      String szmark = st.nextToken();
+		      st.nextToken().trim();
+		      int nstate = Integer.parseInt(st.nextToken().trim())-1;
+		      st.nextToken().trim();
+		      String szmark = st.nextToken().trim();
 		      Integer intMark = (Integer) hmNameToID.get(szmark);
 		      int nmark = -1;
 		      if (intMark == null)
@@ -154,10 +154,10 @@ public class NestedEliminateInitialize
 		      {
 			  nmark = ((Integer) intMark).intValue();
 		      }
-		      String szbucket = st.nextToken();
+		      String szbucket = st.nextToken().trim();
 		      if (szbucket.equals("1"))
 		      {
-		         modelemissions[nmodel][nstate][nmark] = Double.parseDouble(st.nextToken());
+		         modelemissions[nmodel][nstate][nmark] = Double.parseDouble(st.nextToken().trim());
 			 ncount++;
 		      }
 		  }
@@ -197,9 +197,9 @@ public class NestedEliminateInitialize
 	       throw new IllegalArgumentException(szinputdir+"/"+szmainfile+" is missing lines!");
 	   }
 	   StringTokenizer st = new StringTokenizer(szinitline,"\t");
-           st.nextToken();
-           st.nextToken();
-           bestprobinit[ni] = Double.parseDouble(st.nextToken());
+           st.nextToken().trim();
+           st.nextToken().trim();
+           bestprobinit[ni] = Double.parseDouble(st.nextToken().trim());
         }
 
 	for (int ni = 0; ni < nbestnumstates; ni++)
@@ -212,10 +212,10 @@ public class NestedEliminateInitialize
 		  throw new IllegalArgumentException(szinputdir+"/"+szmainfile+" is missing lines!");
 	      }
 	      StringTokenizer st = new StringTokenizer(sztransitionline,"\t");
-	      st.nextToken();
-	      st.nextToken();
-	      st.nextToken();
-	      besttransitionprobs[ni][nj] = Double.parseDouble(st.nextToken());
+	      st.nextToken().trim();
+	      st.nextToken().trim();
+	      st.nextToken().trim();
+	      besttransitionprobs[ni][nj] = Double.parseDouble(st.nextToken().trim());
 	   }
 	}
 
@@ -228,9 +228,9 @@ public class NestedEliminateInitialize
         while ((szLine = brfile.readLine())!=null)
 	{
 	   StringTokenizer st = new StringTokenizer(szLine,"\t");
-           st.nextToken();
-	   int nj = Integer.parseInt(st.nextToken())-1;
-           emissionsline[nj].add(st.nextToken()+"\t"+st.nextToken()+"\t"+st.nextToken()+"\t"+st.nextToken());
+           st.nextToken().trim();
+	   int nj = Integer.parseInt(st.nextToken().trim())-1;
+           emissionsline[nj].add(st.nextToken().trim()+"\t"+st.nextToken().trim()+"\t"+st.nextToken().trim()+"\t"+st.nextToken().trim());
 	}
         brfile.close();
 

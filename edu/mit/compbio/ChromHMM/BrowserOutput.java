@@ -159,8 +159,8 @@ public class BrowserOutput
           while ((szLine = brcolor.readLine())!=null)
           {
              StringTokenizer st = new StringTokenizer(szLine,"\t");
-	     String szID = st.nextToken();
-	     String szColor = st.nextToken();
+	     String szID = st.nextToken().trim();
+	     String szColor = st.nextToken().trim();
              hmcolor.put(szID, szColor);
 	  }
 	  brcolor.close();
@@ -347,8 +347,8 @@ public class BrowserOutput
           while ((szLine = bridlabel.readLine())!=null)
           {
              StringTokenizer st = new StringTokenizer(szLine,"\t");
-	     String szID = st.nextToken();
-	     String szLabelExtend = st.nextToken();
+	     String szID = st.nextToken().trim();
+	     String szLabelExtend = st.nextToken().trim();
 	     hmlabelExtend.put(szID,szLabelExtend);
 	  }	  
 	  bridlabel.close();
@@ -378,10 +378,10 @@ public class BrowserOutput
           while ((szLine =brsegment.readLine())!=null)
           {
 	     StringTokenizer st = new StringTokenizer(szLine,"\t");
-	     String szcurrchrom = st.nextToken();
-	     int nbegin = Integer.parseInt(st.nextToken());
-	     int nend = Integer.parseInt(st.nextToken());
-	     String szFullID = st.nextToken();
+	     String szcurrchrom = st.nextToken().trim();
+	     int nbegin = Integer.parseInt(st.nextToken().trim());
+	     int nend = Integer.parseInt(st.nextToken().trim());
+	     String szFullID = st.nextToken().trim();
 	     String szID = szFullID.substring(1); //this removes ordering type
 	     if (bfirst)
 	     {
@@ -426,10 +426,10 @@ public class BrowserOutput
           while ((szLine =brsegment.readLine())!=null)
           {
 	     StringTokenizer st = new StringTokenizer(szLine,"\t");
-	     String szcurrchrom = st.nextToken();
-	     int nbegin = Integer.parseInt(st.nextToken());
-	     int nend = Integer.parseInt(st.nextToken());
-	     String szFullID = st.nextToken();
+	     String szcurrchrom = st.nextToken().trim();
+	     int nbegin = Integer.parseInt(st.nextToken().trim());
+	     int nend = Integer.parseInt(st.nextToken().trim());
+	     String szFullID = st.nextToken().trim();
 	     String szID = szFullID.substring(1); //this removes ordering type
 	     if (bfirst)
 	     {
@@ -496,10 +496,10 @@ public class BrowserOutput
        while ((szLine = brsegment.readLine())!=null)
        {
 	   StringTokenizer st = new StringTokenizer(szLine,"\t");
-	   String szchrom = st.nextToken();
-	   int nbegin = Integer.parseInt(st.nextToken());
-	   int nend = Integer.parseInt(st.nextToken());
-	   szLabelFull = st.nextToken();
+	   String szchrom = st.nextToken().trim();
+	   int nbegin = Integer.parseInt(st.nextToken().trim());
+	   int nend = Integer.parseInt(st.nextToken().trim());
+	   szLabelFull = st.nextToken().trim();
 	   String szLabel = szLabelFull.substring(1);
 
 	   hmlabelToFull.put(szLabel, szLabelFull);
@@ -740,10 +740,10 @@ public class BrowserOutput
        while ((szLine = brsegment.readLine())!=null)
        {
 	   StringTokenizer st = new StringTokenizer(szLine,"\t");
-	   String szchrom = st.nextToken();
-	   int nbegin = Integer.parseInt(st.nextToken());
-	   int nend = Integer.parseInt(st.nextToken());
-	   szLabelFull = st.nextToken();
+	   String szchrom = st.nextToken().trim();
+	   int nbegin = Integer.parseInt(st.nextToken().trim());
+	   int nend = Integer.parseInt(st.nextToken().trim());
+	   szLabelFull = st.nextToken().trim();
 	   String szLabel = szLabelFull.substring(1);
 
 	   hmlabelToFull.put(szLabel, szLabelFull);
@@ -827,12 +827,12 @@ public class BrowserOutput
               while ((szLine = brsegment.readLine())!=null)
               {
 	         StringTokenizer st = new StringTokenizer(szLine,"\t");
-		 String szchrom = st.nextToken();
+		 String szchrom = st.nextToken().trim();
 	         if (szchrom.equals(szcurrchrom))
 	         {
-	            int nbegin = Integer.parseInt(st.nextToken());
-	            int nend = Integer.parseInt(st.nextToken());
-       	            szLabelFull = st.nextToken();
+	            int nbegin = Integer.parseInt(st.nextToken().trim());
+	            int nend = Integer.parseInt(st.nextToken().trim());
+       	            szLabelFull = st.nextToken().trim();
 	            String szLabel = szLabelFull.substring(1);
 
 		    ArrayList alRecs = (ArrayList) hmcoords.get(szLabel);
@@ -930,12 +930,12 @@ public class BrowserOutput
               while ((szLine = brsegment.readLine())!=null)
               {
 		  StringTokenizer st = new StringTokenizer(szLine,"\t");
-		  String szchrom = st.nextToken();
+		  String szchrom = st.nextToken().trim();
 	          if (szchrom.equals(szcurrchrom))
 	          {
-		     int nbegin = Integer.parseInt(st.nextToken());
-		     int nend = Integer.parseInt(st.nextToken());
-		     szLabelFull = st.nextToken();
+		     int nbegin = Integer.parseInt(st.nextToken().trim());
+		     int nend = Integer.parseInt(st.nextToken().trim());
+		     szLabelFull = st.nextToken().trim();
 		     String szLabel = szLabelFull.substring(1);
 
 		     ArrayList alRecs = (ArrayList) hmcoords.get(szLabel);
