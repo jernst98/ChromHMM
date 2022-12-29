@@ -1,0 +1,235 @@
+12/29/2022 ChromHMM 1.24
+* Added '-browser' flag to OverlapEnrichment and NeighborhoodEnrichment to allow computing enrichments with browser bed files, which ignores lines
+that begin with 'browser' or 'track'
+* Added included files for the human telomere to telomere assembly hs1 (T2T CHM13v2.0/hs1). Gene annotations are based ncbiRefSeqCurated from UCSC Genome Browser as of Dec. 28, 2022.
+* Added included files for mouse assembly mm39. Gene annotations are based ncbiRefSeqCurated UCSC Genome Browser as of Dec. 28, 2022.
+* In ConvertGeneTable, added a flag '-noheader' to indicate there is no header row in inputgenetable and it should thus be read as data
+* In ConvertGeneTable, added a flag '-biggenepred' to indicate that the inputgenetable is in bigGenePred format
+* In ConvertGeneTable, added a flag '-nobin' to indicate that the first column does not contain bin information for cases in which the 
+inputgenetable is based on the genePred format. If the file is in bigGenePred format the first column cannot contain a bin entry.
+* In ConvertGeneTable, now ignores a double quote ("") when given a list of exon coordinates or sizes
+* In CompareModels, added a more informative error message if a mark of a model being compared to the reference model is not found in the reference model
+* In OverlapEnrichment, added a more informative error message in cases in which a column entry is being accessed in an external coordinate file that does not exist 
+* Modified OverlapEnrichment and NeighborhoodEnrichment to ignore empty lines in the segmentation file
+* In OverlapEnrichment and NeighborhoodEnrichment, added a more informative error message if the segmentation file has less than four entries
+* Now compiled to target a minimum of Java 1.6 from 1.5
+
+
+9/3/2021 ChromHMM 1.23
+* Added the '-mixed' flag with BinarizeBam which allows the command to handle both single end and paired end reads.
+Whether to treat a read as a single end or paired end read is made on a read by read determination based on the paired flag
+in the SamRecord. This thus allows using a mix of paired and single end reads within the same BAM file or across
+different BAM files.
+* Updated BinarizeBed and BinarizeBam to only count reads once from a given file if it appears more than
+once for the same cell-mark combination. This change allows merging within ChromHMM multiple control files 
+corresponding the same cell-mark combination without double counting reads.
+* Updated OverlapEnrichment to provide 10 significant digits after the Base % instead of 5
+* Updated OverlapEnrichment to provide a more informative error message if there are no external coordinate files
+in the provided directory
+* Updated MergeBinary so it would have fewer open files at one time
+* Updated MergeBinary to enforce that a feature (mark) only appears in one subdirectory to avoid a duplicate
+feature after merging. Updated the manual to make clear what is valid input. 
+* Updated NeighborhoodEnrichment to throw an error if there is no chromosome match between the segmentation
+and anchor files
+* Fixed a bug that caused an error to be a thrown when using the combination of '-gzip' and '-printstatebyline'
+with MakeSegmentation and LearnModel commands
+* Made ChromHMM more tolerant to leading/trailing white space. Also made ChromHMM more tolerant to using space
+instead of tab delimiters when spaces would not be expected in the tokens being delimitted. 
+* Updated the manual to note that the name of the gene table format (genePred) that ConvertGeneTable
+expects and provided a pointer to convert predictions in other formats into this format
+* Updated the manual to provide the default value of the '-s seed' option. Also noted under this option
+about the randomization associated with selecting which chromosome files to train with on each iteration
+when speciying the '-n numseq' option.
+
+10/24/2020 ChromHMM 1.22
+* Added a flag '-stacked' to BinarizedBam and BinarizeBed designed for use when binarizing
+the data for stacked model learning, which effectively replaces the cell type entry with 'genome' 
+and the separate cell and mark entries with a cell_mark entry in the cellmarkfiletable entry. 
+* Added the set of options [-splitcols [-k splitcolindex][-m numsplitcols]] to BinarizeBam and BinarizeBed
+to allow binarizing different subsets of the columns in parallel, and then can be later merged with MergeBinary.
+See manual for details on each otpion
+* Added the option '-t type' to MergeBinary. If this option is specified, then it allows merging 
+files other than binary files, in particular signal or controlsignal files. Files in the subdirectories 
+of inputdir that include ‘_type’ in the file name will be merged. By default type is binary, but for 
+regular signal files it should be signal and for control signal files it should be controlsignal.
+* Tweaked the position of column labels to better align with the columns in the heatmap
+* Modified ConvertGeneTable to also read gzipped file
+* Modified ConvertGeneTable to also handle space delimitted chromosome length files
+* Fixed bug that caused ConvertGeneTable only to work if there was a tab after the exonEnd
+* Expanded in the manual the description of the color scale for the enrichment heatmaps
+* Fixed a bug that caused model files to have emission ordering ('E') specified instead of fixed
+specified ('F') when using '-holdroworder' and a model initialization file
+* Clarified that the first parameter to CompareModels is the emission parameters by
+renaming it from referencemodel to referencemodelemissions in the documentation
+* Added more informative error message if in BinarizeSignal number of entries in a line
+does not equal expected number
+
+
+7/5/2020 ChromHMM 1.21
+*Consistent capitalization of 'S' in 'State' in output files
+*More informative error message when trying to use a lifted over
+segmentation with the default parameters of OverlapEnrichment that
+the '-b 1' parameter should be used
+*Added error message if using '-signal' option and no '_signal' named
+files are found
+*Updated ChromHMM to consider the options '-printstatesbyline' and '-printstatebyline' 
+interchangeable and likewise for the '-readstatesbyline' and '-readstatebyline' options
+*Fixed bug so '-color' option in CompareModels is recognized
+*Removed an extra space in the description line of browser files
+*Now handles spaces in labels when using the '-labels' option in OverlapEnrichment or NeighborhoodEnrichment
+*Fixed a bug that if running MergeBinary and not every mark is available in every cell type,
+ChromHMM only prints warning message, and it doesn't throw an exception as before
+*Added a '-lowmem' option to MakeBrowserFiles which uses less memory to create the files.
+This less memory option is also used when applying LearnModel with the '-lowmem' flag  
+
+12/9/2019 ChromHMM 1.20
+*Added a '-noautoopen' option that prevents ChromHMM from trying to automatically open a web browser with the summary page of results.
+*Fixed a bug that prevented the '-printbystatebyline' flag from being recognized in MakeSegmentation unless the '-printposterior' flag was also present
+*Leading and trailing white space are now trimmed from entries when reading a cellmarkfiletable
+*Small code optimization when loading data
+*Added a more informative error message if the number of columns in the headers differ across binarized data
+*Added an API call to get the max state at a specified position for data stored in a 2D array
+
+6/25/2019 ChromHMM 1.19
+* Added a '-labels' option to OverlapEnrichment and NeighborhoodEnrichment that allows
+them to be applied to bed files where the fourth column are state labels that don't correspond to state
+numbers or IDs. If the fourth column has a state ID or state number before a '_' and then followed by a label, 
+the states will state be ordered by the state ID or number, otherwise the state ordering in the output may differ from the original state ordering.
+* Clarified in the documentation that MakeSegmentation expects the columns of the binarized data
+to be in the same order as the columns in the model file which is by default the order of the columns in the binarized data
+used to learn the model. Added error checking enforcing the column names in the model file agree with the binarized data.
+Also added the '-reordercolsmodelfile' option to Reorder which causes the columns in the model file to be reordered
+
+12/26/2018 ChromHMM 1.18
+*Added the option '-splitrows' to BinarizeBam, BinarizeBed, and BinarizeSignal which enables splitting
+the binarized data across multiple files per chromosome. Splitting files can be desired to improve scalability
+in specific large scale applications. If this option is present the maximum number of rows per file is by default 5000, 
+but this can be changed with the added '-j numsplitbins' option.
+*Added the option '-splitrows' to LearnModel and MakeSegmentation. If the binarized data was generated with the '-splitrows' option
+then this flag needs to be present so the segmentation file produces properly named chromosomes with correct coordinates
+*Added the option '-i splitindex' to BinarizeBam and BinarizeBed for conducting row spliting in a more parallelized manner when
+binarizing based on peak data with the '-peaks' option. See the manual for additional information 
+*Added the command MergeBinary which allows merging binary files for different mark subsets split across different
+subdirectories. The command also supports row splitting binary files even if no merging was done with the '-splitrows' option.
+*Added the option '-r bedfilein bedfileout' in Reorder which enables directly relabeling the states in a segmentation or browser
+file after a specifying a reordering, without the need to run MakeSegmentation
+*Added the option '-holdroworder' in the LearnModel command which does not reorder the states of the model
+*Added the option '-scalebeta' to use an alternative numerical procedure to estimate the backward variables, beta, to avoid 
+overflow observed in specialized settings
+*Added a more informative error message in ConvertGeneTable if the chromosome length is not found
+*Modified ChromHMM so that in cases where there is no data for a chromosome in one cell type, but there is in another
+to not produce a segmentation for the chromosome in the cell type with no data. Previously ChromHMM was not consistent
+in whether it would still produce output for a chromosome with no data in one cell type if there was data for the
+chromosome in another cell type. Previously ChromHMM had inconsistent behavior if in one input cell type there was data  
+
+8/2/2018 ChromHMM 1.17
+*This version fixes a bug introduced in ChromHMM 1.16 that causes ChromHMM to produce anotations only for one chromosome
+
+7/29/2018 ChromHMM 1.16
+*Added the command ConvertGeneTable which converts a gene table from the UCSC genome browser table format into gene annotations found in the COORDS and ANCHORFILES directory
+*Added the '-gzip' flag to BinarizeBam, BinarizeBed, BinarizeSignal, ConvertGeneTable, MakeSegmentation, MakeBrowserFiles, and LearnModel 
+which enables outputting segmentation files from the command in a zipped format
+*Added the options '-u coorddir' and '-v anchorfiledir' to LearnModel and ConvertGeneTable which allow specifying the directory of COORDS and ANCHORFILES which defaults to the
+directory where the ChromHMM.jar file is.
+*Removed duplicate entries in the exon annotation files. This does not effect the enrichments with the default settings. 
+
+
+4/25/2018 ChromHMM 1.15
+*Added danRer11 to the included assemblies
+*Added the '-many' flag to LearnModel, MakeSegmentation, and EvalSubset which is more numerically stable when having many input features, i.e. hundreds of features, at the cost
+of additional runtime
+*Added the '-pseudo' flag to LearnModel. If this flag is present, pseudo counts of 1 are used in computing the model parameters to smooth away from zero values. 
+These pseudo counts can provide numerical stability in the situation when the -n numseq  is specified in training and some feature has very few present occurrences.
+*Added the '-lowmem' flag option also to EvalSubset which uses less memory by only loading one chromosome in at a time though with potentially additional runtime.
+*Added the '-paired' flag to BinarizeBam. If this option is present then reads in the BAM file are treated as pairs, and each pair is counted once with bin assignment is based on shifting half the insert size. If this option is present then the –n shift,  –center, and  –peaks  options cannot be used. 
+*Added a more informative error message for the situation in which the chromosome naming in the chromosome length file is
+inconsistent with the Bam/Bed files when binarizing data
+*Added a more informative error message for the situation in which the chromosome names in the segmentation files are not
+consistent with an external annotation when computing enrichments
+*Added additional range changing when computing enrichments for situations in which coordinates of the external annotations are off the chromosome.
+Such coordinate positions that are off the chromosome are ignored instead of an exception being thrown.
+*Fixed a bug that caused exceptions to be thrown if in LearnModel the '-n numseq' option was used without the '-lowmem' flag
+*Minor internal changes to the code including some that could give slight performance improvements.
+*Added details in the user manual on the computation of the fold enrichment calculation done in OverlapEnrichment and NeighborhoodEnrichment
+
+11/2/2017 ChromHMM 1.14
+*Added '-noimage' option to LearnModel, OverlapEnrichment, NeighborhoodEnrichment, CompareModels, Reorder, EvalSubset to surpress printing of image files.
+*Added annotations and chromosome length file for the ce11 assembly
+*Added a check if a beta value exceeds Double.MAX_VALUE then it is set to Double.MAX_VALUE to improve numerical stability
+*Updated the printing of posterior values to always be printed in Locale.ENGLISH to ensure they can still be read back in by ChromHMM if the default Locale is non-compatible
+*Fixed a bug in which the default initalization procedure would throw an exception if a chromosome was only one bin long
+*Fixed a bug in which the bin(s) with the maximum control value genomewide was not being binarized correctly.
+*Updated handling of situation in which control files were provided for some, but not all marks in a cell type. Previously if only one unique file was provided for a cell type it was used for all other marks in the cell type. Now a uniform control is assume. Previously if there was two or more unique control files for a cell type, then a mark without a control was not being binarized correctly because of the above fixed bug.
+*Slight change with update to how initial values of the initial parameters are set when not using all chromosomes for initialization
+
+11/2/2017 ChromHMM 1.13 (GitHub only release)
+*Added '-lowmem' flag to LearnModel, OverlapEnrichment, NeighborhoodEnrichment, and  MakeSegmentation to have ChromHMM only load one chromosome file into memory at time thus reducing maximum memory usage at a potential of additional runtime
+*Added '-n numseq' flag to LearnModel. If this flag is present and the ‘-p’ flag is present then on each iteration of training only numseq chromosome files are randomly selected to be used for training. In such cases the ‘-d’ flag should be set to a negative number so model learning does not terminate prematurely since negative changes in the log-likelihood are expected since different chromosomes are used on each iteration. Also only numseq files are considered in the initial model initialization under the default ‘information’ mode. If the ‘-n’ flag is specified without the ‘-p’ flag a subset of chromosomes will still be used for initialization, but all chromosomes will still be used on all iterations of training.
+
+
+4/3/2016 ChromHMM 1.12 (4/15/2016 updated hg38 and rn6 CpGIsland files)
+*Fixed a numerical instability issue that could cause
+NA in the models when including missing data (encoded by a '2' in the input) in special cases
+*Fixed a bug in Reorder in its handling of the situation when adding labels
+at the same time as reordering the states. Now it consistently expects
+both the prefix and state number of the new states.
+* CpGIsland coordinate files for hg38 and rn6 added in Version 1.11 were not in bed format causing an exception to be thrown when computing enrichments
+with these. These files were fixed on 4/15/2016.
+
+7/27/2015 ChromHMM 1.11
+*Added a BinarizeBam command that allows binarization of aligned reads in bam files instead of bed files. This uses the HTSJDK software to implement this feature.
+*Added annotations for assemblies rn6, hg38, dm6, danRer10, and ce10, and updated annotation files for the other assemblies.
+*Added the option in BinarizeBed/BinarizeBed/BinarizeSignal to put a binarzation threshold directly on the signal level through a -g option
+*Added support for gzip files for the commands EvalSubset and CompareModels, so now all ChromHMM commands support both text and gzip format of files
+*Fixed a bug in the Reorder command which did not update the ordering prefix character, and instead maintained the orignal prefix. 
+If the states are reorder based on a user provided ordering they will now have a 'U' prefix, a 'T' prefix for transition based ordering, 
+and a 'E' prefix for an emission based ordering.
+*Fixed a bug which caused the Reorder command to throw exceptions when parsing elim* model files generated from the StatePruning command
+*Now ignores Hidden files when considering a set of files in a directory
+*Previously it was undocumented what happens if the same cell-mark combination appears multiple times in the cell-mark-file table.
+It was and remains the policy that for the target signal reads are combined for each entry in the combination. For control data previously
+reads for each entry was also combined, while in this version the policy is changed so each unique entry is only counted once.
+*Improved floating point stability when running ChromHMM with hundreds of features. Now if the emission probability for all states at a position
+is less than 10^-300, then each state is associated with an emission probability of 10^-300, to prevent all states from getting 0 probability
+causing instability.
+*Fixed a bug which led to not giving working links to the model files from the generated webpage when using the '-i outfileID' option. 
+Also in these cases the webpage is now named based on webpage_NUMSTATES_outfileID.html.  
+*Gives more informative error message in places. 
+*Renamed the included file Lamina.hg18.bed.gz to laminB1lads.hg18.bed.gz for consistency with the hg19 naming.
+*Minor internal changes to the code that could give slight performance improvements.
+*Now include the source code for the Heatmap (org.tc33.jheatchart.HeatChart.java) in the zipfile download which was previously modified
+from its original state.
+*Updated the license from GPL 2.0 to 3.0.
+
+7/28/2013 ChromHMM 1.10 
+*Added the option for LearnModel train in parallel using multiprocessors with the '-p' option. 
+The value option specifies the maximum number of processors ChromHMM should try use or if 0 the maximum is set to the number of processors available.
+*Added annotations for assemblies mm10, rn5, danRer7 and updated the annotations for the other assemblies.
+*Fixed a minor bug that prevented printing of control signal without requesting print of regular signal in BinarizeBed.
+*Updated StatePruning to output models with a 1-based numbering instead of a 0-based numbering.
+
+11/4/2012 ChromHMM 1.06 
+*Added the EvalSubset command
+
+10/16/2012 ChromHMM 1.05 
+*Fixed inconsistencies in whether the label file labelmappingfile used or did not use
+the state ordering letter prefix. Now the state ordering letter prefix is consistently required.
+
+10/14/2012 ChromHMM 1.04 
+*Fixed a bug with treatment of missing data sets and control data was being used that caused the data to not be binarized. 
+*Also fixed a bug that caused any overlap coordinates past the end of segmentations not to be handled correctly. 
+
+5/27/2012 ChromHMM 1.03 
+*Added the ability to specify descriptive state labels or mnemonics in OverlapEnrichment, NeighborhoodEnrichment, and 
+Reorder. 
+*Fixed a bug that caused OverlapEnrichment to throw an exception if there was a chromosome included in the segmentation 
+without any coordinates in the file being overlapped. 
+
+3/12/2012 ChromHMM 1.02 
+*minor fix so that state colors remain consistent if a concatenated model is learned across multiple cell types but not every state is 
+assigned to a location in every cell type
+
+2/8/2012 ChromHMM 1.01 
+*bug fixed with four column cell-mark table
+
+2/1/2012 ChromHMM 1.00 released

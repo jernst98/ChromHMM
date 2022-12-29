@@ -39,11 +39,28 @@ public class ConvertGeneTable
      * exonCount
      * exonStarts
      * exonEnds
-     */
+     
+
+     * or a bigGenePred format, where only the first 12 columns are considered:
+     * chrom
+     * chromStart
+     * chromEnd
+     * name
+     * score
+     * strand
+     * thickStart
+     * thickEnd
+     * reserved
+     * blockCount
+     * blockSizes
+     * chromStarts
+    */
+
     static void convertGeneTableToAnnotations(String sztable, String szprefix,
                                               String szassembly, String szcoorddir, 
 					      String szanchordir, String szchromlengths, 
-                                              int npromoterwindow, boolean bgzip) throws IOException
+                                              int npromoterwindow, boolean bgzip, 
+                                              boolean bnobin, boolean bnoheader, boolean bbiggenepred) throws IOException
     {
 
 	//String sztable = args[0];
@@ -135,43 +152,99 @@ public class ConvertGeneTable
 	HashSet hstes = new HashSet();
 	HashSet hstss2kb = new HashSet();
 
-	br.readLine();
+	if (!bnoheader)
+	{
+	   br.readLine();
+	}
 
 	while ((szLine = br.readLine())!=null)
 	{
 	    StringTokenizer st = new StringTokenizer(szLine,"\t",true);
-	    String szbin = st.nextToken().trim();
-	    if (!szbin.equals("\t"))
-		st.nextToken().trim();
-	    String szname = st.nextToken().trim();
-	    if (!szname.equals("\t"))
-		st.nextToken().trim();
-	    String szchrom = st.nextToken().trim();
-	    if (!szchrom.equals("\t"))
-		st.nextToken().trim();
-	    String szstrand = st.nextToken().trim();
-	    if (!szstrand.equals("\t"))
-		st.nextToken().trim();
-	    String sztxStart = st.nextToken().trim();
-	    if (!sztxStart.equals("\t"))
-		st.nextToken().trim();
-	    String sztxEnd = st.nextToken().trim();
-	    if (!sztxEnd.equals("\t"))
-		st.nextToken().trim();
-	    String szcdsStart = st.nextToken().trim();
-	    if (!szcdsStart.equals("\t"))
-		st.nextToken().trim();
-	    String szcdsEnd = st.nextToken().trim();
-	    if (!szcdsEnd.equals("\t"))
-		st.nextToken().trim();
-	    String szexonCount = st.nextToken().trim();
-	    if (!szexonCount.equals("\t"))
-		st.nextToken().trim();
-	    String szexonStarts = st.nextToken().trim();
-	    if (!szexonStarts.equals("\t"))
-		st.nextToken().trim();
-	    String szexonEnds = st.nextToken().trim();
+	    String szchrom = null;
+	    String szstrand = null;
+	    String sztxStart = null;
+	    String sztxEnd = null;
+	    String szexonStarts = null;
+	    String szexonEnds = null;
+	    String szexonSizes = null;
+	    String szchromStarts = null;
 
+	    if (bbiggenepred)
+	    {
+	       szchrom = st.nextToken().trim();
+	       if (!szchrom.equals("\t"))
+	          st.nextToken().trim();
+	       sztxStart = st.nextToken().trim();
+	       if (!sztxStart.equals("\t"))
+	          st.nextToken().trim();
+	       sztxEnd = st.nextToken().trim();
+	       if (!sztxEnd.equals("\t"))
+	          st.nextToken().trim();
+	       String szname = st.nextToken().trim();
+	       if (!szname.equals("\t"))
+	          st.nextToken().trim();
+	       String szscore = st.nextToken().trim();
+	       if (!szscore.equals("\t"))
+	          st.nextToken().trim();
+	       szstrand = st.nextToken().trim();
+	       if (!szstrand.equals("\t"))
+	          st.nextToken().trim();
+	       String szthickStart = st.nextToken().trim();
+	       if (!szthickStart.equals("\t"))
+	          st.nextToken().trim();
+	       String szthickEnd = st.nextToken().trim();
+	       if (!szthickEnd.equals("\t"))
+	          st.nextToken().trim();
+	       String szreserved = st.nextToken().trim();
+	       if (!szreserved.equals("\t"))
+	          st.nextToken().trim();
+	       String szexonCount = st.nextToken().trim();
+	       if (!szexonCount.equals("\t"))
+	          st.nextToken().trim();
+	       szexonSizes = st.nextToken().trim();
+	       if (!szexonSizes.equals("\t"))
+	          st.nextToken().trim();
+	       szchromStarts = st.nextToken().trim();
+	    }
+	    else
+	    {
+	       String szbin = null;
+	       if (!bnobin)
+	       {
+	          szbin = st.nextToken().trim();
+	       }
+	       if (!szbin.equals("\t"))
+	          st.nextToken().trim();
+	       String szname = st.nextToken().trim();
+	       if (!szname.equals("\t"))
+	          st.nextToken().trim();
+	       szchrom = st.nextToken().trim();
+	       if (!szchrom.equals("\t"))
+	          st.nextToken().trim();
+	       szstrand = st.nextToken().trim();
+	       if (!szstrand.equals("\t"))
+	          st.nextToken().trim();
+	       sztxStart = st.nextToken().trim();
+	       if (!sztxStart.equals("\t"))
+	          st.nextToken().trim();
+	       sztxEnd = st.nextToken().trim();
+	       if (!sztxEnd.equals("\t"))
+	          st.nextToken().trim();
+	       String szcdsStart = st.nextToken().trim();
+	       if (!szcdsStart.equals("\t"))
+	          st.nextToken().trim();
+	       String szcdsEnd = st.nextToken().trim();
+	       if (!szcdsEnd.equals("\t"))
+	          st.nextToken().trim();
+	       String szexonCount = st.nextToken().trim();
+	       if (!szexonCount.equals("\t"))
+	          st.nextToken().trim();
+	       szexonStarts = st.nextToken().trim();
+	       if (!szexonStarts.equals("\t"))
+	          st.nextToken().trim();
+	       szexonEnds = st.nextToken().trim();
+
+	    }
 	    //removed 1.22
 	    //if (!szexonEnds.equals("\t"))
 	    //	st.nextToken();
@@ -228,8 +301,22 @@ public class ConvertGeneTable
 	    String szgeneOut = szchrom+"\t"+sztxStart+"\t"+sztxEnd;
 	    String szanchorTSSOut = szchrom+"\t"+ntss+"\t"+szstrand;
 	    String szanchorTESOut = szchrom+"\t"+ntes+"\t"+szstrand;
-	    StringTokenizer stexonStarts = new StringTokenizer(szexonStarts,",");
-	    StringTokenizer stexonEnds = new StringTokenizer(szexonEnds,",");
+	    //added two allow " quotes for exon list
+	    StringTokenizer stexonStarts = null;
+	    StringTokenizer stexonEnds = null;
+	    StringTokenizer stexonSizes = null;
+	    StringTokenizer stchromStarts = null;
+
+	    if (bbiggenepred)
+	    {
+	       stexonSizes = new StringTokenizer(szexonSizes,",\"");
+	       stchromStarts = new StringTokenizer(szchromStarts,",\"");
+	    }
+	    else
+	    {
+	       stexonStarts = new StringTokenizer(szexonStarts,",\"");
+	       stexonEnds = new StringTokenizer(szexonEnds,",\"");
+	    }
 
 	    if (bgzip)
 	    {
@@ -286,9 +373,31 @@ public class ConvertGeneTable
 	          hsgene.add(szgeneOut);
 	       }
 
-	       while (stexonStarts.hasMoreTokens())
+	       StringTokenizer stStarts = null;
+	       if (bbiggenepred)
 	       {
-		  String szexonOut = szchrom+"\t"+stexonStarts.nextToken().trim()+"\t"+stexonEnds.nextToken().trim()+"\n";
+	          stStarts = stchromStarts;
+	       }
+	       else
+	       {
+	          stStarts = stexonStarts;
+	       }
+
+	       while (stStarts.hasMoreTokens())
+	       {
+		  String szexonOut = null;
+		  if (bbiggenepred)
+		  {
+		     int nchromstart = Integer.parseInt(sztxStart);
+		     int nexonchromstart = Integer.parseInt(stStarts.nextToken().trim());
+		     int nexonsize = Integer.parseInt(stexonSizes.nextToken().trim());
+		     szexonOut = szchrom+"\t"+(nchromstart+nexonchromstart)+"\t"+(nchromstart+nexonchromstart+nexonsize)+"\n";
+		  }
+		  else
+		  {
+		     szexonOut = szchrom+"\t"+stStarts.nextToken().trim()+"\t"+stexonEnds.nextToken().trim()+"\n";
+		  }
+
 		  if (!hsexon.contains(szexonOut))
 		  {
                      byte[] btformat = szexonOut.getBytes();
@@ -338,9 +447,31 @@ public class ConvertGeneTable
 	          hsgene.add(szgeneOut);
 	       }
 
-	       while (stexonStarts.hasMoreTokens())
+	       StringTokenizer stStarts = null;
+	       if (bbiggenepred)
 	       {
-		  String szexonOut = szchrom+"\t"+stexonStarts.nextToken().trim()+"\t"+stexonEnds.nextToken().trim();
+	          stStarts = stchromStarts;
+	       }
+	       else
+	       {
+	          stStarts = stexonStarts;
+	       }
+
+	       while (stStarts.hasMoreTokens())
+	       {
+
+		  String szexonOut = null;
+		  if (bbiggenepred)
+		  {
+		     int nchromstart = Integer.parseInt(sztxStart);
+		     int nexonchromstart = Integer.parseInt(stStarts.nextToken().trim());
+		     int nexonsize = Integer.parseInt(stexonSizes.nextToken().trim());
+		     szexonOut = szchrom+"\t"+(nchromstart+nexonchromstart)+"\t"+(nchromstart+nexonchromstart+nexonsize);
+		  }
+		  else
+		  {
+		     szexonOut = szchrom+"\t"+stStarts.nextToken().trim()+"\t"+stexonEnds.nextToken().trim();
+		  }
 
                   if (!hsexon.contains(szexonOut))
 		  {

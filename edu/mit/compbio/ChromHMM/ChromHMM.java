@@ -12848,7 +12848,7 @@ public class ChromHMM
 
 	if (szcommand.equalsIgnoreCase("Version"))
 	{
-	    System.out.println("This is Version 1.23 of ChromHMM (c) Copyright 2008-2012 Massachusetts Institute of Technology");
+	    System.out.println("This is Version 1.24 of ChromHMM (c) Copyright 2008-2012 Massachusetts Institute of Technology");
 	}
         else if ((szcommand.equals("BinarizeBam"))||(szcommand.equalsIgnoreCase("BinarizeBed")))
 	{
@@ -14012,6 +14012,7 @@ public class ChromHMM
 	    String szoutfile;
 	    boolean buniformheat = ChromHMM.DEFAULT_OVERLAPENRICHMENT_BUNIFORMHEAT; //boolean ChromHMM.DEFAULT_OVERLAPENRICHMENT_BUNIFORMHEAT = false;
 	    boolean bstringlabels = false;
+	    boolean bbrowser = false;
 
 
 	    String sztitle = "Fold Enrichments";
@@ -14060,6 +14061,10 @@ public class ChromHMM
 		  else if (args[nargindex].equals("-binres"))
 		  {
 		     bbaseres = false;
+		  }
+		  else if (args[nargindex].equals("-browser"))
+		  {
+		      bbrowser = true;
 		  }
 		  else if (args[nargindex].equals("-f"))
 		  {
@@ -14140,12 +14145,12 @@ public class ChromHMM
 		   if (blowmem)
 		   {
 		      StateAnalysis.enrichmentMaxLowMem(szinput, szinputcoorddir,szinputcoordlist,noffsetleft,noffsetright,nbinsize,  
-							bcenter, bunique,  busesignal,szcolfields,bbaseres, szoutfile,bcolscaleheat,theColor,sztitle, szlabelmapping, bprintimage,bstringlabels);
+							bcenter, bunique,  busesignal,szcolfields,bbaseres, szoutfile,bcolscaleheat,theColor,sztitle, szlabelmapping, bprintimage,bstringlabels,bbrowser);
 		   }
 		   else
 		   {
 		      StateAnalysis.enrichmentMax(szinput, szinputcoorddir,szinputcoordlist,noffsetleft,noffsetright,nbinsize,  
-						  bcenter, bunique,  busesignal,szcolfields,bbaseres, szoutfile,bcolscaleheat,theColor,sztitle, szlabelmapping,bprintimage,bstringlabels);
+						  bcenter, bunique,  busesignal,szcolfields,bbaseres, szoutfile,bcolscaleheat,theColor,sztitle, szlabelmapping,bprintimage,bstringlabels,bbrowser);
 		   }
 	       }
 	       else
@@ -14161,7 +14166,7 @@ public class ChromHMM
 
 	    if (!bok)
 	    {
-		System.out.println("usage OverlapEnrichment [-a cell][-b binsize][-binres][-color r,g,b][-center][-colfields chromosome,start,end[,signal]]"+
+		System.out.println("usage OverlapEnrichment [-a cell][-b binsize][-binres][-browser][-color r,g,b][-center][-colfields chromosome,start,end[,signal]]"+
                                    "[-e offsetend][-f coordlistfile][-labels][-lowmem][-m labelmappingfile]"+
                                    "[-multicount][-noimage][-posterior][-s offsetstart][-signal][-t title][-uniformscale]"+
                                    " inputsegment inputcoorddir outfileprefix");
@@ -14179,6 +14184,7 @@ public class ChromHMM
 	    boolean busestrand =ChromHMM.DEFAULT_NEIGHBORHOOD_BUSESTRAND; 
 	    boolean busesignal = ChromHMM.DEFAULT_NEIGHBORHOOD_BUSESIGNAL; 
 	    boolean bstringlabels = false;
+	    boolean bbrowser = false;
 	    String szcolfields = null;
 	    int noffsetanchor = ChromHMM.DEFAULT_NEIGHBORHOOD_NOFFSETANCHOR; 
 	    String szoutfile; 
@@ -14209,6 +14215,10 @@ public class ChromHMM
 		  else if (args[nargindex].equals("-b"))
 		  {
 		     nbinsize = Integer.parseInt(args[++nargindex]);
+		  }
+		  else if (args[nargindex].equals("-browser"))
+		  {
+		      bbrowser = true;
 		  }
 		  else if (args[nargindex].equals("-color"))
 		  {
@@ -14308,19 +14318,22 @@ public class ChromHMM
 	       {
 		   //this is an undocumented feature to compute signal enrichment for marks around a position
 	           StateAnalysis.neighborhoodSignal(szinput,szcell,szanchorpositions,nbinsize,numleft,numright,
-						    nspacing,busestrand,busesignal,szcolfields,noffsetanchor,szoutfile,theColor,sztitle,szlabelmapping, bprintimage);
+						    nspacing,busestrand,busesignal,szcolfields,noffsetanchor,szoutfile,theColor,
+                                                    sztitle,szlabelmapping, bprintimage);
 	       }
                else if (bmax)
 	       {
 		   if (blowmem)
 		   {
 	              StateAnalysis.neighborhoodMaxLowMem(szinput,szanchorpositions,nbinsize,numleft,numright,
-							  nspacing,busestrand,busesignal,szcolfields,noffsetanchor,szoutfile,theColor,sztitle,szlabelmapping, bprintimage, bstringlabels);
+							  nspacing,busestrand,busesignal,szcolfields,noffsetanchor,szoutfile,theColor,
+                                                          sztitle,szlabelmapping, bprintimage, bstringlabels, bbrowser);
 		   }
 		   else
 		   {
 	              StateAnalysis.neighborhoodMax(szinput,szanchorpositions,nbinsize,numleft,numright,
-						    nspacing,busestrand,busesignal,szcolfields,noffsetanchor,szoutfile,theColor,sztitle,szlabelmapping, bprintimage, bstringlabels);
+						    nspacing,busestrand,busesignal,szcolfields,noffsetanchor,szoutfile,theColor,sztitle,szlabelmapping, 
+                                                    bprintimage, bstringlabels,bbrowser);
 		   }
 	       }
 	       else
@@ -14336,7 +14349,7 @@ public class ChromHMM
 
 	    if (!bok)
 	    {
-		System.out.println("usage NeighborhoodEnrichment [-a cell][-b binsize][-color r,g,b][-colfields chromosome,position[,optionalcol1|,optionalcol1,optionalcol2]"+
+		System.out.println("usage NeighborhoodEnrichment [-a cell][-b binsize][-browser][-color r,g,b][-colfields chromosome,position[,optionalcol1|,optionalcol1,optionalcol2]"+
                                   "[-l numleftintervals][-labels][-lowmem][-m labelmappingfile][-noimage][-nostrand]"+
                                   "[-o anchoroffset][-posterior][-r numrightintervals]"+
                                   "[-s spacing][-signal][-t title] inputsegment anchorpositions outfileprefix");
@@ -14852,7 +14865,7 @@ public class ChromHMM
 							  ChromHMM.DEFAULT_OVERLAPENRICHMENT_BCENTER, !ChromHMM.DEFAULT_OVERLAPENRICHMENT_BCOUNTMULTI, 
                                                           ChromHMM.DEFAULT_OVERLAPENRICHMENT_BUSESIGNAL,null,//szcolfields,
                                                           ChromHMM.DEFAULT_OVERLAPENRICHMENT_BBASERES, szoutputdir+"/"+szprefix+ChromHMM.SZOVERLAPEXTENSION,
-								       !ChromHMM.DEFAULT_OVERLAPENRICHMENT_BUNIFORMHEAT,theColor,"Fold Enrichment "+szprefix,null,bprintimage, false);
+								       !ChromHMM.DEFAULT_OVERLAPENRICHMENT_BUNIFORMHEAT,theColor,"Fold Enrichment "+szprefix,null,bprintimage, false,false);
 				  }
 				  else
 				  {
@@ -14864,7 +14877,7 @@ public class ChromHMM
 							  ChromHMM.DEFAULT_OVERLAPENRICHMENT_BCENTER, !ChromHMM.DEFAULT_OVERLAPENRICHMENT_BCOUNTMULTI, 
                                                           ChromHMM.DEFAULT_OVERLAPENRICHMENT_BUSESIGNAL,null,//szcolfields,
                                                           ChromHMM.DEFAULT_OVERLAPENRICHMENT_BBASERES, szoutputdir+"/"+szprefix+ChromHMM.SZOVERLAPEXTENSION,
-								 !ChromHMM.DEFAULT_OVERLAPENRICHMENT_BUNIFORMHEAT,theColor,"Fold Enrichment "+szprefix,null,bprintimage, false);
+								 !ChromHMM.DEFAULT_OVERLAPENRICHMENT_BUNIFORMHEAT,theColor,"Fold Enrichment "+szprefix,null,bprintimage, false,false);
 				  }
 				  String szoverlapoutfile = szprefix+ChromHMM.SZOVERLAPEXTENSION+".txt";
 				  if (bprintimage)
@@ -14913,7 +14926,7 @@ public class ChromHMM
 							     ChromHMM.DEFAULT_NEIGHBORHOOD_NUMRIGHT, nbinsize,//nspacing
                                            ChromHMM.DEFAULT_NEIGHBORHOOD_BUSESTRAND,ChromHMM.DEFAULT_NEIGHBORHOOD_BUSESIGNAL,null,//szcolfields,
                                            ChromHMM.DEFAULT_NEIGHBORHOOD_NOFFSETANCHOR,szoutputdir+"/"+szprefix+"_"+szanchorname+"_neighborhood",
-									    theColor,"Fold Enrichment "+szprefix+" "+szanchorname,null,bprintimage,false);
+									    theColor,"Fold Enrichment "+szprefix+" "+szanchorname,null,bprintimage,false,false);
 				     }
 				     else
 				     {
@@ -14922,7 +14935,7 @@ public class ChromHMM
 							     ChromHMM.DEFAULT_NEIGHBORHOOD_NUMRIGHT, nbinsize,//nspacing
                                            ChromHMM.DEFAULT_NEIGHBORHOOD_BUSESTRAND,ChromHMM.DEFAULT_NEIGHBORHOOD_BUSESIGNAL,null,//szcolfields,
                                            ChromHMM.DEFAULT_NEIGHBORHOOD_NOFFSETANCHOR,szoutputdir+"/"+szprefix+"_"+szanchorname+"_neighborhood",
-								      theColor,"Fold Enrichment "+szprefix+" "+szanchorname,null,bprintimage,false);
+								      theColor,"Fold Enrichment "+szprefix+" "+szanchorname,null,bprintimage,false,false);
 				     }
 				     String szneighborhoodoutfileprefix = szprefix+"_"+szanchorname+ChromHMM.SZNEIGHBORHOODEXTENSION;
 				   
@@ -15141,6 +15154,9 @@ public class ChromHMM
             int nargindex = 1;
 	    int npromoterwindow = 2000;
 	    boolean bgzip = false;
+	    boolean bnobin = false;
+	    boolean bnoheader = false;
+	    boolean bbiggenepred = false;
 	    String szcoorddir;
 	    String szanchordir;
 
@@ -15152,14 +15168,26 @@ public class ChromHMM
 		  //    {
 		  //	  szfullprefixpathchromsizedir = args[++nargindex];
 		  //    }
-                  if (args[nargindex].equals("-gzip"))
+		  if (args[nargindex].equals("-biggenepred"))
+		  {
+		     bbiggenepred = true;
+		  }
+                  else if (args[nargindex].equals("-gzip"))
 		  {
 	       	     bgzip = true;
 		  }
-                  else if (args[nargindex].equals("-l"))
+	          else if (args[nargindex].equals("-l"))
 		  {
 		     szchromlengthfile = args[++nargindex];
 	          }
+	          else if (args[nargindex].equals("-nobin"))
+		  {
+		      bnobin = true;
+		  }
+		  else if (args[nargindex].equals("-noheader"))
+		  {
+		      bnoheader = true;
+		  }
                   else if (args[nargindex].equals("-u"))
 		  {
 		     szfullprefixpathcoorddir = args[++nargindex];
@@ -15182,6 +15210,11 @@ public class ChromHMM
             catch (NumberFormatException ex)
 	    {
 	       bok = false;
+	    }
+
+	    if ((bbiggenepred)&&(bnobin))
+	    {
+		bok = false;
 	    }
 
             if (bok && (nargindex==args.length-3))
@@ -15230,7 +15263,8 @@ public class ChromHMM
 	       }
 
 
-	       ConvertGeneTable.convertGeneTableToAnnotations(sztable, szprefix, szassembly, szcoorddir, szanchordir, szchromlengthfile, npromoterwindow, bgzip);
+	       ConvertGeneTable.convertGeneTableToAnnotations(sztable, szprefix, szassembly, szcoorddir, szanchordir, szchromlengthfile, 
+                                                              npromoterwindow, bgzip, bnobin, bnoheader,bbiggenepred);
 	    }
 	    else
 	    {
@@ -15239,7 +15273,7 @@ public class ChromHMM
 
 	    if (!bok)
 	    {
-                System.out.println("usage: ConvertGeneTable [-gzip][-l chromosomelengthfile][-u coorddir][-v anchordir][-w promoterwindow] inputgenetable prefix assembly");
+                System.out.println("usage: ConvertGeneTable [-biggenepred|-nobin][-gzip][-l chromosomelengthfile][-noheader][-u coorddir][-v anchordir][-w promoterwindow] inputgenetable prefix assembly");
 	    }
 
 	}

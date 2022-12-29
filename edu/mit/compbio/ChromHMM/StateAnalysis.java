@@ -666,7 +666,8 @@ public class StateAnalysis
      public static void enrichmentMax(String szinputsegment,String szinputcoorddir,String szinputcoordlist,
 				     int noffsetleft, int noffsetright,
                                      int nbinsize, boolean bcenter,boolean bunique, boolean busesignal,String szcolfields,
-				      boolean bbaseres, String szoutfile,boolean bcolscaleheat,Color theColor,String sztitle, String szlabelmapping, boolean bprintimage, boolean  bstringlabels) throws IOException
+				      boolean bbaseres, String szoutfile,boolean bcolscaleheat,Color theColor,String sztitle, 
+                                      String szlabelmapping, boolean bprintimage, boolean  bstringlabels, boolean bbrowser) throws IOException
     {
 	//usual high memory
 	ArrayList alsegments = new ArrayList(); //stores all the segments
@@ -690,7 +691,17 @@ public class StateAnalysis
 	BufferedReader brinputsegment = Util.getBufferedReader(szinputsegment);
 	while ((szLine = brinputsegment.readLine())!=null)
 	{
+	    //added v1.24
+	    if (bbrowser)
+	    {
+		if ((szLine.toLowerCase(Locale.ENGLISH).startsWith("browser"))||(szLine.toLowerCase(Locale.ENGLISH).startsWith("track")))
+		{
+		    continue;
+		}
+	    }
+
 	    StringTokenizer st;
+
 	    if (bstringlabels)
 	    {
 	       st = new StringTokenizer(szLine,"\t");
@@ -699,6 +710,18 @@ public class StateAnalysis
 	    {
 	       st = new StringTokenizer(szLine,"\t ");
 	    } 
+
+	    //added in v1.24
+	    int numtokens = st.countTokens();
+	    if (numtokens == 0)
+	    {
+		//skip blank lines
+		continue;
+	    }
+	    else if (numtokens < 4)
+	    {
+		throw new IllegalArgumentException("Line "+szLine+" in "+szinputsegment+" only had "+numtokens+" token(s). Expecting at least 4");
+	    }
 
 	    String szchrom = st.nextToken().trim();
 	    int nbegincoord = Integer.parseInt(st.nextToken().trim());
@@ -965,13 +988,13 @@ public class StateAnalysis
 	             String[] szLineA = szLine.split("\\s+");
 		     if (nstartindex >= szLineA.length)
 		     {
-			 throw new IllegalArgumentException(nstartindex+" is an invalid index for "+szLine+" in "+szinputcoorddir+files[nfile]);
+			 throw new IllegalArgumentException(nstartindex+" is an invalid column index for "+szLine+" in "+szinputcoorddir+files[nfile]);
 		     }
 
 
                      if (nendindex >= szLineA.length)
 		     {
-			 throw new IllegalArgumentException(nendindex+" is an invalid index for "+szLine+" in "+szinputcoorddir+files[nfile]);
+			 throw new IllegalArgumentException(nendindex+" is an invalid column index for "+szLine+" in "+szinputcoorddir+files[nfile]);
 		     }
 
 
@@ -1223,7 +1246,7 @@ public class StateAnalysis
 				     int noffsetleft, int noffsetright,
                                      int nbinsize, boolean bcenter,boolean bunique, boolean busesignal,String szcolfields,
 				      boolean bbaseres, String szoutfile,boolean bcolscaleheat,Color theColor,String sztitle, 
-					    String szlabelmapping, boolean bprintimage, boolean bstringlabels) throws IOException
+					    String szlabelmapping, boolean bprintimage, boolean bstringlabels, boolean bbrowser) throws IOException
     {
 
 
@@ -1314,6 +1337,16 @@ public class StateAnalysis
        BufferedReader brinputsegment = Util.getBufferedReader(szinputsegment);
        while ((szLine = brinputsegment.readLine())!=null)
        {
+
+	  //added v1.24
+	  if (bbrowser)
+	  {
+	     if ((szLine.toLowerCase(Locale.ENGLISH).startsWith("browser"))||(szLine.toLowerCase(Locale.ENGLISH).startsWith("track")))
+	     {
+	        continue;
+	     }
+	  }
+
 	  StringTokenizer st;
 	  if (bstringlabels)
 	  {
@@ -1323,6 +1356,18 @@ public class StateAnalysis
 	  {
 	     st = new StringTokenizer(szLine,"\t ");
           }
+
+	  //added in v1.24
+	  int numtokens = st.countTokens();
+	  if (numtokens == 0)
+	  {
+	     //skip blank lines
+	     continue;
+	  }
+	  else if (numtokens < 4)
+	  {
+	     throw new IllegalArgumentException("Line "+szLine+" in "+szinputsegment+" only had "+numtokens+" token(s). Expecting at least 4");
+	  }
 
 	  String szchrom = st.nextToken().trim();
 	  int nbegincoord = Integer.parseInt(st.nextToken().trim());
@@ -1616,12 +1661,12 @@ public class StateAnalysis
 	           String[] szLineA = szLine.split("\\s+");
 		   if (nstartindex >= szLineA.length)
 		   {
-		      throw new IllegalArgumentException(nstartindex+" is an invalid index for "+szLine+" in "+szinputcoorddir+files[nfile]);
+		      throw new IllegalArgumentException(nstartindex+" is an invalid column index for "+szLine+" in "+szinputcoorddir+files[nfile]);
 		   }
 
                    if (nendindex >= szLineA.length)
 		   {
-		      throw new IllegalArgumentException(nendindex+" is an invalid index for "+szLine+" in "+szinputcoorddir+files[nfile]);
+		      throw new IllegalArgumentException(nendindex+" is an invalid column index for "+szLine+" in "+szinputcoorddir+files[nfile]);
 		   }
 
 	           String szcurrchrom = szLineA[nchromindex];
@@ -2227,7 +2272,8 @@ public class StateAnalysis
                                        int nbinsize, int numleft, int numright, int nspacing, 
 					boolean busestrand, boolean busesignal, String szcolfields,
 					int noffsetanchor, String szoutfile,Color theColor, 
-					String sztitle,String szlabelmapping, boolean bprintimage, boolean  bstringlabels) throws IOException
+					      String sztitle,String szlabelmapping, boolean bprintimage, 
+                                           boolean  bstringlabels, boolean bbrowser) throws IOException
     {
 
 
@@ -2259,6 +2305,15 @@ public class StateAnalysis
 	//this loops reads in the segmentation 
 	while ((szLine = brinputsegment.readLine())!=null)
 	{
+	    //added v1.24
+	    if (bbrowser)
+	    {
+		if ((szLine.toLowerCase(Locale.ENGLISH).startsWith("browser"))||(szLine.toLowerCase(Locale.ENGLISH).startsWith("track")))
+		{
+		    continue;
+		}
+	    }
+
 	    StringTokenizer st;
 	    if (bstringlabels)
 	    {
@@ -2268,6 +2323,19 @@ public class StateAnalysis
 	    {
 	       st = new StringTokenizer(szLine,"\t ");
 	    }
+
+	    //added in v1.24
+	    int numtokens = st.countTokens();
+	    if (numtokens == 0)
+	    { 
+	       //skip blank lines
+	       continue;
+	    }
+	    else if (numtokens < 4)
+	    {
+	       throw new IllegalArgumentException("Line "+szLine+" in "+szinputsegmentation+" only had "+numtokens+" token(s). Expecting at least 4");
+	    }
+
 	    String szchrom = st.nextToken().trim();
             //assumes segments are in standard bed format which to get to 
 	    //0-based inclusive requires substract 1 from the end
@@ -2636,7 +2704,8 @@ public class StateAnalysis
                                        int nbinsize, int numleft, int numright, int nspacing, 
 					boolean busestrand, boolean busesignal, String szcolfields,
 					int noffsetanchor, String szoutfile,Color theColor, 
-					String sztitle,String szlabelmapping, boolean bprintimage,boolean  bstringlabels) throws IOException
+					String sztitle,String szlabelmapping, boolean bprintimage,
+                                        boolean  bstringlabels, boolean bbrowser) throws IOException
     {
 	//highmem
 	boolean bchrommatch =  false;//added in 1.23 to check for chromosome matches
@@ -2666,6 +2735,15 @@ public class StateAnalysis
 	//this loops reads in the segmentation 
 	while ((szLine = brinputsegment.readLine())!=null)
 	{
+	    //added v1.24
+	    if (bbrowser)
+	    {
+		if ((szLine.toLowerCase(Locale.ENGLISH).startsWith("browser"))||(szLine.toLowerCase(Locale.ENGLISH).startsWith("track")))
+		{
+		    continue;
+		}
+	    }
+
 	    StringTokenizer st;
 	    if (bstringlabels)
 	    {
@@ -2675,6 +2753,19 @@ public class StateAnalysis
 	    {
 		st = new StringTokenizer(szLine,"\t ");
 	    }
+
+	    //added in v1.24
+	    int numtokens = st.countTokens();
+	    if (numtokens == 0)
+	    {
+	       //skip blank lines
+	       continue;
+	    }
+	    else if (numtokens < 4)
+	    {
+	       throw new IllegalArgumentException("Line "+szLine+" in "+szinputsegmentation+" only had "+numtokens+" token(s). Expecting at least 4");
+	    }
+
 	    String szchrom = st.nextToken().trim();
             //assumes segments are in standard bed format which to get to 
 	    //0-based inclusive requires substract 1 from the end
@@ -3817,7 +3908,16 @@ public class StateAnalysis
 	           ncol  = 0;
 		   while (stheader.hasMoreTokens())
 		   {
-		       mappedcol[ncol] = ((Integer) hmNameToID.get(stheader.nextToken().trim())).intValue();
+		       String sznametokentrim = stheader.nextToken().trim(); 
+		       if (hmNameToID.get(sznametokentrim) == null)
+		       {
+			   throw new IllegalArgumentException(sznametokentrim+" in "+comparefiles[nfile]+" was not found in "+szmainmodelfile+". "+
+							      "Mark names should match.");
+		       }
+		       else
+		       {
+		          mappedcol[ncol] = ((Integer) hmNameToID.get(sznametokentrim)).intValue();
+		       }
 		       ncol++;
 		   }
 		}
