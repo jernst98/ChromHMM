@@ -208,13 +208,14 @@ public class ConvertGeneTable
 	    }
 	    else
 	    {
-	       String szbin = null;
 	       if (!bnobin)
 	       {
+		   //updated in 1.25
+		  String szbin = null;
 	          szbin = st.nextToken().trim();
+	          if (!szbin.equals("\t"))
+	             st.nextToken().trim();
 	       }
-	       if (!szbin.equals("\t"))
-	          st.nextToken().trim();
 	       String szname = st.nextToken().trim();
 	       if (!szname.equals("\t"))
 	          st.nextToken().trim();

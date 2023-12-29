@@ -518,6 +518,11 @@ public class ChromHMM
      */
     boolean bpseudo = false;
 
+    /**
+     * true if should skip the last input from pseudo
+     */
+    boolean bnopseudolast = false;
+
 
     /**
      * true if output should be zipped files
@@ -730,7 +735,7 @@ public class ChromHMM
 		    boolean bprintsegment,boolean bprintstatebyline, int nbinsize,String szoutfileID,int nstateorder,boolean bordercols,int nzerotransitionpower,
 		     Color theColor, boolean bnormalEM, int nmaxprocessors, boolean blowmem, 
                      int numincludeseq, boolean bprintimage, boolean bscaleemissions, 
-                     boolean bpseudo, boolean bgzip,boolean bsplit, boolean borderrows, boolean bscalebeta) throws IOException
+                     boolean bpseudo, boolean bnopseudolast, boolean bgzip,boolean bsplit, boolean borderrows, boolean bscalebeta) throws IOException
     {
 	this.szinputdir = szinputdir;
         this.szoutputdir = szoutputdir;
@@ -764,6 +769,7 @@ public class ChromHMM
 	this.bprintimage = bprintimage;
 	this.bscaleemissions = bscaleemissions;
 	this.bpseudo = bpseudo;
+	this.bnopseudolast = bnopseudolast;
 	this.bgzip = bgzip;
 	this.bscalebeta = bscalebeta;
 	//this.numsplitbins = numsplitbins;
@@ -2066,10 +2072,12 @@ public class ChromHMM
 	int numels = alobservedpairflags.size();
 
 	//computes a tally for each flag combination observed of how frequently observed
-	int[] tallys = new int[numels];
+	//int[] tallys = new int[numels];
+	long[] tallys = new long[numels];
 
 	//stores the total number of flag combinations observed
-        int ntotaltally = 0;
+        //int ntotaltally = 0;
+        long ntotaltally = 0;
 
 	for (int nseq = 0; nseq < traindataObservedIndexPair.length; nseq++)
 	{
@@ -2095,7 +2103,8 @@ public class ChromHMM
 	
 
 	//stores how many elements are currently assigned to the split node
-	int[] partitionTally = new int[numstates];
+	//int[] partitionTally = new int[numstates];
+	long[] partitionTally = new long[numstates];
 
 	//initally everything gets assigned to split node 0
 	partitionTally[0] = ntotaltally;
@@ -2109,7 +2118,8 @@ public class ChromHMM
 
 	//stores for all prior splits how many elements would be split off
 	//if partitioning on that mark
-	int[][] nextpartitionTally = new int[numstates-1][numdatasets];
+	//int[][] nextpartitionTally = new int[numstates-1][numdatasets];
+	long[][] nextpartitionTally = new long[numstates-1][numdatasets];
 
 	for (int niteration = 1; niteration < numstates; niteration++)
 	{	
@@ -2119,7 +2129,8 @@ public class ChromHMM
 	   {
 	       //initializes the nextpartitionTally to 0
 
-	       int[] nextpartitionTally_ni = nextpartitionTally[ni];
+	       //int[] nextpartitionTally_ni = nextpartitionTally[ni];
+	       long[] nextpartitionTally_ni = nextpartitionTally[ni];
 	       for (int nmark = 0; nmark < numdatasets; nmark++)
 	       {
 	          nextpartitionTally_ni[nmark] = 0;
@@ -2157,7 +2168,8 @@ public class ChromHMM
 	       //considering all previous splits to split again
 
 	       //fraction of total weighted elements in this node about to be split
-	       int partitionTally_nsplit = partitionTally[nsplit];
+	       //int partitionTally_nsplit = partitionTally[nsplit];
+	       long partitionTally_nsplit = partitionTally[nsplit];
 	       double dprobfull = partitionTally_nsplit/(double) ntotaltally;
 	       double dprobfullterm;
 	       if (dprobfull> 0)
@@ -2170,7 +2182,8 @@ public class ChromHMM
 		   dprobfullterm = 0;
 	       }
 
-	       int[] nextpartitionTally_nsplit = nextpartitionTally[nsplit];
+	       //int[] nextpartitionTally_nsplit = nextpartitionTally[nsplit];
+	       long[] nextpartitionTally_nsplit = nextpartitionTally[nsplit];
 
 	       for (int nsplitmark = 0; nsplitmark < numdatasets; nsplitmark++)
 	       {
@@ -2216,7 +2229,8 @@ public class ChromHMM
 	    }
 
 	    //the number of elements in the new split
-	    int numnewsplit =nextpartitionTally[nbestsplit][nbestsplitmark];
+	    //int numnewsplit =nextpartitionTally[nbestsplit][nbestsplitmark];
+	    long numnewsplit =nextpartitionTally[nbestsplit][nbestsplitmark];
 	    partitionTally[niteration] = numnewsplit;
 
 	    //removes from the node we splitting from those we just split;
@@ -2237,7 +2251,8 @@ public class ChromHMM
 	    }
 	}
 
-       int[][] postally = new int[numstates][numdatasets];
+	//int[][] postally = new int[numstates][numdatasets];
+       long[][] postally = new long[numstates][numdatasets];
 
        for (int nel = 0; nel < tallys.length; nel++)
        {
@@ -2260,13 +2275,15 @@ public class ChromHMM
 	  }
        }
 
-       int[] partitionTallySum = new int[partitionTally.length];
+       //int[] partitionTallySum = new int[partitionTally.length];
+       long[] partitionTallySum = new long[partitionTally.length];
        for (int nstate = 1; nstate < numstates; nstate++)
        {
 	   //figures out how many descendants there are of each split
           int ncurrstate = nstate;
-          int ntotsum = 0;
-          int ncurrval = partitionTally[ncurrstate];
+          //int ntotsum = 0;
+          //int ncurrval = partitionTally[ncurrstate];
+          long ncurrval = partitionTally[ncurrstate];
           do
           {
 	      //incrementing counts for the parents
@@ -2288,8 +2305,11 @@ public class ChromHMM
 
        //initialize the inital probability based on the partition of the first vector
 
-       int[] numstarts = new int[numstates];
-       int nvalidseq = 0;
+       //int[] numstarts = new int[numstates];
+       long[] numstarts = new long[numstates];
+       //int nvalidseq = 0;
+       long nvalidseq = 0;
+
        for (int nseq = 0; nseq < traindataObservedIndexPair.length; nseq++)
        {
 	  if ((bincludeseq[nseq])&&(traindataObservedIndexPair[nseq].length > 0))
@@ -2308,7 +2328,8 @@ public class ChromHMM
 
 
        //determining initial settings for the transition probability
-       int[][] transitiontally = new int[numstates][numstates];
+       //int[][] transitiontally = new int[numstates][numstates];
+       long[][] transitiontally = new long[numstates][numstates];
        int nnextstate;
        for (int nseq = 0; nseq < traindataObservedIndexPair.length; nseq++)
        {
@@ -2331,7 +2352,8 @@ public class ChromHMM
        {
           double[] transitionprobs_ni = transitionprobs[ni];
 	  double dnumfromi = 0;
-	  int[] transitiontally_ni = transitiontally[ni];
+	  //int[] transitiontally_ni = transitiontally[ni];
+	  long[] transitiontally_ni = transitiontally[ni];
 
 	  for (int nj = 0; nj < numstates; nj++)
 	  {
@@ -2357,38 +2379,37 @@ public class ChromHMM
 
     public void informationInitializeNested() 
     {
-	//inital probability vector
-        probinit = new double[numstates];
+       //inital probability vector
+       probinit = new double[numstates];
 
-	//creates the emission probability matrix
-	emissionprobs = new double[numstates][numdatasets][numbuckets];
+       //creates the emission probability matrix
+       emissionprobs = new double[numstates][numdatasets][numbuckets];
 
-	//set to true if a transition has been eliminated
-	elim = new boolean[numstates][numstates];
+       //set to true if a transition has been eliminated
+       elim = new boolean[numstates][numstates];
 
-	//initalize the transition matrix
-	transitionprobs = new double[numstates][numstates];
+       //initalize the transition matrix
+       transitionprobs = new double[numstates][numstates];
 
-	//initialize index of the next non-zero transition
-	transitionprobsindex = new int[numstates][numstates];
+       //initialize index of the next non-zero transition
+       transitionprobsindex = new int[numstates][numstates];
 
-	//initalize number of non-zero transitions
-	transitionprobsnum = new int[numstates];
+       //initalize number of non-zero transitions
+       transitionprobsnum = new int[numstates];
 
-	//initalize column-wise index of non-zero transitions
-        transitionprobsindexCol = new int[numstates][numstates];
+       //initalize column-wise index of non-zero transitions
+       transitionprobsindexCol = new int[numstates][numstates];
  
-	//number of non-zero column transitions
-        transitionprobsnumCol = new int[numstates];
+       //number of non-zero column transitions
+       transitionprobsnumCol = new int[numstates];
 
-	int[][] traindataObservedIndexPair = new int[traindataObservedIndex.length][];
+       int[][] traindataObservedIndexPair = new int[traindataObservedIndex.length][];
 	
+       ArrayList alobservedpairflags = new ArrayList(); //is an index from the element combination to the associated flags
 
-	ArrayList alobservedpairflags = new ArrayList(); //is an index from the element combination to the associated flags
+       HashMap hmObserved= new HashMap(); //is an index from the associated flags to the element index
 
-	HashMap hmObserved= new HashMap(); //is an index from the associated flags to the element index
-
-	int nobserved= 0; //index on the unique observation combination we are observing
+       int nobserved= 0; //index on the unique observation combination we are observing
 
        int[] samples= null;
 
@@ -2500,10 +2521,12 @@ public class ChromHMM
        int numels = alobservedpairflags.size();
 
        //computes a tally for each flag combination observed of how frequently observed
-       int[] tallys = new int[numels];
+       //int[] tallys = new int[numels];
+       long[] tallys = new long[numels];
 
        //stores the total number of flag combinations observed
-       int ntotaltally = 0;
+       //int ntotaltally = 0;
+       long ntotaltally = 0;
 
        for (int nseq = 0; nseq < traindataObservedIndexPair.length; nseq++)
        {
@@ -2529,7 +2552,8 @@ public class ChromHMM
 	
 
 	//stores how many elements are currently assigned to the split node
-	int[] partitionTally = new int[numstates];
+	//int[] partitionTally = new int[numstates];
+	long[] partitionTally = new long[numstates];
 
 	//initally everything gets assigned to split node 0
 	partitionTally[0] = ntotaltally;
@@ -2543,7 +2567,8 @@ public class ChromHMM
 
 	//stores for all prior splits how many elements would be split off
 	//if partitioning on that mark
-	int[][] nextpartitionTally = new int[numstates-1][numdatasets];
+	//int[][] nextpartitionTally = new int[numstates-1][numdatasets];
+	long[][] nextpartitionTally = new long[numstates-1][numdatasets];
 
 	for (int niteration = 1; niteration < numstates; niteration++)
 	{	
@@ -2553,7 +2578,8 @@ public class ChromHMM
 	   {
 	       //initializes the nextpartitionTally to 0
 
-	       int[] nextpartitionTally_ni = nextpartitionTally[ni];
+	       //int[] nextpartitionTally_ni = nextpartitionTally[ni];
+	       long[] nextpartitionTally_ni = nextpartitionTally[ni];
 	       for (int nmark = 0; nmark < numdatasets; nmark++)
 	       {
 	          nextpartitionTally_ni[nmark] = 0;
@@ -2591,7 +2617,8 @@ public class ChromHMM
 	       //considering all previous splits to split again
 
 	       //fraction of total weighted elements in this node about to be split
-	       int partitionTally_nsplit = partitionTally[nsplit];
+	       //int partitionTally_nsplit = partitionTally[nsplit];
+	       long partitionTally_nsplit = partitionTally[nsplit];
 	       double dprobfull = partitionTally_nsplit/(double) ntotaltally;
 	       double dprobfullterm;
 	       if (dprobfull> 0)
@@ -2604,7 +2631,8 @@ public class ChromHMM
 		   dprobfullterm = 0;
 	       }
 
-	       int[] nextpartitionTally_nsplit = nextpartitionTally[nsplit];
+	       //int[] nextpartitionTally_nsplit = nextpartitionTally[nsplit];
+	       long[] nextpartitionTally_nsplit = nextpartitionTally[nsplit];
 
 	       for (int nsplitmark = 0; nsplitmark < numdatasets; nsplitmark++)
 	       {
@@ -2650,7 +2678,8 @@ public class ChromHMM
 	    }
 
 	    //the number of elements in the new split
-	    int numnewsplit =nextpartitionTally[nbestsplit][nbestsplitmark];
+	    //int numnewsplit =nextpartitionTally[nbestsplit][nbestsplitmark];
+	    long numnewsplit = nextpartitionTally[nbestsplit][nbestsplitmark];
 	    partitionTally[niteration] = numnewsplit;
 
 	    //removes from the node we splitting from those we just split;
@@ -2671,7 +2700,8 @@ public class ChromHMM
 	    }
 	}
 
-       int[][] postally = new int[numstates][numdatasets];
+       //int[][] postally = new int[numstates][numdatasets];
+       long[][] postally = new long[numstates][numdatasets];
 
        for (int nel = 0; nel < tallys.length; nel++)
        {
@@ -2694,13 +2724,15 @@ public class ChromHMM
 	  }
        }
 
-       int[] partitionTallySum = new int[partitionTally.length];
+       //int[] partitionTallySum = new int[partitionTally.length];
+       long[] partitionTallySum = new long[partitionTally.length];
        for (int nstate = 1; nstate < numstates; nstate++)
        {
 	   //figures out how many descendants there are of each split
           int ncurrstate = nstate;
-          int ntotsum = 0;
-          int ncurrval = partitionTally[ncurrstate];
+          //int ntotsum = 0;
+          //int ncurrval = partitionTally[ncurrstate];
+          long ncurrval = partitionTally[ncurrstate];
           do
           {
 	      //incrementing counts for the parents
@@ -2722,8 +2754,10 @@ public class ChromHMM
 
        //initialize the inital probability based on the partition of the first vector
 
-       int[] numstarts = new int[numstates];
-       int nvalidseq = 0;
+       //int[] numstarts = new int[numstates];
+       long[] numstarts = new long[numstates];
+       //int nvalidseq = 0;
+       long nvalidseq = 0;
        for (int nseq = 0; nseq < traindataObservedIndexPair.length; nseq++)
        {
 	  if ((bincludeseq[nseq])&&(traindataObservedIndexPair[nseq].length > 0))
@@ -2742,13 +2776,14 @@ public class ChromHMM
 
 
        //determining initial settings for the transition probability
-       int[][] transitiontally = new int[numstates][numstates];
+       //int[][] transitiontally = new int[numstates][numstates];
+       long[][] transitiontally = new long[numstates][numstates];
        int nnextstate;
        for (int nseq = 0; nseq < traindataObservedIndexPair.length; nseq++)
        {
-	   if ((bincludeseq[nseq])&&(traindataObservedIndexPair[nseq].length > 0)) //updated in v1.14
-	   {
-	      //going through each sequence
+	  if ((bincludeseq[nseq])&&(traindataObservedIndexPair[nseq].length > 0)) //updated in v1.14
+	  {
+	     //going through each sequence
              int[] traindataObservedIndexPair_nseq = traindataObservedIndexPair[nseq];
 	     int nprevstate = initStateAssign[traindataObservedIndexPair_nseq[0]];
              for (int nindex = 1; nindex < traindataObservedIndexPair_nseq.length; nindex++)
@@ -2758,14 +2793,15 @@ public class ChromHMM
 	        transitiontally[nprevstate][nnextstate]++;
 	        nprevstate = nnextstate;
 	     }
-	   }
+	  }
        }
 
        for (int ni = 0; ni < numstates; ni++)
        {
           double[] transitionprobs_ni = transitionprobs[ni];
 	  double dnumfromi = 0;
-	  int[] transitiontally_ni = transitiontally[ni];
+	  //int[] transitiontally_ni = transitiontally[ni];
+	  long[] transitiontally_ni = transitiontally[ni];
 
 	  for (int nj = 0; nj < numstates; nj++)
 	  {
@@ -3440,6 +3476,21 @@ public class ChromHMM
 
 	  if (bscalebeta)
 	  {
+
+	     if (dscale == 0)
+	     {
+	        for (int ns = 0; ns < numstates; ns++)
+	        {
+	           //added
+	           if ((alpha_nt[ns] < EPSILONSTATE)&&(emissionproducts_nobserveindex[ns]>0))//(ns < numstates-1))) 
+	           {
+	              alpha_nt[ns] = EPSILONSTATE;
+	      	      dscale += EPSILONSTATE;
+		   }
+		}
+	        scale[0] = dscale;
+	     }
+
 	     for (int ns = 0; ns < numstates; ns++)
 	     {
                 alpha_nt[ns] /= dscale;
@@ -3524,6 +3575,20 @@ public class ChromHMM
 
 	      if (bscalebeta)
 	      {
+	         if (dscale == 0)
+	         {
+		    for (int ns = 0; ns < numstates; ns++)
+		    {
+		       //added
+		       if ((alpha_nt[ns] < EPSILONSTATE)&&(emissionproducts_nobserveindex[ns]>0))//(ns < numstates-1))) 
+		       {
+		          alpha_nt[ns] = EPSILONSTATE;
+			  dscale += EPSILONSTATE;
+		       }
+		    }
+		    scale[nt] = dscale;
+		 }
+
 	         for (int ns = 0; ns < numstates; ns++)
 	         {
                     alpha_nt[ns] /= dscale;
@@ -3584,74 +3649,94 @@ public class ChromHMM
 	      gamma_nt[ns] = dval;
 	  }
 
-          for (int ns = 0; ns < gamma_nt.length; ns++)
-          {
-	     gamma_nt[ns] /= ddenom;
+	  if (ddenom > 0)
+	  {
+             for (int ns = 0; ns < gamma_nt.length; ns++)
+             {
+	        gamma_nt[ns] /= ddenom;
+	     }
 	  }
 
 
           for (int nt = nlastindex - 1; nt >= 0; nt--)
           {
-	      gamma_nt = gamma[nt];
-	      int ntp1 = (nt+1);
+	     gamma_nt = gamma[nt];
+	     int ntp1 = (nt+1);
 		   
-	      double[] emissionproducts_ncombo_ntp1 = emissionproducts[traindataObservedIndex_nseq[ntp1]];		
+	     double[] emissionproducts_ncombo_ntp1 = emissionproducts[traindataObservedIndex_nseq[ntp1]];		
 
-	      double dsumbeta = 0;
-	      double dscale_nt = scale[nt];
+	     double dsumbeta = 0;
+	     double dscale_nt = scale[nt];
 
-	      for (int ns = 0; ns < numstates; ns++)
-              {
-		  tempproductbetaemiss[ns] = beta_ntp1[ns]*emissionproducts_ncombo_ntp1[ns];
-	      }
+	     for (int ns = 0; ns < numstates; ns++)
+             {
+	        tempproductbetaemiss[ns] = beta_ntp1[ns]*emissionproducts_ncombo_ntp1[ns];
+	     }
 
-	      //double dscaleinv = 1.0/scale[nt];
-              //scale_t(s)=P(o_0,...,o_t|lambda) summed over all states
-	      for (int ni = 0; ni < numstates; ni++)
-	      {
-		  double dtempsum = 0;
-		  int[] transitionprobsindex_ni =  transitionprobsindex[ni];
-		  double[] transitionprobs_ni = transitionprobs[ni];
-		  int transitionprobsnum_ni = transitionprobsnum[ni];
+	     if (bscaleemissions)
+	     {
+	        //adding here to help numerical stability
+	        double dmaxval = 0;
+		for (int ns = 0; ns < numstates; ns++)
+		{
+	           if (tempproductbetaemiss[ns] > dmaxval)
+		   {
+	              dmaxval = tempproductbetaemiss[ns];
+		   }
+		}
+                for (int ns = 0; ns < numstates; ns++)
+		{
+	           tempproductbetaemiss[ns] = tempproductbetaemiss[ns]/dmaxval;
+		}
+	     }
 
-                  if (transitionprobsnum_ni < nsparsecutoff)
-	          {
-		    //if it is sparse enough then it is worth the extra array indirection here
-	             for (int nj = 0; nj < transitionprobsnum_ni; nj++)
-	             {
-	                //for each state summing over transition probability to state j, emission probablity in j at next step
-	                //and probability of observing the remaining sequence
-		        nmappedindexouter = transitionprobsindex_ni[nj];
-		        dtempsum += transitionprobs_ni[nmappedindexouter]*tempproductbetaemiss[nmappedindexouter];			
-		     }
-		  }
-	          else
-	          {
-                     for (int nj = 0; nj < numstates; nj++)
-	             {
-	                //for each state summing over transition probability to state j, emission probablity in j at next step
-	                //and probability of observing the remaining sequence
-		        dtempsum += transitionprobs_ni[nj]*tempproductbetaemiss[nj];
-		     }
-		  }
+	     //double dscaleinv = 1.0/scale[nt];
+             //scale_t(s)=P(o_0,...,o_t|lambda) summed over all states
+	     for (int ni = 0; ni < numstates; ni++)
+	     {
+	        double dtempsum = 0;
+	        int[] transitionprobsindex_ni =  transitionprobsindex[ni];
+       	        double[] transitionprobs_ni = transitionprobs[ni];
+		int transitionprobsnum_ni = transitionprobsnum[ni];
 
-		  if (bscalebeta)
-		  {
-		     beta_nt[ni] = dtempsum;
-		     dsumbeta += dtempsum;
-		  }
-		  else
-		  {
-		     double dratio = dtempsum/dscale_nt;
-		     if (dratio > Double.MAX_VALUE)
-		     {
-		        beta_nt[ni] = Double.MAX_VALUE;//dtempsum/dscale_nt;
-		     }
-		     else
-		     {
-		        beta_nt[ni] = dratio;
-		     }
-		  }
+                if (transitionprobsnum_ni < nsparsecutoff)
+	        {
+	           //if it is sparse enough then it is worth the extra array indirection here
+	           for (int nj = 0; nj < transitionprobsnum_ni; nj++)
+	           {
+	              //for each state summing over transition probability to state j, emission probablity in j at next step
+	              //and probability of observing the remaining sequence
+		      nmappedindexouter = transitionprobsindex_ni[nj];
+		      dtempsum += transitionprobs_ni[nmappedindexouter]*tempproductbetaemiss[nmappedindexouter];			
+		   }
+		}
+	        else
+	        {
+                   for (int nj = 0; nj < numstates; nj++)
+	           {
+	              //for each state summing over transition probability to state j, emission probablity in j at next step
+	              //and probability of observing the remaining sequence
+		      dtempsum += transitionprobs_ni[nj]*tempproductbetaemiss[nj];
+		   }
+		}
+
+	        if (bscalebeta)
+	        {
+	           beta_nt[ni] = dtempsum;
+       	           dsumbeta += dtempsum;
+		}
+	        else
+		{
+		   double dratio = dtempsum/dscale_nt;
+		   if (dratio > Double.MAX_VALUE)
+		   {
+	              beta_nt[ni] = Double.MAX_VALUE;//dtempsum/dscale_nt;
+		   }
+		   else
+		   {
+		      beta_nt[ni] = dratio;
+		   }
+		}
 
 		  //double dratio = dtempsum/dscale_nt;
 		  //if (dratio > Double.MAX_VALUE)
@@ -3680,22 +3765,25 @@ public class ChromHMM
 	      ddenom = 0;		
 	      alpha_nt = alpha[nt];
 
-	       //gamma_nt - P(x=S| o_0,...,o_t)
-               //P(o_t+1,...,o_T|x_t=s,lambda) * P(o_0,...,o_t,xt=s|lambda)
+	      //gamma_nt - P(x=S| o_0,...,o_t)
+              //P(o_t+1,...,o_T|x_t=s,lambda) * P(o_0,...,o_t,xt=s|lambda)
 
-	       for (int ns = 0; ns < gamma_nt.length; ns++)
-               {
-		   double dval = alpha_nt[ns]*beta_nt[ns];
+	      for (int ns = 0; ns < gamma_nt.length; ns++)
+              {
+	         double dval = alpha_nt[ns]*beta_nt[ns];
 
-		   ddenom += dval;
-		   gamma_nt[ns] = dval;
-	       }
+		 ddenom += dval;
+		 gamma_nt[ns] = dval;
+	      }
 
-	       for (int ns = 0; ns < gamma_nt.length; ns++)
-               {
-		   gamma_nt[ns]/=ddenom;       		   
-	       }
-	       beta_ntp1 = beta_nt;		
+	      if (ddenom > 0)
+	      {
+	         for (int ns = 0; ns < gamma_nt.length; ns++)
+                 {
+	            gamma_nt[ns]/=ddenom;       		   
+		 }
+	      }
+	      beta_ntp1 = beta_nt;		
 	  }
 
 
@@ -4347,6 +4435,20 @@ public class ChromHMM
           //converts the alpha terms to probabilities
 	  if (bscalebeta)
           {
+	     if (dscale == 0)
+	     {
+	        for (int ns = 0; ns < numstates; ns++)
+		{
+	           //added
+		   if ((alpha_nt[ns] < EPSILONSTATE)&&(emissionproducts_nobserveindex[ns]>0))//(ns < numstates-1))) 
+	           {
+	              alpha_nt[ns] = EPSILONSTATE;
+		      dscale += EPSILONSTATE;
+		   }
+		}
+	        scale[0] = dscale;
+	     }
+
              for (int ns = 0; ns < numstates; ns++)
 	     {
                 alpha_nt[ns] /= dscale;
@@ -4431,6 +4533,20 @@ public class ChromHMM
 
 	      if (bscalebeta)
 	      {
+	         if (dscale == 0)
+	         {
+		    for (int ns = 0; ns < numstates; ns++)
+		    {
+		       //added
+		       if ((alpha_nt[ns] < EPSILONSTATE)&&(emissionproducts_nobserveindex[ns]>0))//(ns < numstates-1))) 
+		       {
+		          alpha_nt[ns] = EPSILONSTATE;
+			  dscale += EPSILONSTATE;
+		       }
+		    }
+		    scale[nt] = dscale;
+		 }
+
 	         for (int ns = 0; ns < numstates; ns++)
 	         {
                     alpha_nt[ns] /= dscale;
@@ -4491,9 +4607,12 @@ public class ChromHMM
 	      gamma_nt[ns] = dval;
 	  }
 
-          for (int ns = 0; ns < gamma_nt.length; ns++)
-          {
-	     gamma_nt[ns] /= ddenom;
+	  if (ddenom > 0)
+	  {
+             for (int ns = 0; ns < gamma_nt.length; ns++)
+             {
+	        gamma_nt[ns] /= ddenom;
+	     }
 	  }
 
 
@@ -4509,6 +4628,23 @@ public class ChromHMM
 	      for (int ns = 0; ns < numstates; ns++)
               {
 		  tempproductbetaemiss[ns] = beta_ntp1[ns]*emissionproducts_ncombo_ntp1[ns];
+	      }
+
+	      if (bscaleemissions)
+	      {
+		  //adding here to help numerical stability
+		  double dmaxval = 0;
+		  for (int ns = 0; ns < numstates; ns++)
+		  {
+		      if (tempproductbetaemiss[ns] > dmaxval)
+		      {
+			  dmaxval = tempproductbetaemiss[ns];
+		      }
+		  }
+                  for (int ns = 0; ns < numstates; ns++)
+		  {
+		     tempproductbetaemiss[ns] = tempproductbetaemiss[ns]/dmaxval;
+		  }
 	      }
 
 	      //double dscaleinv = 1.0/scale[nt];
@@ -4596,9 +4732,12 @@ public class ChromHMM
 		   gamma_nt[ns] = dval;
 	       }
 
-	       for (int ns = 0; ns < gamma_nt.length; ns++)
-               {
-		   gamma_nt[ns]/=ddenom;       		   
+	       if (ddenom > 0)
+	       {
+	          for (int ns = 0; ns < gamma_nt.length; ns++)
+                  {
+		     gamma_nt[ns]/=ddenom;       		   
+		  }
 	       }
 	       beta_ntp1 = beta_nt;		
 	  }
@@ -5386,6 +5525,20 @@ public class ChromHMM
            //converts the alpha terms to probabilities
 	   if (bscalebeta)
 	   {
+	      if (dscale == 0)
+	      {
+	         for (int ns = 0; ns < numstates; ns++)
+		 {
+	             //added
+		     if ((alpha_nt[ns] < EPSILONSTATE)&&(emissionproducts_nobserveindex[ns]>0))//(ns < numstates-1))) 
+		     {
+		        alpha_nt[ns] = EPSILONSTATE;
+		        dscale += EPSILONSTATE;
+		     }
+		 }
+	         scale[0] = dscale;
+	      }
+
 	      for (int ns = 0; ns < numstates; ns++)
 	      {
                  alpha_nt[ns] /= dscale;
@@ -5469,6 +5622,20 @@ public class ChromHMM
 
 	      if (bscalebeta)
 	      {
+	         if (dscale == 0)
+	         {
+		    for (int ns = 0; ns < numstates; ns++)
+		    {
+		       //added
+		       if ((alpha_nt[ns] < EPSILONSTATE)&&(emissionproducts_nobserveindex[ns]>0))//(ns < numstates-1))) 
+		       {
+		          alpha_nt[ns] = EPSILONSTATE;
+			  dscale += EPSILONSTATE;
+		       }
+		    }
+		    scale[nt] = dscale;
+		 }
+
 	         for (int ns = 0; ns < numstates; ns++)
 	         {
                     alpha_nt[ns] /= dscale;
@@ -5529,9 +5696,12 @@ public class ChromHMM
 	      gamma_nt[ns] = dval;
 	  }
 
-          for (int ns = 0; ns < gamma_nt.length; ns++)
-          {
-	     gamma_nt[ns] /= ddenom;
+	  if (ddenom > 0)
+	  {
+             for (int ns = 0; ns < gamma_nt.length; ns++)
+             {
+	        gamma_nt[ns] /= ddenom;
+	     }
 	  }
 
 
@@ -5547,6 +5717,23 @@ public class ChromHMM
 	      for (int ns = 0; ns < numstates; ns++)
               {
 		  tempproductbetaemiss[ns] = beta_ntp1[ns]*emissionproducts_ncombo_ntp1[ns];
+	      }
+
+	      if (bscaleemissions)
+	      {
+		  //adding here to help numerical stability
+		  double dmaxval = 0;
+		  for (int ns = 0; ns < numstates; ns++)
+		  {
+		      if (tempproductbetaemiss[ns] > dmaxval)
+		      {
+			  dmaxval = tempproductbetaemiss[ns];
+		      }
+		  }
+                  for (int ns = 0; ns < numstates; ns++)
+		  {
+		      tempproductbetaemiss[ns] = tempproductbetaemiss[ns]/dmaxval;
+		  }
 	      }
 
 	      //double dscaleinv = 1.0/scale[nt];
@@ -5634,9 +5821,12 @@ public class ChromHMM
 		   gamma_nt[ns] = dval;
 	       }
 
-	       for (int ns = 0; ns < gamma_nt.length; ns++)
-               {
-		   gamma_nt[ns]/=ddenom;       		   
+	       if (ddenom > 0)
+	       {
+	          for (int ns = 0; ns < gamma_nt.length; ns++)
+                  {
+		      gamma_nt[ns]/=ddenom;       		   
+		  }
 	       }
 	       beta_ntp1 = beta_nt;		
 	  }
@@ -6413,6 +6603,20 @@ public class ChromHMM
           //converts the alpha terms to probabilities
           if (bscalebeta)
 	  {
+	     if (dscale == 0)
+	     {
+	        for (int ns = 0; ns < numstates; ns++)
+	        {
+	           //added
+		   if ((alpha_nt[ns] < EPSILONSTATE)&&(emissionproducts_nobserveindex[ns]>0))//(ns < numstates-1))) 
+	           {
+	              alpha_nt[ns] = EPSILONSTATE;
+		      dscale += EPSILONSTATE;
+		   }
+		}
+	        scale[0] = dscale;
+	     }
+
              for (int ns = 0; ns < numstates; ns++)
 	     {
                 alpha_nt[ns] /= dscale;
@@ -6500,6 +6704,20 @@ public class ChromHMM
 
 	      if (bscalebeta)
 	      {
+	         if (dscale == 0)
+	         {
+		    for (int ns = 0; ns < numstates; ns++)
+		    {
+		       //added
+		       if ((alpha_nt[ns] < EPSILONSTATE)&&(emissionproducts_nobserveindex[ns]>0))//(ns < numstates-1))) 
+		       {
+		          alpha_nt[ns] = EPSILONSTATE;
+			  dscale += EPSILONSTATE;
+		       }
+		    }
+		    scale[nt] = dscale;
+		 }
+
 	         for (int ns = 0; ns < numstates; ns++)
 	         {
                     alpha_nt[ns] /= dscale;
@@ -6560,9 +6778,12 @@ public class ChromHMM
 	      gamma_nt[ns] = dval;
 	  }
 
-          for (int ns = 0; ns < gamma_nt.length; ns++)
-          {
-	     gamma_nt[ns] /= ddenom;
+	  if (ddenom > 0)
+	  {
+             for (int ns = 0; ns < gamma_nt.length; ns++)
+             {
+	        gamma_nt[ns] /= ddenom;
+	     }
 	  }
 
 
@@ -6578,6 +6799,23 @@ public class ChromHMM
 	      for (int ns = 0; ns < numstates; ns++)
               {
 		  tempproductbetaemiss[ns] = beta_ntp1[ns]*emissionproducts_ncombo_ntp1[ns];
+	      }
+
+	      if (bscaleemissions)
+	      {
+		  //adding here to help numerical stability
+		  double dmaxval = 0;
+		  for (int ns = 0; ns < numstates; ns++)
+		  {
+		      if (tempproductbetaemiss[ns] > dmaxval)
+		      {
+			  dmaxval = tempproductbetaemiss[ns];
+		      }
+		  }
+                  for (int ns = 0; ns < numstates; ns++)
+		  {
+		      tempproductbetaemiss[ns] = tempproductbetaemiss[ns]/dmaxval;
+		  }
 	      }
 
 	      //double dscaleinv = 1.0/scale[nt];
@@ -6665,9 +6903,12 @@ public class ChromHMM
 	         gamma_nt[ns] = dval;
 	      }
 
-	      for (int ns = 0; ns < gamma_nt.length; ns++)
-              {
-	         gamma_nt[ns]/=ddenom;       		   
+	      if (ddenom > 0)
+	      {
+	         for (int ns = 0; ns < gamma_nt.length; ns++)
+                 {
+	            gamma_nt[ns]/=ddenom;       		   
+		 }
 	      }
 	      beta_ntp1 = beta_nt;		
 	  }
@@ -7296,6 +7537,20 @@ public class ChromHMM
        //converts the alpha terms to probabilities
        if (bscalebeta)
        {
+          if (dscale == 0)
+          {
+	     for (int ns = 0; ns < numstates; ns++)
+	     {
+	        //added
+	        if ((alpha_nt[ns] < EPSILONSTATE)&&(emissionproducts_nobserveindex[ns]>0))//(ns < numstates-1))) 
+	        {
+	           alpha_nt[ns] = EPSILONSTATE;
+	       	   dscale += EPSILONSTATE;
+		}
+	     }
+	     scale[0] = dscale;
+	  }
+
           for (int ns = 0; ns < numstates; ns++)
 	  {
 	     alpha_nt[ns] /= dscale;
@@ -7377,6 +7632,20 @@ public class ChromHMM
 
 	  if (bscalebeta)
           {
+	     if (dscale == 0)
+	     {
+	        for (int ns = 0; ns < numstates; ns++)
+	        {
+	           //added
+	           if ((alpha_nt[ns] < EPSILONSTATE)&&(emissionproducts_nobserveindex[ns]>0))//(ns < numstates-1))) 
+	           {
+	              alpha_nt[ns] = EPSILONSTATE;
+		      dscale += EPSILONSTATE;
+		   }
+		}
+	        scale[nt] = dscale;
+	     }
+
              for (int ns = 0; ns < numstates; ns++)
 	     {
                 alpha_nt[ns] /= dscale;
@@ -7450,6 +7719,23 @@ public class ChromHMM
 	  for (int ns = 0; ns < numstates; ns++)
           {
              tempproductbetaemiss[ns] = beta_ntp1[ns]*emissionproducts_ncombo_ntp1[ns];
+	  }
+
+	  if (bscaleemissions)
+          {
+	     //adding here to help numerical stability
+	     double dmaxval = 0;
+	     for (int ns = 0; ns < numstates; ns++)
+	     {
+                if (tempproductbetaemiss[ns] > dmaxval)
+	        {
+	       	   dmaxval = tempproductbetaemiss[ns];
+	        }
+	     }
+             for (int ns = 0; ns < numstates; ns++)
+	     {
+                tempproductbetaemiss[ns] = tempproductbetaemiss[ns]/dmaxval;
+	     }
 	  }
 
 	  //double dscaleinv = 1.0/scale[nt];
@@ -8001,6 +8287,20 @@ public class ChromHMM
 	     //converts the alpha terms to probabilities
 	     if (bscalebeta)
 	     {
+	        if (dscale == 0)
+	        {
+		   for (int ns = 0; ns < numstates; ns++)
+		   {
+		      //added
+		      if ((alpha_nt[ns] < EPSILONSTATE)&&(emissionproducts_nobserveindex[ns]>0))//(ns < numstates-1))) 
+		      {
+		         alpha_nt[ns] = EPSILONSTATE;
+		         dscale += EPSILONSTATE;
+		      }
+		   }
+		   scale[0] = dscale;
+		}
+
 	        for (int ns = 0; ns < numstates; ns++)
 	        {
                    alpha_nt[ns] /= dscale;
@@ -8091,6 +8391,20 @@ public class ChromHMM
 
 	        if (bscalebeta)
 	        {
+	           if (dscale == 0)
+	           {
+		      for (int ns = 0; ns < numstates; ns++)
+		      {
+		         //added
+		         if ((alpha_nt[ns] < EPSILONSTATE)&&(emissionproducts_nobserveindex[ns]>0))//(ns < numstates-1))) 
+		         {
+		            alpha_nt[ns] = EPSILONSTATE;
+			    dscale += EPSILONSTATE;
+		         }
+		      }
+		      scale[nt] = dscale;
+		   }
+
 	           for (int ns = 0; ns < numstates; ns++)
 	           {
                       alpha_nt[ns] /= dscale;
@@ -8156,9 +8470,12 @@ public class ChromHMM
 	        gamma_nt[ns] = dval;
 	     }
 
-             for (int ns = 0; ns < gamma_nt.length; ns++)
+	     if (ddenom > 0)
 	     {
-		 gamma_nt[ns] /=ddenom;
+                for (int ns = 0; ns < gamma_nt.length; ns++)
+	        {
+		   gamma_nt[ns] /=ddenom;
+		}
 	     }
 
 	     double[] gammaObservedSum_combo_nt = gammaObservedSum[traindataObservedIndex[nlastindex]];
@@ -8180,6 +8497,23 @@ public class ChromHMM
 	        {
 		    tempproductbetaemiss[ns] = beta_ntp1[ns]*emissionproducts_combo_ntp1[ns];
 		}
+
+	        if (bscaleemissions)
+	        {
+		   //adding here to help numerical stability
+		   double dmaxval = 0;
+		   for (int ns = 0; ns < numstates; ns++)
+		   {
+		      if (tempproductbetaemiss[ns] > dmaxval)
+		      {
+			  dmaxval = tempproductbetaemiss[ns];
+		      }
+		   }
+                   for (int ns = 0; ns < numstates; ns++)
+		   {
+		      tempproductbetaemiss[ns] = tempproductbetaemiss[ns]/dmaxval;
+		   }
+	        }
 
 		//double dscaleinv = 1.0/scale[nt];
 		double dsumbeta = 0;
@@ -8270,9 +8604,12 @@ public class ChromHMM
 	           gamma_nt[ns] = dval;
 		} 
 
-	        for (int ns = 0; ns < gamma_nt.length; ns++)
-	        {
-		    gamma_nt[ns] /= ddenom;
+		if (ddenom > 0)
+		{
+	           for (int ns = 0; ns < gamma_nt.length; ns++)
+	           {
+		       gamma_nt[ns] /= ddenom;
+		   }
 		}
 
                 gammaObservedSum_combo_nt = gammaObservedSum[traindataObservedIndex[nt]];
@@ -8317,32 +8654,35 @@ public class ChromHMM
 		         double dtempval = transitionprobs_ni[nj]*dalpha_nt_ni*tempproductbetaemiss[nj];
 		         dsum += dtempval;
 		         sumforsxi_ni[nj] = dtempval;
-		       }
-		   }
-		}		 
-		   
-		//normalizing the numerator by the sum of the denominator and updating this iterations value for it
-	        for (int ni = 0; ni < numstates; ni++)
-	        {
-		   int[] transitionprobsindex_ni = transitionprobsindex[ni];
-	           double[] sumforsxi_ni = sumforsxi[ni];
-	           double[] sxi_nseq_ni = sxi_nseq[ni];
-	           int ntransitionprobsnum_ni = transitionprobsnum[ni];
-
-                   if (ntransitionprobsnum_ni < nsparsecutoff)
-	           {
-		       //guessing sparse enough to avoid the indirections
-		      for (int nj = 0; nj < ntransitionprobsnum_ni; nj++)
-		      {
-	      	         int nmappedindex = transitionprobsindex_ni[nj];
-		         sxi_nseq_ni[nmappedindex] += sumforsxi_ni[nmappedindex]/dsum;
 		      }
 		   }
-	           else
+		}		 
+
+		if (dsum > 0)
+		{		   
+		   //normalizing the numerator by the sum of the denominator and updating this iterations value for it
+	           for (int ni = 0; ni < numstates; ni++)
 	           {
-                      for (int nj = 0; nj < numstates; nj++)
-	      	      {
-			  sxi_nseq_ni[nj] += sumforsxi_ni[nj]/dsum;
+		      int[] transitionprobsindex_ni = transitionprobsindex[ni];
+	              double[] sumforsxi_ni = sumforsxi[ni];
+	              double[] sxi_nseq_ni = sxi_nseq[ni];
+	              int ntransitionprobsnum_ni = transitionprobsnum[ni];
+
+                      if (ntransitionprobsnum_ni < nsparsecutoff)
+	              {
+		         //guessing sparse enough to avoid the indirections
+		         for (int nj = 0; nj < ntransitionprobsnum_ni; nj++)
+		         {
+	      	            int nmappedindex = transitionprobsindex_ni[nj];
+		            sxi_nseq_ni[nmappedindex] += sumforsxi_ni[nmappedindex]/dsum;
+			 }
+		      }
+	              else
+	              {
+                         for (int nj = 0; nj < numstates; nj++)
+	      	         {
+			    sxi_nseq_ni[nj] += sumforsxi_ni[nj]/dsum;
+		         }
 		      }
 		   }
 	        }   	 
@@ -8412,7 +8752,7 @@ public class ChromHMM
 	              dgammainitsum += gammainitstore[nitr][ni];
 	           }
 
-	           if (bpseudo)
+	           if ((bpseudo)&&(!bnopseudolast))
 	           {
 		      dgammainitsum++;
 	           }
@@ -8543,7 +8883,7 @@ public class ChromHMM
 	                    emissionprobs_ns_nmark[nbucket] += gammaksumstore[nitr][ns][nmark][nbucket];
 		         }
 
-			 if (bpseudo)
+			 if ((bpseudo) && ((!bnopseudolast)||(nmark<emissionprobs_ns.length-1)))
 			 {
 			    emissionprobs_ns_nmark[nbucket]++;
 			 }
@@ -8910,6 +9250,20 @@ public class ChromHMM
 	     //converts the alpha terms to probabilities
 	     if (bscalebeta)
 	     {
+	        if (dscale == 0)
+	        {
+		   for (int ns = 0; ns < numstates; ns++)
+		   {
+		      //added
+		      if ((alpha_nt[ns] < EPSILONSTATE)&&(emissionproducts_nobserveindex[ns]>0))//(ns < numstates-1))) 
+		      {
+		         alpha_nt[ns] = EPSILONSTATE;
+	       	         dscale += EPSILONSTATE;
+		      }
+		   }
+	           scale[0] = dscale;
+		}
+
 	        for (int ns = 0; ns < numstates; ns++)
 	        {
                    alpha_nt[ns] /= dscale;
@@ -8998,6 +9352,20 @@ public class ChromHMM
 
 		if (bscalebeta)
 		{
+	           if (dscale == 0)
+	           {
+		      for (int ns = 0; ns < numstates; ns++)
+		      {
+		         //added
+		         if ((alpha_nt[ns] < EPSILONSTATE)&&(emissionproducts_nobserveindex[ns]>0))//(ns < numstates-1))) 
+		         {
+		            alpha_nt[ns] = EPSILONSTATE;
+			    dscale += EPSILONSTATE;
+		         }
+		      }
+		      scale[nt] = dscale;
+		   }
+
 	           for (int ns = 0; ns < numstates; ns++)
 	           {
                       alpha_nt[ns] /= dscale;
@@ -9057,9 +9425,12 @@ public class ChromHMM
 	        gamma_nt[ns] = dval;
 	     }
 
-             for (int ns = 0; ns < gamma_nt.length; ns++)
+	     if (ddenom > 0)
 	     {
-		 gamma_nt[ns] /=ddenom;
+                for (int ns = 0; ns < gamma_nt.length; ns++)
+	        {
+		   gamma_nt[ns] /=ddenom;
+		}
 	     }
 
 	     double[] gammaObservedSum_combo_nt = gammaObservedSum[traindataObservedIndex_nseq[nlastindex]];
@@ -9080,6 +9451,23 @@ public class ChromHMM
 		for (int ns = 0; ns < numstates; ns++)
 	        {
 	           tempproductbetaemiss[ns] = beta_ntp1[ns]*emissionproducts_combo_ntp1[ns];		   
+		}
+
+	        if (bscaleemissions)
+	        {
+		   //adding here to help numerical stability
+		   double dmaxval = 0;
+		   for (int ns = 0; ns < numstates; ns++)
+		   {
+		      if (tempproductbetaemiss[ns] > dmaxval)
+		      {
+			  dmaxval = tempproductbetaemiss[ns];
+		      }
+		   }
+                   for (int ns = 0; ns < numstates; ns++)
+		   {
+		      tempproductbetaemiss[ns] = tempproductbetaemiss[ns]/dmaxval;
+		   }
 		}
 
 		//double dscaleinv = 1.0/scale[nt];
@@ -9166,10 +9554,12 @@ public class ChromHMM
 	           gamma_nt[ns] = dval;
 		} 
 
-
-	        for (int ns = 0; ns < gamma_nt.length; ns++)
-	        {
-		    gamma_nt[ns] /= ddenom;
+		if (ddenom > 0)
+		{
+	           for (int ns = 0; ns < gamma_nt.length; ns++)
+	           {
+		      gamma_nt[ns] /= ddenom;
+		   }
 		}
 
                 gammaObservedSum_combo_nt = gammaObservedSum[traindataObservedIndex_nseq[nt]];
@@ -9218,28 +9608,31 @@ public class ChromHMM
 		   }
 		}		 
 		   
-		//normalizing the numerator by the sum of the denominator and updating this iterations value for it
-	        for (int ni = 0; ni < numstates; ni++)
-	        {
-		   int[] transitionprobsindex_ni = transitionprobsindex[ni];
-	           double[] sumforsxi_ni = sumforsxi[ni];
-	           double[] sxi_nseq_ni = sxi_nseq[ni];
-	           int ntransitionprobsnum_ni = transitionprobsnum[ni];
+		if (dsum > 0)
+		{
+		   //normalizing the numerator by the sum of the denominator and updating this iterations value for it
+	           for (int ni = 0; ni < numstates; ni++)
+	           {
+		      int[] transitionprobsindex_ni = transitionprobsindex[ni];
+	              double[] sumforsxi_ni = sumforsxi[ni];
+	              double[] sxi_nseq_ni = sxi_nseq[ni];
+	              int ntransitionprobsnum_ni = transitionprobsnum[ni];
 
-                   if (ntransitionprobsnum_ni < nsparsecutoff)
-	           {
-		       //guessing sparse enough to avoid the indirections
-		      for (int nj = 0; nj < ntransitionprobsnum_ni; nj++)
-		      {
-	      	         int nmappedindex = transitionprobsindex_ni[nj];
-		         sxi_nseq_ni[nmappedindex] += sumforsxi_ni[nmappedindex]/dsum;
+                      if (ntransitionprobsnum_ni < nsparsecutoff)
+	              {
+		         //guessing sparse enough to avoid the indirections
+		         for (int nj = 0; nj < ntransitionprobsnum_ni; nj++)
+		         {
+	      	            int nmappedindex = transitionprobsindex_ni[nj];
+		            sxi_nseq_ni[nmappedindex] += sumforsxi_ni[nmappedindex]/dsum;
+			 }
 		      }
-		   }
-	           else
-	           {
-                      for (int nj = 0; nj < numstates; nj++)
-	      	      {
-			  sxi_nseq_ni[nj] += sumforsxi_ni[nj]/dsum;
+	              else
+	              {
+                         for (int nj = 0; nj < numstates; nj++)
+	      	         {
+			    sxi_nseq_ni[nj] += sumforsxi_ni[nj]/dsum;
+			 }
 		      }
 		   }
 	        }   	 
@@ -9309,7 +9702,7 @@ public class ChromHMM
 	              dgammainitsum += gammainitstore[nitr][ni];
 	           }
 
-	           if (bpseudo)
+	           if ((bpseudo)&&(!bnopseudolast))
 	           {
 		      dgammainitsum++;
 		   }
@@ -9441,7 +9834,7 @@ public class ChromHMM
 		         }
 
 
-		         if (bpseudo)
+			 if ((bpseudo) && ((!bnopseudolast)||(nmark<emissionprobs_ns.length-1)))
 		         {
 			    emissionprobs_ns_nmark[nbucket]++;
 		         }
@@ -9703,6 +10096,20 @@ public class ChromHMM
 
 	   if (bscalebeta)
 	   {
+	      if (dscale == 0)
+	      {
+		 for (int ns = 0; ns < numstates; ns++)
+		 {
+		    //added
+		    if ((alpha_nt[ns] < EPSILONSTATE)&&(emissionproducts_nobserveindex[ns]>0))//(ns < numstates-1))) 
+		    {
+		       alpha_nt[ns] = EPSILONSTATE;
+		       dscale += EPSILONSTATE;
+	            }
+       	         }
+	         scale[0] = dscale;
+	      }
+
 	      for (int ns = 0; ns < numstates; ns++)
 	      {
                  alpha_nt[ns] /= dscale;
@@ -9784,6 +10191,20 @@ public class ChromHMM
 
 	      if (bscalebeta)
 	      {
+	         if (dscale == 0)
+	         {
+		    for (int ns = 0; ns < numstates; ns++)
+		    {
+		       //added
+		       if ((alpha_nt[ns] < EPSILONSTATE)&&(emissionproducts_nobserveindex[ns]>0))//(ns < numstates-1))) 
+		       {
+		          alpha_nt[ns] = EPSILONSTATE;
+			  dscale += EPSILONSTATE;
+		       }
+		    }
+		    scale[nt] = dscale;
+		 }
+
 	         for (int ns = 0; ns < numstates; ns++)
 	         {
                     alpha_nt[ns] /= dscale;
@@ -9841,9 +10262,12 @@ public class ChromHMM
 	       gamma_nt[ns] = dval;
 	   }
 
-           for (int ns = 0; ns < gamma_nt.length; ns++)
+	   if (ddenom > 0)
 	   {
-	      gamma_nt[ns] /=ddenom;
+              for (int ns = 0; ns < gamma_nt.length; ns++)
+	      {
+	         gamma_nt[ns] /=ddenom;
+	      }
 	   }
 
 	   double[] gammaObservedSum_combo_nt = gammaObservedSum[traindataObservedIndex_nseq[nlastindex]];
@@ -9864,6 +10288,23 @@ public class ChromHMM
 	      for (int ns = 0; ns < numstates; ns++)
 	      {
 	         tempproductbetaemiss[ns] = beta_ntp1[ns]*emissionproducts_combo_ntp1[ns];
+	      }
+
+	      if (bscaleemissions)
+	      {
+		  //adding here to help numerical stability
+		  double dmaxval = 0;
+		  for (int ns = 0; ns < numstates; ns++)
+		  {
+		      if (tempproductbetaemiss[ns] > dmaxval)
+		      {
+			  dmaxval = tempproductbetaemiss[ns];
+		      }
+		  }
+                  for (int ns = 0; ns < numstates; ns++)
+		  {
+		      tempproductbetaemiss[ns] = tempproductbetaemiss[ns]/dmaxval;
+		  }
 	      }
 
 	      double dsumbeta = 0;
@@ -9946,9 +10387,12 @@ public class ChromHMM
 	         gamma_nt[ns] = dval;
 	      }
 
-	      for (int ns = 0; ns < gamma_nt.length; ns++)
+	      if (ddenom > 0)
 	      {
-	         gamma_nt[ns] /= ddenom;
+	         for (int ns = 0; ns < gamma_nt.length; ns++)
+	         {
+	            gamma_nt[ns] /= ddenom;
+		 }
 	      }
 
               gammaObservedSum_combo_nt = gammaObservedSum[traindataObservedIndex_nseq[nt]];
@@ -9997,30 +10441,33 @@ public class ChromHMM
 		 }
 	      }    	 
 		   
-	      //normalizing the numerator by the sum of the denominator and updating this iterations value for it
-	      for (int ni = 0; ni < numstates; ni++)
+	      if (dsum > 0)
 	      {
-		  int[] transitionprobsindex_ni = transitionprobsindex[ni];
-		  double[] sumforsxi_ni = sumforsxi[ni];
-		  double[] sxi_nseq_ni = sxi_nseq[ni];
-		  int ntransitionprobsnum_ni = transitionprobsnum[ni];
+	         //normalizing the numerator by the sum of the denominator and updating this iterations value for it
+	         for (int ni = 0; ni < numstates; ni++)
+	         {
+		    int[] transitionprobsindex_ni = transitionprobsindex[ni];
+		    double[] sumforsxi_ni = sumforsxi[ni];
+		    double[] sxi_nseq_ni = sxi_nseq[ni];
+		    int ntransitionprobsnum_ni = transitionprobsnum[ni];
 
-                  if (ntransitionprobsnum_ni < nsparsecutoff)
-	          {
-		     //guessing sparse enough to avoid the indirections
-		     for (int nj = 0; nj < ntransitionprobsnum_ni; nj++)
-		     {
-	      	        int nmappedindex = transitionprobsindex_ni[nj];
-		        sxi_nseq_ni[nmappedindex] += sumforsxi_ni[nmappedindex]/dsum;
-		     }
-		  }
-	          else
-	          {
-                     for (int nj = 0; nj < numstates; nj++)
-	      	     {
-		        sxi_nseq_ni[nj] += sumforsxi_ni[nj]/dsum;
-		     }
-		  }
+                    if (ntransitionprobsnum_ni < nsparsecutoff)
+	            {
+		       //guessing sparse enough to avoid the indirections
+		       for (int nj = 0; nj < ntransitionprobsnum_ni; nj++)
+		       {
+	      	          int nmappedindex = transitionprobsindex_ni[nj];
+		          sxi_nseq_ni[nmappedindex] += sumforsxi_ni[nmappedindex]/dsum;
+		       }
+		    }
+	            else
+	            {
+                       for (int nj = 0; nj < numstates; nj++)
+	      	       {
+		          sxi_nseq_ni[nj] += sumforsxi_ni[nj]/dsum;
+		       }
+		    }
+		 }
 	      }   	 
 	      beta_ntp1 = beta_nt;  //updating beta_ntp1 
 	   }
@@ -10559,6 +11006,20 @@ public class ChromHMM
 	   //converts the alpha terms to probabilities
 	   if (bscalebeta)
            {
+	      if (dscale == 0)
+	      {
+	         for (int ns = 0; ns < numstates; ns++)
+		 {
+		    //added
+		    if ((alpha_nt[ns] < EPSILONSTATE)&&(emissionproducts_nobserveindex[ns]>0))//(ns < numstates-1))) 
+		    {
+		       alpha_nt[ns] = EPSILONSTATE;
+	       	       dscale += EPSILONSTATE;
+	            }
+	         }
+	         scale[0] = dscale;
+	      }
+
 	      for (int ns = 0; ns < numstates; ns++)
 	      {
                  alpha_nt[ns] /= dscale;
@@ -10632,21 +11093,39 @@ public class ChromHMM
 	         dscale += dalphaval;
 	      }
 
+
 	      //rescaling alpha
 	      scale[nt] = dscale;
               //scale_t(s)=P(o_0,...,o_t|lambda) summed over all states
 
 	      if (bscalebeta)
 	      {
+	         if (dscale == 0)
+	         {
+		    for (int ns = 0; ns < numstates; ns++)
+		    {
+		       //added
+		       if ((alpha_nt[ns] < EPSILONSTATE)&&(emissionproducts_nobserveindex[ns]>0))//(ns < numstates-1))) 
+		       {
+		          alpha_nt[ns] = EPSILONSTATE;
+			  dscale += EPSILONSTATE;
+		       }
+		    }
+		    scale[nt] = dscale;
+		 }
+
+		 //		 else
+		 //{
 	         for (int ns = 0; ns < numstates; ns++)
 	         {
                     alpha_nt[ns] /= dscale;
 
 		    if ((alpha_nt[ns] < EPSILONSTATE)&&(emissionproducts_nobserveindex[ns]>0))//(ns < numstates-1))) 
 		    {
-		       alpha_nt[ns] = EPSILONSTATE;
+	               alpha_nt[ns] = EPSILONSTATE;
 		    }
-		 }
+		 }		 
+		 //}
 	      }
       	      else
 	      {
@@ -10703,9 +11182,12 @@ public class ChromHMM
 	       gamma_nt[ns] = dval;
 	   }
 
-           for (int ns = 0; ns < gamma_nt.length; ns++)
+	   if (ddenom > 0)
 	   {
-	      gamma_nt[ns] /=ddenom;
+              for (int ns = 0; ns < gamma_nt.length; ns++)
+	      {
+	         gamma_nt[ns] /=ddenom;
+	      }
 	   }
 
 	   double[] gammaObservedSum_combo_nt = gammaObservedSum[traindataObservedIndex[nlastindex]];
@@ -10728,7 +11210,25 @@ public class ChromHMM
 	         tempproductbetaemiss[ns] = beta_ntp1[ns]*emissionproducts_combo_ntp1[ns];
 	      }
 
+	      if (bscaleemissions)
+	      {
+		  //adding here to help numerical stability
+		  double dmaxval = 0;
+		  for (int ns = 0; ns < numstates; ns++)
+		  {
+		      if (tempproductbetaemiss[ns] > dmaxval)
+		      {
+			  dmaxval = tempproductbetaemiss[ns];
+		      }
+		  }
+                  for (int ns = 0; ns < numstates; ns++)
+		  {
+		      tempproductbetaemiss[ns] = tempproductbetaemiss[ns]/dmaxval;
+		  }
+	      }
+
 	      double dsumbeta = 0;
+
 	      //double dscaleinv = 1.0/scale[nt];
 	      double dscale_nt = scale[nt];
               //scale_t(s)=P(o_0,...,o_t|lambda) summed over all states
@@ -10817,9 +11317,12 @@ public class ChromHMM
 	         gamma_nt[ns] = dval;
 	      }
 
-	      for (int ns = 0; ns < gamma_nt.length; ns++)
+	      if (ddenom > 0)
 	      {
-	         gamma_nt[ns] /= ddenom;
+	         for (int ns = 0; ns < gamma_nt.length; ns++)
+	         {
+	            gamma_nt[ns] /= ddenom;
+		 }
 	      }
 
               gammaObservedSum_combo_nt = gammaObservedSum[traindataObservedIndex[nt]];
@@ -10853,6 +11356,7 @@ public class ChromHMM
 		       //computes transition probability from state i to j
 		       double dtempval = transitionprobs_ni[nmappedindex] *dalpha_nt_ni*tempproductbetaemiss[nmappedindex];
                        dsum += dtempval;
+
 	      	       sumforsxi_ni[nmappedindex] = dtempval;
 		    }
 		 }
@@ -10866,33 +11370,38 @@ public class ChromHMM
 		       sumforsxi_ni[nj] = dtempval;
 		    }
 		 }
-	      }    	 
-		   
-	      //normalizing the numerator by the sum of the denominator and updating this iterations value for it
-	      for (int ni = 0; ni < numstates; ni++)
-	      {
-		  int[] transitionprobsindex_ni = transitionprobsindex[ni];
-		  double[] sumforsxi_ni = sumforsxi[ni];
-		  double[] sxi_nseq_ni = sxi_nseq[ni];
-		  int ntransitionprobsnum_ni = transitionprobsnum[ni];
+	      }
 
-                  if (ntransitionprobsnum_ni < nsparsecutoff)
-	          {
-		     //guessing sparse enough to avoid the indirections
-		     for (int nj = 0; nj < ntransitionprobsnum_ni; nj++)
-		     {
-	      	        int nmappedindex = transitionprobsindex_ni[nj];
-		        sxi_nseq_ni[nmappedindex] += sumforsxi_ni[nmappedindex]/dsum;
-		     }
-		  }
-	          else
-	          {
-                     for (int nj = 0; nj < numstates; nj++)
-	      	     {
-		        sxi_nseq_ni[nj] += sumforsxi_ni[nj]/dsum;
-		     }
-		  }
-	      }   	 
+	      
+	      if (dsum > 0)
+	      {
+		 //added to avoid numerical errors
+	         //normalizing the numerator by the sum of the denominator and updating this iterations value for it
+	         for (int ni = 0; ni < numstates; ni++)
+	         {
+		    int[] transitionprobsindex_ni = transitionprobsindex[ni];
+		    double[] sumforsxi_ni = sumforsxi[ni];
+		    double[] sxi_nseq_ni = sxi_nseq[ni];
+		    int ntransitionprobsnum_ni = transitionprobsnum[ni];
+
+                    if (ntransitionprobsnum_ni < nsparsecutoff)
+	            {
+		       //guessing sparse enough to avoid the indirections
+		       for (int nj = 0; nj < ntransitionprobsnum_ni; nj++)
+		       {
+	      	          int nmappedindex = transitionprobsindex_ni[nj];
+		          sxi_nseq_ni[nmappedindex] += sumforsxi_ni[nmappedindex]/dsum;
+		       }
+		    }
+	            else
+	            {
+                       for (int nj = 0; nj < numstates; nj++)
+	      	       {
+		          sxi_nseq_ni[nj] += sumforsxi_ni[nj]/dsum;
+		       }
+		    }
+		 }
+	      }	 
 	      beta_ntp1 = beta_nt;  //updating beta_ntp1 
 	   }
 
@@ -11322,9 +11831,9 @@ public class ChromHMM
                 dgammainitsum += gammainitstore[nitr][ni];
 	     }
 
-	     if (bpseudo)
+	     if ((bpseudo)&&(!bnopseudolast))
 	     {
-		 dgammainitsum++;
+		dgammainitsum++;
 	     }
 	     probinit[ni] = dgammainitsum;
              dsum += dgammainitsum;
@@ -11372,6 +11881,7 @@ public class ChromHMM
 	      {
 		  int ntransitionprobsindex_ni_nj = transitionprobsindex_ni[nj];
 		  //computes the updated transition probabilities
+
 	          transitionprobs_ni[ntransitionprobsindex_ni_nj] /= dsum;
 	    
 		  if ((transitionprobs_ni[ntransitionprobsindex_ni_nj] < dzerotransitioncutoff) && (ni != ntransitionprobsindex_ni_nj))
@@ -11453,6 +11963,7 @@ public class ChromHMM
 		      emissionprobs_ns_nmark[nbucket] = 0;
 		      //ncurrnumincludeseq
 	              //for (int nitr = 0; nitr < chromfiles.length; nitr++) //was traindataobserved length
+		      //double dtempsum = 0;
 	              for (int nitr = 0; nitr < ncurrnumincludeseq; nitr++) //was traindataobserved length
 	              {
 			  //if (bincludeseq[nitr])
@@ -11461,7 +11972,7 @@ public class ChromHMM
 		          //}
 	              }
 
-		      if (bpseudo)
+		      if ((bpseudo) && ((!bnopseudolast)||(nmark<emissionprobs_ns.length-1)))
 		      {
 			  emissionprobs_ns_nmark[nbucket]++;
 		      }
@@ -11939,7 +12450,7 @@ public class ChromHMM
 		}
 	     }
 
-	     if (bpseudo)
+	     if ((bpseudo)&&(!bnopseudolast))
 	     {
 		 dgammainitsum++;
 	     }
@@ -12077,7 +12588,7 @@ public class ChromHMM
 			 }
 	              }
 
-		      if (bpseudo)
+		      if ((bpseudo) && ((!bnopseudolast)||(nmark<emissionprobs_ns.length-1)))
 		      {
 			  emissionprobs_ns_nmark[nbucket]++;
 		      }
@@ -12848,7 +13359,7 @@ public class ChromHMM
 
 	if (szcommand.equalsIgnoreCase("Version"))
 	{
-	    System.out.println("This is Version 1.24 of ChromHMM (c) Copyright 2008-2012 Massachusetts Institute of Technology");
+	    System.out.println("This is Version 1.25 of ChromHMM (c) Copyright 2008-2012 Massachusetts Institute of Technology");
 	}
         else if ((szcommand.equals("BinarizeBam"))||(szcommand.equalsIgnoreCase("BinarizeBed")))
 	{
@@ -13933,6 +14444,7 @@ public class ChromHMM
 	    String szlabelmapping = null;
 	    boolean bgzip = false;
 	    boolean blowmem = false;
+	    boolean bnobrowserheader = false;
 	    int nargindex = 1;
 	    int numstates = -1;           
 
@@ -13945,6 +14457,10 @@ public class ChromHMM
 	       else if (args[nargindex].equals("-gzip"))
 	       {
 		   bgzip = true;
+	       }
+	       else if (args[nargindex].equals("-nobrowserheader"))
+	       {
+		   bnobrowserheader = true;
 	       }
 	       else if ((args[nargindex].equals("-l"))||(args[nargindex].equals("-m")))
 	       {
@@ -13973,7 +14489,7 @@ public class ChromHMM
 	       String szsegmentationname = args[nargindex++];
 	       String szoutputfileprefix =args[nargindex];
 	       BrowserOutput theBrowserOutput = new BrowserOutput(szsegmentfile,szcolormapping,szlabelmapping,
-                                                                  szsegmentationname, szoutputfileprefix,numstates,bgzip);
+                                                                  szsegmentationname, szoutputfileprefix,numstates,bgzip, bnobrowserheader);
 	       theBrowserOutput.makebrowserdense();
 	       if (blowmem)
 	       {
@@ -13991,7 +14507,7 @@ public class ChromHMM
 	    
 	    if (!bok)
 	    {
-		System.out.println("usage: MakeBrowserFiles [-c colormappingfile][-gzip][-lowmem][-m labelmappingfile][-n numstates] segmentfile segmentationname outputfileprefix");
+		System.out.println("usage: MakeBrowserFiles [-c colormappingfile][-gzip][-lowmem][-m labelmappingfile][-n numstates][-nobrowserheader] segmentfile segmentationname outputfileprefix");
 	    }
 	}
 	else if (szcommand.equalsIgnoreCase("OverlapEnrichment"))
@@ -14382,10 +14898,12 @@ public class ChromHMM
 	    boolean bnoprintsegment = false;
 	    boolean bprintbrowser = true;
 	    boolean bprintenrich = true;
+	    boolean bnobrowserheader = false;
 	    boolean bprintimage = true;
 	    boolean blowmem = false;
 	    boolean bscaleemissions = false;
 	    boolean bpseudo = false;
+	    boolean bnopseudolast = false;
 	    boolean bgzip = false;
 	    boolean bsplit = false;
 	    int numsplitbins = ChromHMM.DEFAULT_NUMSPLITBINS;
@@ -14510,6 +15028,10 @@ public class ChromHMM
 		  {
 		      bprintbrowser = false;
 		  }
+		  else if (args[nargindex].equals("-nobrowserheader"))
+		  {
+		      bnobrowserheader = true;
+		  }
 		  else if (args[nargindex].equals("-noenrich"))
 		  {
 		      bprintenrich = false;
@@ -14526,6 +15048,10 @@ public class ChromHMM
                   else if (args[nargindex].equals("-pseudo"))
 		  {
 		     bpseudo = true;
+		  }
+		  else if (args[nargindex].equals("-nopseudolast"))
+		  {
+		      bnopseudolast = true;
 		  }
 		  else if (args[nargindex].equals("-stateordering"))
 		  {
@@ -14693,7 +15219,7 @@ public class ChromHMM
 						 szInitFile,dloadsmoothemission,dloadsmoothtransition,dinformationsmooth,
 					         nmaxiterations,dconvergediff,nmaxseconds, bprintposterior,bprintsegments,bprintstatebyline,
 						 nbinsize,szoutfileID,nstateorder,bordercols,nzerotransitionpower,theColor,bnormalEM, nmaxprocessors, 
-                                                 blowmem,numincludeseq,bprintimage,bscaleemissions, bpseudo, bgzip, bsplit, borderrows, bscalebeta);
+                                                 blowmem,numincludeseq,bprintimage,bscaleemissions, bpseudo,bnopseudolast, bgzip, bsplit, borderrows, bscalebeta);
 	          theHMM.buildModel();
 
 
@@ -14810,7 +15336,7 @@ public class ChromHMM
 
 
 			      BrowserOutput theBrowserOutput = new BrowserOutput(szsegmentfile,null,null,
-										 szprefix,szoutputdir+"/"+szprefix,numstates,bgzip);
+										 szprefix,szoutputdir+"/"+szprefix,numstates,bgzip,bnobrowserheader);
 
 			      theBrowserOutput.makebrowserdense();
 			      if (blowmem)
@@ -14979,7 +15505,7 @@ public class ChromHMM
 	    {
 		System.out.println("usage: LearnModel [-b binsize][-color r,g,b][-d convergedelta][-e loadsmoothemission][-f inputfilelist][-gzip][-h informationsmooth]"+
                                      "[-holdcolumnorder][-holdroworder][-i outfileID][-init information|random|load][-l chromosomelengthfile][-lowmem][-m modelinitialfile][-many]"+
-                                    "[-n numseq][-noautoopen][-nobed][-nobrowser][-noenrich][-noimage][-p maxprocessors][-pseudo][-printposterior][-printstatebyline][-r maxiterations][-s seed][-scalebeta]"+
+                                    "[-n numseq][-noautoopen][-nobed][-nobrowser][-nobrowserheader][-noenrich][-noimage][-nopseudolast][-p maxprocessors][-pseudo][-printposterior][-printstatebyline][-r maxiterations][-s seed][-scalebeta]"+
                                     "[-splitrows][-stateordering emission|transition]"+
                                    "[-t loadsmoothtransition][-u coorddir][-v anchorfiledir][-x maxseconds][-z zerotransitionpower] inputdir outputdir numstates assembly");
 	    }

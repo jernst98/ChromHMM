@@ -125,9 +125,13 @@ public class BrowserOutput
      */
     boolean bgzip;
 
+    /**
+     * True if header leaders on browser bed files should be surpressed
+     */
+    boolean bnobrowserheader;
 
     public BrowserOutput(String szsegmentfile, String szcolormapping,String szidlabelmapping, 
-			 String szsegmentationname, String szoutputfileprefix, int numstates, boolean bgzip) throws IOException
+			 String szsegmentationname, String szoutputfileprefix, int numstates, boolean bgzip, boolean bnobrowserheader) throws IOException
     {
 	this.szsegmentfile = szsegmentfile;
 	this.szcolormapping =szcolormapping;
@@ -136,6 +140,7 @@ public class BrowserOutput
 	this.szoutputfileprefix = szoutputfileprefix;
 	this.numstates = numstates;
 	this.bgzip = bgzip;
+	this.bnobrowserheader = bnobrowserheader;
 
         hmcolor = new HashMap();
         hmlabelExtend = new HashMap();
@@ -383,7 +388,7 @@ public class BrowserOutput
 	     int nend = Integer.parseInt(st.nextToken().trim());
 	     String szFullID = st.nextToken().trim();
 	     String szID = szFullID.substring(1); //this removes ordering type
-	     if (bfirst)
+	     if ((bfirst)&&(!bnobrowserheader))
 	     {
 		 String szout = "track name=\""+szsegmentationname+"\" description=\""+szsegmentationname+" ("+ChromHMM.convertCharOrderToStringOrder(szFullID.charAt(0))
 		     +" ordered)"+"\" visibility=1 itemRgb=\"On\""+"\n";
@@ -423,7 +428,7 @@ public class BrowserOutput
           String szLine;
           boolean bfirst = true;
 
-          while ((szLine =brsegment.readLine())!=null)
+          while ((szLine = brsegment.readLine())!=null)
           {
 	     StringTokenizer st = new StringTokenizer(szLine,"\t");
 	     String szcurrchrom = st.nextToken().trim();
@@ -431,7 +436,7 @@ public class BrowserOutput
 	     int nend = Integer.parseInt(st.nextToken().trim());
 	     String szFullID = st.nextToken().trim();
 	     String szID = szFullID.substring(1); //this removes ordering type
-	     if (bfirst)
+	     if ((bfirst)&&(!bnobrowserheader))
 	     {
 	        pw.println("track name=\""+szsegmentationname+"\" description=\""+szsegmentationname+" ("+ChromHMM.convertCharOrderToStringOrder(szFullID.charAt(0))
                           +" ordered)"+"\" visibility=1 itemRgb=\"On\"");
@@ -559,19 +564,23 @@ public class BrowserOutput
        if (bgzip)
        {
 	  GZIPOutputStream pwzip = new GZIPOutputStream(new FileOutputStream(szoutputfileprefix+ChromHMM.SZBROWSEREXPANDEDEXTENSION+".bed.gz"));
-	  String szout = "track name=\"Expanded_"+szsegmentationname+"\" description=\""+szsegmentationname+" ("+ChromHMM.convertCharOrderToStringOrder(szLabelFull.charAt(0))
+	  byte[] btformat;
+	  if (!bnobrowserheader)
+	  {
+	     String szout = "track name=\"Expanded_"+szsegmentationname+"\" description=\""+szsegmentationname+" ("+ChromHMM.convertCharOrderToStringOrder(szLabelFull.charAt(0))
 	      +" ordered)"+"\" visibility=2 itemRgb=\"On\""+"\n";
-	  byte[] btformat = szout.getBytes();
-	  pwzip.write(btformat,0,btformat.length);
+	     btformat = szout.getBytes();
+	     pwzip.write(btformat,0,btformat.length);
 
-          //pw.println("track name=\"Expanded_"+szsegmentationname+"\" description=\" "+szsegmentationname+" ("+ChromHMM.convertCharOrderToStringOrder(szLabelFull.charAt(0))
-	  //               +" ordered)"+"\" visibility=2 itemRgb=\"On\"");
-          int nbrowserend = (int) (((Integer)hmchromMax.get(szChroms[0])).intValue()*.001)+1;
+             //pw.println("track name=\"Expanded_"+szsegmentationname+"\" description=\" "+szsegmentationname+" ("+ChromHMM.convertCharOrderToStringOrder(szLabelFull.charAt(0))
+	     //               +" ordered)"+"\" visibility=2 itemRgb=\"On\"");
+             int nbrowserend = (int) (((Integer)hmchromMax.get(szChroms[0])).intValue()*.001)+1;
 
-	  szout = "browser position "+szChroms[0]+":1-"+nbrowserend+"\n";
-	  btformat = szout.getBytes();
-          pwzip.write(btformat,0,btformat.length);
-          //pwzip.println("browser position "+szChroms[0]+":1-"+nbrowserend);
+	     szout = "browser position "+szChroms[0]+":1-"+nbrowserend+"\n";
+	     btformat = szout.getBytes();
+             pwzip.write(btformat,0,btformat.length);
+             //pwzip.println("browser position "+szChroms[0]+":1-"+nbrowserend);
+	  }
 
           for (int nlabel = szLabels.length-1; nlabel >=0; nlabel--)
           {
@@ -641,10 +650,14 @@ public class BrowserOutput
        else
        {
 	  PrintWriter pw = new PrintWriter(new FileWriter(szoutputfileprefix+ChromHMM.SZBROWSEREXPANDEDEXTENSION+".bed"));
-          pw.println("track name=\"Expanded_"+szsegmentationname+"\" description=\""+szsegmentationname+" ("+ChromHMM.convertCharOrderToStringOrder(szLabelFull.charAt(0))
+
+          if (!bnobrowserheader)
+	  {
+             pw.println("track name=\"Expanded_"+szsegmentationname+"\" description=\""+szsegmentationname+" ("+ChromHMM.convertCharOrderToStringOrder(szLabelFull.charAt(0))
                           +" ordered)"+"\" visibility=2 itemRgb=\"On\"");
-          int nbrowserend = (int) (((Integer)hmchromMax.get(szChroms[0])).intValue()*.001)+1;
-          pw.println("browser position "+szChroms[0]+":1-"+nbrowserend);
+             int nbrowserend = (int) (((Integer)hmchromMax.get(szChroms[0])).intValue()*.001)+1;
+             pw.println("browser position "+szChroms[0]+":1-"+nbrowserend);
+	  }
 
           for (int nlabel = szLabels.length-1; nlabel >=0; nlabel--)
           {
@@ -802,20 +815,25 @@ public class BrowserOutput
 
        if (bgzip)
        {
+	  byte[] btformat;
+
 	  GZIPOutputStream pwzip = new GZIPOutputStream(new FileOutputStream(szoutputfileprefix+ChromHMM.SZBROWSEREXPANDEDEXTENSION+".bed.gz"));
-	  String szout = "track name=\"Expanded_"+szsegmentationname+"\" description=\""+szsegmentationname+" ("+ChromHMM.convertCharOrderToStringOrder(szLabelFull.charAt(0))
-	      +" ordered)"+"\" visibility=2 itemRgb=\"On\""+"\n";
-	  byte[] btformat = szout.getBytes();
-	  pwzip.write(btformat,0,btformat.length);
+	  if (!bnobrowserheader)
+	  {
+	     String szout = "track name=\"Expanded_"+szsegmentationname+"\" description=\""+szsegmentationname+" ("+ChromHMM.convertCharOrderToStringOrder(szLabelFull.charAt(0))
+	         +" ordered)"+"\" visibility=2 itemRgb=\"On\""+"\n";
+	     btformat = szout.getBytes();
+	     pwzip.write(btformat,0,btformat.length);
 
-          //pw.println("track name=\"Expanded_"+szsegmentationname+"\" description=\" "+szsegmentationname+" ("+ChromHMM.convertCharOrderToStringOrder(szLabelFull.charAt(0))
-	  //               +" ordered)"+"\" visibility=2 itemRgb=\"On\"");
-          int nbrowserend = (int) (((Integer)hmchromMax.get(szChroms[0])).intValue()*.001)+1;
+             //pw.println("track name=\"Expanded_"+szsegmentationname+"\" description=\" "+szsegmentationname+" ("+ChromHMM.convertCharOrderToStringOrder(szLabelFull.charAt(0))
+	     //               +" ordered)"+"\" visibility=2 itemRgb=\"On\"");
+             int nbrowserend = (int) (((Integer)hmchromMax.get(szChroms[0])).intValue()*.001)+1;
 
-	  szout = "browser position "+szChroms[0]+":1-"+nbrowserend+"\n";
-	  btformat = szout.getBytes();
-          pwzip.write(btformat,0,btformat.length);
-          //pwzip.println("browser position "+szChroms[0]+":1-"+nbrowserend);
+	     szout = "browser position "+szChroms[0]+":1-"+nbrowserend+"\n";
+	     btformat = szout.getBytes();
+             pwzip.write(btformat,0,btformat.length);
+             //pwzip.println("browser position "+szChroms[0]+":1-"+nbrowserend);
+	  }
 
 	  for (int nchrom = 0; nchrom < szChroms.length; nchrom++)
           {
@@ -915,10 +933,14 @@ public class BrowserOutput
        else
        {
 	  PrintWriter pw = new PrintWriter(new FileWriter(szoutputfileprefix+ChromHMM.SZBROWSEREXPANDEDEXTENSION+".bed"));
-          pw.println("track name=\"Expanded_"+szsegmentationname+"\" description=\""+szsegmentationname+" ("+ChromHMM.convertCharOrderToStringOrder(szLabelFull.charAt(0))
+	  if (!bnobrowserheader)
+	  {
+
+             pw.println("track name=\"Expanded_"+szsegmentationname+"\" description=\""+szsegmentationname+" ("+ChromHMM.convertCharOrderToStringOrder(szLabelFull.charAt(0))
                           +" ordered)"+"\" visibility=2 itemRgb=\"On\"");
-          int nbrowserend = (int) (((Integer)hmchromMax.get(szChroms[0])).intValue()*.001)+1;
-          pw.println("browser position "+szChroms[0]+":1-"+nbrowserend);
+             int nbrowserend = (int) (((Integer)hmchromMax.get(szChroms[0])).intValue()*.001)+1;
+             pw.println("browser position "+szChroms[0]+":1-"+nbrowserend);
+	  }
 
 	  for (int nchrom = 0; nchrom < szChroms.length; nchrom++)
           {
