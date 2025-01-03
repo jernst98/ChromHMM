@@ -1,2 +1,2 @@
-See https://ernstlab.biolchem.ucla.edu/ChromHMM/ for more information on ChromHMM.
+See https://ernstlab.github.io/ChromHMM/ for more information on ChromHMM.
 ========
