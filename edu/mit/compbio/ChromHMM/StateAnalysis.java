@@ -38,6 +38,11 @@ public class StateAnalysis
      */
     static double EPSILONOVERLAP = 0.00000001;
 
+    /**
+     * Limit on how significant p-value should be reported in OverlapEnrichment
+     */
+    static double PVALLOG10CUTOFF = 300;
+
 
     /**
      * A record for storing a segmentation
@@ -200,7 +205,8 @@ public class StateAnalysis
       public static void enrichmentPosterior(String szposteriordir,String szcell,String szinputcoorddir, String szinputcoordlist,
 					    int noffsetleft, int noffsetright, int nbinsize,
 					    boolean bcenter,boolean bunique, boolean busesignal,String szcolfields,boolean bbaseres, 
-					     String szoutfile,boolean bcolscaleheat, Color theColor,String sztitle,String szlabelmapping, boolean bprintimage) throws IOException
+					     String szoutfile,boolean bcolscaleheat, Color theColor,String sztitle,
+					     String szlabelmapping, boolean bprintimage, boolean blogpvals) throws IOException
     {
 
 	String szLine;
@@ -542,7 +548,8 @@ public class StateAnalysis
 			       }
 	                       else
 	                       {
-		                  damount = 1;
+				   //update in v1.26
+				   damount = 1.0/(double) (nbinsize);
 			       }
 
 		               if (bcenter)
@@ -640,7 +647,7 @@ public class StateAnalysis
 
 
 	outputenrichment(szoutfile, files,tallyoverlaplabel, tallylabel, dsumoverlaplabel,theColor,bcolscaleheat,ChromHMM.convertCharOrderToStringOrder(chorder),
-			 sztitle,1,szlabelmapping,chorder, bprintimage,false, null); 
+			 sztitle,1,szlabelmapping,chorder, bprintimage,false, null,bcenter&&blogpvals,!bunique,nbinsize); 
 
     }
 
@@ -667,7 +674,8 @@ public class StateAnalysis
 				     int noffsetleft, int noffsetright,
                                      int nbinsize, boolean bcenter,boolean bunique, boolean busesignal,String szcolfields,
 				      boolean bbaseres, String szoutfile,boolean bcolscaleheat,Color theColor,String sztitle, 
-                                      String szlabelmapping, boolean bprintimage, boolean  bstringlabels, boolean bbrowser) throws IOException
+                                      String szlabelmapping, boolean bprintimage, 
+                                      boolean  bstringlabels, boolean bbrowser, boolean blogpvals) throws IOException
     {
 	//usual high memory
 	ArrayList alsegments = new ArrayList(); //stores all the segments
@@ -1131,7 +1139,8 @@ public class StateAnalysis
 		  }
 	          else
 	          {
-	             damount = 1;
+		      //fix in v1.26
+		      damount = 1.0/(double) (nbinsize);
 	          }
 
 	          Integer objChrom = (Integer) hmchromToIndex.get(szchrom);
@@ -1216,7 +1225,7 @@ public class StateAnalysis
 
 	outputenrichment(szoutfile, files,tallyoverlaplabel, tallylabel, dsumoverlaplabel,theColor,
 			 bcolscaleheat,ChromHMM.convertCharOrderToStringOrder(szlabel.charAt(0)),sztitle,0,szlabelmapping,szlabel.charAt(0), bprintimage, 
-                         bstringlabels, hmIndexToLabel);
+                         bstringlabels, hmIndexToLabel, bcenter&&blogpvals, !bunique, nbinsize);
     }
 
 
@@ -1245,8 +1254,9 @@ public class StateAnalysis
      public static void enrichmentMaxLowMem(String szinputsegment,String szinputcoorddir,String szinputcoordlist,
 				     int noffsetleft, int noffsetright,
                                      int nbinsize, boolean bcenter,boolean bunique, boolean busesignal,String szcolfields,
-				      boolean bbaseres, String szoutfile,boolean bcolscaleheat,Color theColor,String sztitle, 
-					    String szlabelmapping, boolean bprintimage, boolean bstringlabels, boolean bbrowser) throws IOException
+				     boolean bbaseres, String szoutfile,boolean bcolscaleheat,Color theColor,String sztitle, 
+				     String szlabelmapping, boolean bprintimage, 
+				     boolean bstringlabels, boolean bbrowser, boolean blogpvals) throws IOException
     {
 
 
@@ -1803,7 +1813,8 @@ public class StateAnalysis
 		   }
 	           else
 	           {
-	              damount = 1;
+		       //fix in v1.26
+		       damount = 1.0/(double)nbinsize;
 		   }
 
 	           //Integer objChrom = (Integer) hmchromToIndex.get(szchrom);
@@ -1890,7 +1901,7 @@ public class StateAnalysis
 	}
 
 	outputenrichment(szoutfile, files,tallyoverlaplabel, tallylabel, dsumoverlaplabel,theColor,
-			 bcolscaleheat,ChromHMM.convertCharOrderToStringOrder(szlabel.charAt(0)),sztitle,0,szlabelmapping,szlabel.charAt(0), bprintimage, bstringlabels, hmIndexToLabel);
+			 bcolscaleheat,ChromHMM.convertCharOrderToStringOrder(szlabel.charAt(0)),sztitle,0,szlabelmapping,szlabel.charAt(0), bprintimage, bstringlabels, hmIndexToLabel, bcenter&&blogpvals, !bunique,nbinsize);
     }
 
 
@@ -1932,7 +1943,8 @@ public class StateAnalysis
                                          double[] tallylabel, double[] dsumoverlaplabel,Color theColor,
                                          boolean bcolscaleheat,String szstateorder,String sztitle, int noffset,
                                          String szlabelmapping,char chorder, boolean bprintimage,
-                                         boolean bstringlabels, HashMap hmIndexToLabel) throws IOException
+                                         boolean bstringlabels, HashMap hmIndexToLabel,
+                                         boolean blogpvals, boolean bbinomial,int nbinsize) throws IOException
      {
 
 	HashMap hmlabelExtend = makeLabelMapping(szlabelmapping);
@@ -1956,12 +1968,49 @@ public class StateAnalysis
 	System.out.println("Writing to file "+szoutfile+".txt");
 	PrintWriter pw = new PrintWriter(new FileWriter(szoutfile+".txt"));
 
-	pw.print("State ("+szstateorder+" order)\tGenome %");
+
+	//added v1.26
+	PrintWriter pwlogpval = null;
+	if (blogpvals)
+	{
+	   System.out.println("Writing to file "+szoutfile+"_log10pvals.txt");
+           pwlogpval = new PrintWriter(new FileWriter(szoutfile+"_log10pvals.txt"));
+	}
+
+	//added v1.26
+	if (bcolscaleheat)
+	{
+	    pw.print("State ("+szstateorder+" order)\tGenome %");
+
+	    if (blogpvals)
+	    {
+		pwlogpval.print("State ("+szstateorder+" order)\tGenome %");
+	    }
+	}
+	else
+	{
+	    pw.print("State ("+szstateorder+" order)");
+
+	    if (blogpvals)
+	    {
+		pwlogpval.print("State ("+szstateorder+" order)");
+	    }
+	}
+      
 	for (int nfile = 0; nfile < files.length; nfile++)
 	{
 	    pw.print("\t"+files[nfile]);
 	}
 	pw.println();
+
+	if (blogpvals)
+	{
+	   for (int nfile = 0; nfile < files.length; nfile++)
+	   {
+	      pwlogpval.print("\t"+files[nfile]);
+	   }
+	   pwlogpval.println();
+	}
 
 
 	double[][] heatmapfold;
@@ -1976,6 +2025,19 @@ public class StateAnalysis
 	    heatmapfold = new double[tallyoverlaplabel[0].length][tallyoverlaplabel.length];
 	}
 
+	double[][] heatmaplogpval = null;
+	if (blogpvals)
+	{
+	    if (bcolscaleheat)
+	    {
+	       heatmaplogpval = new double[tallyoverlaplabel[0].length][tallyoverlaplabel.length+1];
+	    }
+	    else
+	    {
+	       heatmaplogpval = new double[tallyoverlaplabel[0].length][tallyoverlaplabel.length];
+	    }
+	}
+
 	int numelim = 0;
 
 	for (int nstate = 0; nstate < tallyoverlaplabel[0].length; nstate++)
@@ -1985,15 +2047,29 @@ public class StateAnalysis
 		if (bstringlabels)
 		{
 		    pw.print(hmIndexToLabel.get(""+nstate));
+
+		    if (blogpvals)
+		    {
+		       pwlogpval.print(hmIndexToLabel.get(""+nstate));
+		    }
 		}
 		else
 		{
 		   pw.print(nstate+noffset);
+		   if (blogpvals)
+		   {
+		       pwlogpval.print(nstate+noffset);
+		   }
                    String szsuffix;
 
                    if ((szsuffix = (String) hmlabelExtend.get(""+chorder+(nstate+noffset)))!=null)
 		   {
 	      	      pw.print("_"+szsuffix);
+
+		      if (blogpvals)
+		      {
+			  pwlogpval.print("_"+szsuffix);
+		      }
 	           }
 		}
 
@@ -2002,6 +2078,12 @@ public class StateAnalysis
 		    //only include genome % if scaling by column
 		   heatmapfold[nstate][0] =100*(tallylabel[nstate]/dsumlabel); //first column is heatmap
 		   pw.print("\t"+nf5.format(heatmapfold[nstate][0]));
+
+		   if (blogpvals)
+		   {
+		       heatmaplogpval[nstate][0] = 100*(tallylabel[nstate]/dsumlabel); 
+		       pwlogpval.print("\t"+nf5.format(heatmaplogpval[nstate][0]));		       
+		   }
 		}
 		for (int nfile = 0; nfile < tallyoverlaplabel.length; nfile++)
 	        {
@@ -2016,27 +2098,114 @@ public class StateAnalysis
 		   {
 		      heatmapfold[nstate][nfile] = dfold;
 		   }
+ 
 		   pw.print("\t"+nf5.format(dfold));
+
+		   if (blogpvals)
+		   {
+		       double dlogpval;
+		       if (bbinomial)
+		       {
+			   dlogpval = -Math.log(binomialtail(Math.round(tallyoverlaplabel[nfile][nstate]*nbinsize-1), 
+							     Math.round(dsumoverlaplabel[nfile]*nbinsize),
+							     tallylabel[nstate]/dsumlabel))/Math.log(10);
+
+		       }
+		       else
+		       {
+
+			   dlogpval = -Math.log(hypergeometrictail(Math.round(tallyoverlaplabel[nfile][nstate]*nbinsize-1),
+						                   Math.round(tallylabel[nstate]*nbinsize),
+								   Math.round((dsumlabel- tallylabel[nstate])*nbinsize),
+								   Math.round(dsumoverlaplabel[nfile]*nbinsize)))/Math.log(10);
+		       }
+
+		       if (dlogpval > PVALLOG10CUTOFF)
+		       {
+			   dlogpval = PVALLOG10CUTOFF;
+		       }
+		       else if (dlogpval == -0)
+		       {
+			   dlogpval = 0;
+		       }
+
+		       if (bcolscaleheat)
+		       {
+		          heatmaplogpval[nstate][nfile+1] = dlogpval;
+		       }
+		       else
+		       {
+		          heatmaplogpval[nstate][nfile] = dlogpval;
+		       }
+		      
+		       pwlogpval.print("\t"+nf5.format(dlogpval));
+		   }
+
 		}
 		pw.println();
+
+		if (blogpvals)
+		{
+		    pwlogpval.println();
+		}
 	    }
 	    else
 	    {
 		numelim++;
 	    }
 	}
-	pw.print("Base\t100");
-        for (int nfile = 0; nfile < tallyoverlaplabel.length; nfile++)
+
+	//added v1.26
+	if (bcolscaleheat)
 	{
-	    pw.print("\t"+nf10.format(100*(dsumoverlaplabel[nfile]/dsumlabel)));
+	    pw.print("Base\t100");
 	}
+	else
+	{
+	    pw.print("Base");
+	}
+
+	for (int nfile = 0; nfile < tallyoverlaplabel.length; nfile++)
+        {
+	   pw.print("\t"+nf10.format(100*(dsumoverlaplabel[nfile]/dsumlabel)));
+	}
+
 	pw.println();
 	pw.close();
+
+
+
+	if (blogpvals)
+	{
+	   //added v1.26
+	   if (bcolscaleheat)
+	   {
+	      pwlogpval.print("Base\t100");
+	   }
+	   else
+	   {
+	      pwlogpval.print("Base");
+	   }
+
+	   for (int nfile = 0; nfile < tallyoverlaplabel.length; nfile++)
+           {
+	      pwlogpval.print("\t"+nf10.format(100*(dsumoverlaplabel[nfile]/dsumlabel)));
+	   }
+
+	   pwlogpval.println();
+	   pwlogpval.close();
+	}
 
 	String[] rowlabels;// = new String[tallyoverlaplabel[0].length];
 	if (numelim > 0)
 	{
 	   double[][] heatmapreduce = new double[heatmapfold.length-numelim][heatmapfold[0].length];
+
+	   double[][] heatmapreducelogpval = null;
+	   if (blogpvals)
+	   {
+	      heatmapreducelogpval = new double[heatmaplogpval.length-numelim][heatmaplogpval[0].length];
+	   }
 	   rowlabels = new String[heatmapreduce.length];
 	   int nkeepindex = 0;
 	   for (int nstate = 0; nstate < tallyoverlaplabel[0].length; nstate++)
@@ -2046,6 +2215,11 @@ public class StateAnalysis
 		  for (int ncol = 0; ncol < heatmapfold[nstate].length; ncol++)
 		  {
 		      heatmapreduce[nkeepindex][ncol] = heatmapfold[nstate][ncol];
+
+		      if (blogpvals)
+		      {
+		         heatmapreducelogpval[nkeepindex][ncol] = heatmaplogpval[nstate][ncol];
+		      }
 		  }
 
 		  if (bstringlabels)
@@ -2118,6 +2292,33 @@ public class StateAnalysis
 		  heatmapfold[nstate][nfile] =(heatmapfold[nstate][nfile]-dminval)/dmaxval;
 	      }
 	   }
+
+	   if (blogpvals)
+	   {
+	      for (int nfile = 0; nfile < heatmaplogpval[0].length; nfile++)
+	      {	    
+	         double dmaxval = Double.NEGATIVE_INFINITY;
+	         double dminval = Double.POSITIVE_INFINITY;
+
+	         for (int nstate = 0; nstate < heatmaplogpval.length; nstate++)
+	         {
+	            if (heatmaplogpval[nstate][nfile] > dmaxval)
+		    {
+		       dmaxval = heatmaplogpval[nstate][nfile];
+		    }
+
+	            if (heatmaplogpval[nstate][nfile] < dminval)
+		    {
+		       dminval = heatmaplogpval[nstate][nfile];
+		    }
+		 }
+	
+	         for (int nstate = 0; nstate < heatmaplogpval.length; nstate++)
+	         {
+		    heatmaplogpval[nstate][nfile] =(heatmaplogpval[nstate][nfile]-dminval)/dmaxval;
+		 }
+	      }
+	   }
 	}
 
 	String[] collabels = new String[heatmapfold[0].length];
@@ -2160,6 +2361,200 @@ public class StateAnalysis
 	{
 	   makeEnrichmentHeatMap(heatmapfold, collabels, rowlabels,szoutfile,theColor,sztitle,
 				 "Category","State ("+szstateorder+" order)");
+
+	   if (blogpvals)
+	   {
+	      makeEnrichmentHeatMap(heatmaplogpval, collabels, rowlabels,szoutfile+"_log10pvals",theColor,sztitle,
+				 "Category","State ("+szstateorder+" order)");
+	   }
+	}
+    }
+
+    //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    /**
+     *this hashtable caches previously computed binomial coefficient values so they do not need to be recomputed
+     */
+    public static Hashtable htbinom =new Hashtable();
+
+    /**
+     * Code based on STEM/DREM code I (Jason Ernst) previously wrote
+     *Returns the log of the binomial coefficient N choose ni
+     */
+    public static double logbinomcoeff(long ni, long N)
+    {
+	String sz = ni+";"+N;
+	Double dobj = (Double) htbinom.get(sz);
+        double dsum;
+
+	if (dobj != null)
+        {
+           dsum = ((Double) dobj).doubleValue();
+        }
+        else
+	{
+	    dsum = 0;
+	    long dmax = Math.max(ni,N-ni);
+	    long dmin = Math.min(ni,N-ni);
+
+	    //the log of the part of the numerator not cancelled by 
+	    //the larger factorial in the denominator
+	    for (long nj = dmax+1; nj <=N; nj++)
+	    {
+	       	dsum += Math.log(nj);
+	    }
+
+	    //subtract off the log of the denominator of the smaller term
+	    for (long nj = 2; nj <=dmin; nj++)
+	    {
+	        dsum -= Math.log(nj);
+	    }
+	    //store it
+	    htbinom.put(sz,new Double(dsum));
+	}   
+
+	return dsum;
+    }
+
+
+    //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+    /**
+     * Code based on STEM/DREM code I (Jason Ernst) previously wrote
+     * Computes the probability of seeing more than nx successes in nN trials 
+     * where the probability of a success is dp.
+     */
+    public static double binomialtail(long nx,long nN, double dp)
+    {        
+	if (nx > nN)
+	{
+	   return 0;
+        }  
+	else if ((nx < 0)||(dp<=0)||(dp>=1))
+	{
+	   return 1;
+	}
+
+	nx++;
+        double dterm = logbinomcoeff(nx, nN);
+        double dpv1 = Math.log(dp);
+        double dpv2 = Math.log(1-dp);
+
+        dterm += nx*dpv1+(nN-nx)*dpv2;
+
+	double dlogprob = dterm;
+	double dpdiff =  dpv1-dpv2;
+	double dprob;
+        for (long ni = nx+1; ni <= nN; ni++)
+	{
+	   //N!/(ni!(N-ni)!)
+           //N!/((ni-1)!(N-ni+1)!)
+	   dterm += Math.log(nN-ni+1) - Math.log(ni) + dpdiff;
+
+	   if (dterm >= dlogprob)
+           {   
+	      dlogprob = dterm + Math.log(1+Math.pow(Math.E,dlogprob-dterm));     
+       	   }
+	   else
+           {
+              dlogprob = dlogprob + Math.log(1+Math.pow(Math.E,dterm-dlogprob)); 
+	   }
+	}
+        dprob = Math.pow(Math.E,dlogprob);
+
+	if (dprob <= 0)
+	{
+	    return 0;
+	}
+	else if (dprob >= 1)
+        {
+	    return 1;
+	}
+	else
+        {
+	    return dprob;
+	}
+    }
+
+
+
+    //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    /**
+     * Code based on STEM/DREM code I (Jason Ernst) previously wrote
+     * Returns the probability of seeing more than nx objects of type A, when there are nA objects of type A
+     * nB objects of type B, and nm objects total drawn
+     * This can be used to compute a more accurate p-values than a 1-cumulative probability calculation
+     */
+    public static double hypergeometrictail(long nx, long nA, long nB, long nm)
+    {
+	if (nx < 0)
+	{
+	   return 1;
+	}
+        
+	double dprob = 0;
+      
+   
+	long nminx = Math.max(nx+1,0); //the first element to the right of x or 0
+	long nmaxx = Math.min(nA,nm);  //the max of type A there can be 
+
+	if (nminx > nmaxx)
+	{
+		//if nx approaches infinity tail should be 0
+	    return 0;
+	}
+
+	double dsum = -logbinomcoeff(nm, nA + nB)+ logbinomcoeff(nminx, nA)
+	    + logbinomcoeff(nm-nminx, nB);
+
+	double dlogprob=dsum;
+	for (long ni = nminx+1; ni <= nmaxx; ni++)
+	{
+	   //computing the increase in probability mass
+	   //numerator has nA!/(ni!(nA-ni)!) * nB!/((nm-ni)!(nB-nm+ni)!)
+	   //denominator has (nA+nB)!/(nm!(nA+nB-nm)!)
+
+	   //numerator has nA!/((ni-1)!(nA-ni+1)!) * nB!/((nm-ni+1)!(nB-nm+ni-1)!)
+	   //denominator has (nA+nB)!/(nm!(nA+nB-nm)!)
+
+	   //cancelling gives
+	   //1/(ni!(nA-ni)!) * 1/((nm-ni)!(nB-nm+ni)!) over
+	   //1/((ni-1)!(nA-ni+1)!) * 1/((nm-ni+1)!(nB-nm+ni-1)!)
+	   dsum  += Math.log(nA-ni+1)-Math.log(nB-nm+ni)
+		    + Math.log(nm-ni+1)-Math.log(ni);
+
+
+		//log(a+b+c+d+e)
+		//log(e) + log(a+b+c+d+e) - log(e)
+		//log(e) + log((a+b+c+d+e)/e)
+		//log(e) + log(1+(a+b+c+d)/e)
+		//log(e) + log(1+Math.exp(log(a+b+c+d)-log(e)))
+   
+	   if (dsum >= dlogprob)
+           {   
+	       dlogprob = dsum + Math.log(1+Math.pow(Math.E,dlogprob-dsum));     
+           }
+	   else
+           {
+	       dlogprob = dlogprob + Math.log(1+Math.pow(Math.E,dsum-dlogprob)); 
+	   }
+	}
+
+	dprob = Math.pow(Math.E,dlogprob);
+
+
+	if (dprob <= 0)
+        {
+           return 0;
+        }
+	else if (dprob >= 1)
+        {
+           return 1;
+        }
+	else
+        {
+	   return dprob;
 	}
     }
 
@@ -2276,6 +2671,16 @@ public class StateAnalysis
                                            boolean  bstringlabels, boolean bbrowser) throws IOException
     {
 
+	//v1.26
+	int nminnumcols =3;
+	if (busestrand && busesignal)
+	{
+	    nminnumcols = 4;
+	}
+	else if (!busestrand && !busesignal)
+	{
+	    nminnumcols = 2;
+	}
 
 	boolean bchrommatch =  false;//added in 1.23 to check for chromosome matches
 	//an array of chromosome names
@@ -2592,6 +2997,12 @@ public class StateAnalysis
 	      if (szLine.trim().equals("")) continue;
 	      String[] szLineA = szLine.split("\\s+");
 
+	      if (szLineA.length < nminnumcols)
+	      {
+	          //v1.26
+	          throw new IllegalArgumentException("Line: "+szLine +" in "+szanchorpositions+" has "+szLineA.length+" columns while expecting "+nminnumcols);
+	      }
+
               String szchrom = szLineA[theAnchorIndex.nchromindex];        
 	      if (!szchrom.equals(szchromwant)) 
                  continue;
@@ -2707,6 +3118,17 @@ public class StateAnalysis
 					String sztitle,String szlabelmapping, boolean bprintimage,
                                         boolean  bstringlabels, boolean bbrowser) throws IOException
     {
+	//v1.26
+	int nminnumcols =3;
+	if (busestrand && busesignal)
+	{
+	    nminnumcols = 4;
+	}
+	else if (!busestrand && !busesignal)
+	{
+	    nminnumcols = 2;
+	}
+
 	//highmem
 	boolean bchrommatch =  false;//added in 1.23 to check for chromosome matches
 	//stores all the segments in the data
@@ -2935,8 +3357,14 @@ public class StateAnalysis
         BufferedReader brcoords = Util.getBufferedReader(szanchorpositions);
 	while ((szLine = brcoords.readLine())!=null)
         {
-	    if (szLine.trim().equals("")) continue;
+	   if (szLine.trim().equals("")) continue;
 	   String[] szLineA = szLine.split("\\s+");
+
+	   if (szLineA.length < nminnumcols)
+	   {
+	       //v1.26
+	       throw new IllegalArgumentException("Line: "+szLine +" in "+szanchorpositions+" has "+szLineA.length+" columns while expecting "+nminnumcols);
+	   }
 
            String szchrom = szLineA[theAnchorIndex.nchromindex];        
 	   int nanchor = (Integer.parseInt(szLineA[theAnchorIndex.npositionindex])-noffsetanchor);
@@ -3049,6 +3477,16 @@ public class StateAnalysis
 					     boolean busestrand, boolean busesignal,String szcolfields, int noffsetanchor,
 					   String szoutfile,Color theColor,String sztitle,String szlabelmapping, boolean bprintimage) throws IOException
     {
+	//v1.26
+	int nminnumcols =3;
+	if (busestrand && busesignal)
+	{
+	    nminnumcols = 4;
+	}
+	else if (!busestrand && !busesignal)
+	{
+	    nminnumcols = 2;
+	}
 
 	boolean bchrommatch =  false;//added in 1.23 to check for chromosome matches
 	//posterior here is really signal just using equivalent variable names
@@ -3163,6 +3601,13 @@ public class StateAnalysis
 		      if (szLine.trim().equals("")) continue;
 	              //going through all the coordinates keeping only those for the current chromosome
 	              String[] szLineA = szLine.split("\\s+");
+
+    	              if (szLineA.length < nminnumcols)
+	              {
+	                 //v1.26
+			 throw new IllegalArgumentException("Line: "+szLine +" in "+szanchorpositions+" has "+szLineA.length+" columns while expecting "+nminnumcols);
+		      }
+
                       String szreadchrom = szLineA[theAnchorIndex.nchromindex];        
 
 	              if (szreadchrom.equals(szchrom))
@@ -3291,6 +3736,16 @@ public class StateAnalysis
 					     boolean busestrand, boolean busesignal,String szcolfields, int noffsetanchor,
 					      String szoutfile,Color theColor,String sztitle,String szlabelmapping, boolean bprintimage) throws IOException
     {
+	//v1.26
+	int nminnumcols =3;
+	if (busestrand && busesignal)
+	{
+	    nminnumcols = 4;
+	}
+	else if (!busestrand && !busesignal)
+	{
+	    nminnumcols = 2;
+	}
 
 	boolean bchrommatch =  false;//added in 1.23 to check for chromosome matches
 	//list of possible posterior files
@@ -3403,6 +3858,14 @@ public class StateAnalysis
 		      if (szLine.trim().equals("")) continue;
 	              //going through all the coordinates keeping only those for the current chromosome
 	              String[] szLineA = szLine.split("\\s+");
+
+ 	              if (szLineA.length < nminnumcols)
+	              {
+	                 //v1.26
+			 throw new IllegalArgumentException("Line: "+szLine +" in "+szanchorpositions+" has "+szLineA.length+" columns while expecting "+nminnumcols);
+		      }
+
+
                       String szreadchrom = szLineA[theAnchorIndex.nchromindex];        
 
 	              if (szreadchrom.equals(szchrom))

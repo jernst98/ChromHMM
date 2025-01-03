@@ -1,3 +1,14 @@
+1/2/2025 ChromHMM 1.26
+* Added to ChromHMM's output -log10 p-values of enrichments when using OverlapEnrichment with the '-center' flag. This can be supressed with the use of the '-nopvals' flag
+* Fixed a bug when running OverlapEnrichment with the '-uniformscale' flag that caused ChromHMM to display an extraneous 'Genome %'
+in the header row and 100% in the bottom row in the text file output. This did not effect the image files or running in a default mode without the flag.
+* Fixed a bug when running OverlapEnrichment with the '-center' and '-multicount' flags that caused an incorrect base % for the annotation category
+to be reported.
+* Provides a more informative error message when running NeighborhoodEnrichment and an input line has less than the expected number of entries
+* Now throws an error if the beginning of an output segment would be past the length of a chromosome specified in a file given with the "-l" option, which could be because a different assembly
+was used for the binarization.
+
+
 12/28/2023 ChromHMM 1.25
 * Added the flag '-nobrowserheader' to LearnModel and MakeBrowserFiles to surpress the printing of header lines in browser bed files 
 * Added the flag '-nopseudoinit' to LearnModel which prevents pseudocounts from being added in computing the emission parameter of the last mark and

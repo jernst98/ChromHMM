@@ -5977,6 +5977,13 @@ public class ChromHMM
 	           if (objMaxCoord != null)
 	           {
 		       nlastcoordinate = Math.min((numtime_nseq+noffset)*nbinsize,((Integer) objMaxCoord).intValue());
+
+	  	      if (nstart*nbinsize >= nlastcoordinate)
+		      {
+			  //v1.26
+			  throw new IllegalArgumentException("Start of interval "+(nstart*nbinsize+1)+" (1-based) is past the end of the chromosome "+nlastcoordinate+
+                                                             "; Check if chromosome length file given to LearnModel is the same used for the binarization");
+		      }
 	           }
 	           else
 	           {
@@ -6114,6 +6121,13 @@ public class ChromHMM
 	           if (objMaxCoord != null)
 	           {
 		       nlastcoordinate = Math.min((numtime_nseq+noffset)*nbinsize,((Integer) objMaxCoord).intValue());
+
+	  	      if (nstart*nbinsize >= nlastcoordinate)
+		      {
+			  //v1.26
+			  throw new IllegalArgumentException("Start of interval "+(nstart*nbinsize+1)+" (1-based) is past the end of the chromosome "+nlastcoordinate+
+                                                             "; Check if chromosome length file given to LearnModel is the same used for the binarization");
+		      }
 	           }
 	           else
 	           {
@@ -7061,13 +7075,20 @@ public class ChromHMM
 	           if (objMaxCoord != null)
 	           {
 		      nlastcoordinate = Math.min((numtime_nseq+noffset)*nbinsize,((Integer) objMaxCoord).intValue());
+
+	  	      if (nstart*nbinsize >= nlastcoordinate)
+		      {
+			  //v1.26
+			  throw new IllegalArgumentException("Start of interval "+(nstart*nbinsize+1)+" (1-based) is past the end of the chromosome "+nlastcoordinate+
+                                                             "; Check if chromosome length file given to LearnModel is the same used for the binarization");
+		      }
 	           }
 	           else
 	           {
 		      nlastcoordinate = (numtime_nseq+noffset)*nbinsize;
 	           }
 	           //pwbed.println(chromSeq[nordered_nseq]+"\t"+(nstart*nbinsize)+"\t"+nlastcoordinate+"\t"+chorder+(nmaxstateprev+1));
-
+		   
 		   String szout = szactualchrom+"\t"+(nstart*nbinsize)+"\t"+nlastcoordinate+"\t"+chorder+(nmaxstateprev+1)+"\n";
 		   byte[] btformat = szout.getBytes();
 		   pwbedzip.write(btformat,0,btformat.length);
@@ -7197,6 +7218,13 @@ public class ChromHMM
 	           if (objMaxCoord != null)
 	           {
 		      nlastcoordinate = Math.min((numtime_nseq+noffset)*nbinsize,((Integer) objMaxCoord).intValue());
+
+	  	      if (nstart*nbinsize >= nlastcoordinate)
+		      {
+			  //v1.26
+			  throw new IllegalArgumentException("Start of interval "+(nstart*nbinsize+1)+" (1-based) is past the end of the chromosome "+nlastcoordinate+
+                                                             "; Check if chromosome length file given to LearnModel is the same used for the binarization");
+		      }
 	           }
 	           else
 	           {
@@ -13359,7 +13387,7 @@ public class ChromHMM
 
 	if (szcommand.equalsIgnoreCase("Version"))
 	{
-	    System.out.println("This is Version 1.25 of ChromHMM (c) Copyright 2008-2012 Massachusetts Institute of Technology");
+	    System.out.println("This is Version 1.26 of ChromHMM (c) Copyright 2008-2012 Massachusetts Institute of Technology");
 	}
         else if ((szcommand.equals("BinarizeBam"))||(szcommand.equalsIgnoreCase("BinarizeBed")))
 	{
@@ -14537,6 +14565,8 @@ public class ChromHMM
 	    boolean blowmem = false;
 	    boolean bprintimage = true;
 
+	    boolean blogpvals = true;
+
 	    int nr=ChromHMM.DEFAULTCOLOR_R;
 	    int ng=ChromHMM.DEFAULTCOLOR_G;
 	    int nb=ChromHMM.DEFAULTCOLOR_B;
@@ -14586,6 +14616,10 @@ public class ChromHMM
 		  {
 		     szinputcoordlist = args[++nargindex];
 		  }
+		  else if (args[nargindex].equals("-nopvals"))
+		  {
+		      blogpvals = false;
+	          }
 		  else if (args[nargindex].equals("-signal"))
 		  {
 		     busesignal = true;
@@ -14661,18 +14695,18 @@ public class ChromHMM
 		   if (blowmem)
 		   {
 		      StateAnalysis.enrichmentMaxLowMem(szinput, szinputcoorddir,szinputcoordlist,noffsetleft,noffsetright,nbinsize,  
-							bcenter, bunique,  busesignal,szcolfields,bbaseres, szoutfile,bcolscaleheat,theColor,sztitle, szlabelmapping, bprintimage,bstringlabels,bbrowser);
+							bcenter, bunique,  busesignal,szcolfields,bbaseres, szoutfile,bcolscaleheat,theColor,sztitle, szlabelmapping, bprintimage,bstringlabels,bbrowser,blogpvals);
 		   }
 		   else
 		   {
 		      StateAnalysis.enrichmentMax(szinput, szinputcoorddir,szinputcoordlist,noffsetleft,noffsetright,nbinsize,  
-						  bcenter, bunique,  busesignal,szcolfields,bbaseres, szoutfile,bcolscaleheat,theColor,sztitle, szlabelmapping,bprintimage,bstringlabels,bbrowser);
+						  bcenter, bunique,  busesignal,szcolfields,bbaseres, szoutfile,bcolscaleheat,theColor,sztitle, szlabelmapping,bprintimage,bstringlabels,bbrowser,blogpvals);
 		   }
 	       }
 	       else
 	       {
 		   StateAnalysis.enrichmentPosterior(szinput, szcell,szinputcoorddir,szinputcoordlist,noffsetleft,noffsetright,nbinsize,
-						     bcenter, bunique, busesignal,szcolfields,bbaseres,szoutfile,bcolscaleheat,theColor,sztitle, szlabelmapping,bprintimage);
+						     bcenter, bunique, busesignal,szcolfields,bbaseres,szoutfile,bcolscaleheat,theColor,sztitle, szlabelmapping,bprintimage,blogpvals);
 	       }
 	    }
 	    else
@@ -14684,8 +14718,8 @@ public class ChromHMM
 	    {
 		System.out.println("usage OverlapEnrichment [-a cell][-b binsize][-binres][-browser][-color r,g,b][-center][-colfields chromosome,start,end[,signal]]"+
                                    "[-e offsetend][-f coordlistfile][-labels][-lowmem][-m labelmappingfile]"+
-                                   "[-multicount][-noimage][-posterior][-s offsetstart][-signal][-t title][-uniformscale]"+
-                                   " inputsegment inputcoorddir outfileprefix");
+                                   "[-multicount][-noimage][-nopvals][-posterior][-s offsetstart][-signal][-t title][-uniformscale]"+
+                                   " inputsegment inputcoorddir outfileprefix"); 
 	    }
 	}
 	else if ((szcommand.equalsIgnoreCase("NeighborhoodEnrichment"))||(szcommand.equalsIgnoreCase("NeighborhoodSignal")))
@@ -15391,7 +15425,7 @@ public class ChromHMM
 							  ChromHMM.DEFAULT_OVERLAPENRICHMENT_BCENTER, !ChromHMM.DEFAULT_OVERLAPENRICHMENT_BCOUNTMULTI, 
                                                           ChromHMM.DEFAULT_OVERLAPENRICHMENT_BUSESIGNAL,null,//szcolfields,
                                                           ChromHMM.DEFAULT_OVERLAPENRICHMENT_BBASERES, szoutputdir+"/"+szprefix+ChromHMM.SZOVERLAPEXTENSION,
-								       !ChromHMM.DEFAULT_OVERLAPENRICHMENT_BUNIFORMHEAT,theColor,"Fold Enrichment "+szprefix,null,bprintimage, false,false);
+								       !ChromHMM.DEFAULT_OVERLAPENRICHMENT_BUNIFORMHEAT,theColor,"Fold Enrichment "+szprefix,null,bprintimage, false,false,false);
 				  }
 				  else
 				  {
@@ -15403,7 +15437,7 @@ public class ChromHMM
 							  ChromHMM.DEFAULT_OVERLAPENRICHMENT_BCENTER, !ChromHMM.DEFAULT_OVERLAPENRICHMENT_BCOUNTMULTI, 
                                                           ChromHMM.DEFAULT_OVERLAPENRICHMENT_BUSESIGNAL,null,//szcolfields,
                                                           ChromHMM.DEFAULT_OVERLAPENRICHMENT_BBASERES, szoutputdir+"/"+szprefix+ChromHMM.SZOVERLAPEXTENSION,
-								 !ChromHMM.DEFAULT_OVERLAPENRICHMENT_BUNIFORMHEAT,theColor,"Fold Enrichment "+szprefix,null,bprintimage, false,false);
+								 !ChromHMM.DEFAULT_OVERLAPENRICHMENT_BUNIFORMHEAT,theColor,"Fold Enrichment "+szprefix,null,bprintimage, false,false,false);
 				  }
 				  String szoverlapoutfile = szprefix+ChromHMM.SZOVERLAPEXTENSION+".txt";
 				  if (bprintimage)
