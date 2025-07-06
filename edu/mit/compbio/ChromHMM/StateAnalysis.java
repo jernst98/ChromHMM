@@ -45,6 +45,11 @@ public class StateAnalysis
 
 
     /**
+     * Variable indicating if found a duplicate state assignment to prevent printing warning more than once
+     */
+    static boolean bfounddup = false;
+
+    /**
      * A record for storing a segmentation
      */
     static class SegmentRec
@@ -403,6 +408,7 @@ public class StateAnalysis
 		      }
 
 		      BufferedReader brcoords = Util.getBufferedReader(szinputcoorddir+files[ncoordfile]);
+
 		      if (bunique)
 		      {
 			 ArrayList alrecs = new ArrayList();
@@ -410,10 +416,26 @@ public class StateAnalysis
 	                 {
 		            if (szLine.trim().equals("")) continue;
 		            String[] szLineA = szLine.split("\\s+");
+		            if (nchromindex >= szLineA.length)
+		            {
+		               throw new IllegalArgumentException(nchromindex+" is an invalid column index for line "+szLine+" in "+szinputcoorddir+files[ncoordfile]);
+		            }
 	                    String szreadchrom = szLineA[nchromindex];
+
 		            if (szreadchrom.equals(szchrom))
 		            {
-	                       String szcurrchrom = szLineA[nchromindex];		             
+				//removed in v1.27 appears to be a dead store
+				//String szcurrchrom = szLineA[nchromindex];		         
+		               if (nstartindex >= szLineA.length)
+		               {
+		                  throw new IllegalArgumentException(nstartindex+" is an invalid column index for line "+szLine+" in "+szinputcoorddir+files[ncoordfile]);
+		               }
+
+		               if (nendindex >= szLineA.length)
+		               {
+		                  throw new IllegalArgumentException(nendindex+" is an invalid column index for line "+szLine+" in "+szinputcoorddir+files[ncoordfile]);
+		               }
+    
 		               int nbeginactual =Integer.parseInt(szLineA[nstartindex])-noffsetleft;
 			       int nendactual =Integer.parseInt(szLineA[nendindex])-noffsetright;
 			       if (bcenter)
@@ -545,6 +567,12 @@ public class StateAnalysis
 	                       if ((busesignal)&&(nsignalindex < szLineA.length))
 	                       {
 	       	                  damount = Double.parseDouble(szLineA[nsignalindex]);
+
+		                  if (damount < 0)
+		                  {
+		                     throw new IllegalArgumentException("A negative weight of "+damount+" was found in "+szinputcoorddir+files[nfile]+
+                                                             " but weights are assumed to be non-negative");
+				  }
 			       }
 	                       else
 	                       {
@@ -879,6 +907,13 @@ public class StateAnalysis
 	    //stores each label position in the genome
 	    for (int npos = nbegin; npos <= nend; npos++)
 	    {
+		if ((!StateAnalysis.bfounddup) &&(labels_nchrom[npos] >= 0)&&(labels_nchrom[npos]!=slabel))
+		{
+		    StateAnalysis.bfounddup = true;
+		    System.out.println("WARNING: found the same position assigned to multiple states. First example found: "+theSegmentRec.szchrom+
+				       ":"+(npos*nbinsize+1)+". Will use the last occurrence in file.");
+
+		}
 		labels_nchrom[npos] = slabel;
 		tallylabel[slabel]++; 
 	    }
@@ -989,26 +1024,32 @@ public class StateAnalysis
 
 	          //reading in the coordinates to overlap with
                   BufferedReader brcoords = Util.getBufferedReader(szinputcoorddir +files[nfile]);
+
 		  ArrayList alrecs = new ArrayList();
 	          while ((szLine = brcoords.readLine())!=null)
 	          {
 	             if (szLine.trim().equals("")) continue;
 	             String[] szLineA = szLine.split("\\s+");
-		     if (nstartindex >= szLineA.length)
+
+		     if (nchromindex >= szLineA.length)
 		     {
-			 throw new IllegalArgumentException(nstartindex+" is an invalid column index for "+szLine+" in "+szinputcoorddir+files[nfile]);
+			 throw new IllegalArgumentException(nchromindex+" is an invalid column index for line "+szLine+" in "+szinputcoorddir+files[nfile]);
 		     }
-
-
-                     if (nendindex >= szLineA.length)
-		     {
-			 throw new IllegalArgumentException(nendindex+" is an invalid column index for "+szLine+" in "+szinputcoorddir+files[nfile]);
-		     }
-
 
 	             String szcurrchrom = szLineA[nchromindex];
 		     if (szchrom.equals(szcurrchrom))
 		     {
+		        if (nstartindex >= szLineA.length)
+		        {
+			   throw new IllegalArgumentException(nstartindex+" is an invalid column index for line "+szLine+" in "+szinputcoorddir+files[nfile]);
+		        }
+
+                        if (nendindex >= szLineA.length)
+		        {
+			   throw new IllegalArgumentException(nendindex+" is an invalid column index for line "+szLine+" in "+szinputcoorddir+files[nfile]);
+		        }
+
+
 		        int nbeginactual =Integer.parseInt(szLineA[nstartindex])-noffsetleft;
 		        int nendactual =Integer.parseInt(szLineA[nendindex])-noffsetright;
 			if (bcenter)
@@ -1120,10 +1161,27 @@ public class StateAnalysis
 	    else
 	    {
 	       BufferedReader brcoords = Util.getBufferedReader(szinputcoorddir +files[nfile]);
+
 	       while ((szLine = brcoords.readLine())!=null)
 	       {
 	          if (szLine.trim().equals("")) continue;
 	          String[] szLineA = szLine.split("\\s+");
+
+
+		  if (nchromindex >= szLineA.length)
+		  {
+		     throw new IllegalArgumentException(nchromindex+" is an invalid column index for line "+szLine+" in "+szinputcoorddir+files[nfile]);
+		  }
+
+		  if (nstartindex >= szLineA.length)
+		  {
+		     throw new IllegalArgumentException(nstartindex+" is an invalid column index for line "+szLine+" in "+szinputcoorddir+files[nfile]);
+		  }
+
+                  if (nendindex >= szLineA.length)
+		  {
+		     throw new IllegalArgumentException(nendindex+" is an invalid column index for line "+szLine+" in "+szinputcoorddir+files[nfile]);
+		  }
 
 	          String szchrom = szLineA[nchromindex];
 	          int nbeginactual =Integer.parseInt(szLineA[nstartindex])-noffsetleft;
@@ -1135,7 +1193,16 @@ public class StateAnalysis
 		  double damount;
 	          if ((busesignal)&&(nsignalindex < szLineA.length))
 	          {
+		     if (nsignalindex >= szLineA.length)
+		     {
+		        throw new IllegalArgumentException(nsignalindex+" is an invalid column index for line "+szLine+" in "+szinputcoorddir+files[nfile]);
+		     }
 	      	     damount = Double.parseDouble(szLineA[nsignalindex]);
+		     if (damount < 0)
+		     {
+		        throw new IllegalArgumentException("A negative weight of "+damount+" was found in "+szinputcoorddir+files[nfile]+
+                                                             " but weights are assumed to be non-negative");
+		     }
 		  }
 	          else
 	          {
@@ -1622,6 +1689,13 @@ public class StateAnalysis
 	     //stores each label position in the genome
 	     for (int npos = nbegin; npos <= nend; npos++)
 	     {
+		if ((!StateAnalysis.bfounddup) &&(labels[npos] >= 0)&&(labels[npos]!=slabel))
+		{
+		    StateAnalysis.bfounddup = true;
+		    System.out.println("WARNING: found the same position assigned to multiple states. First example found: "+szchrom+
+				       ":"+(npos*nbinsize+1)+". Will use the last occurrence in file.");
+
+		}
 	        labels[npos] = slabel;
 	           //tallylabel[slabel]++; 
 	     }
@@ -1664,24 +1738,31 @@ public class StateAnalysis
 
 	        //reading in the coordinates to overlap with
                 BufferedReader brcoords = Util.getBufferedReader(szinputcoorddir +files[nfile]);
+
 	        ArrayList alrecs = new ArrayList();
 	        while ((szLine = brcoords.readLine())!=null)
 	        {
 	           if (szLine.trim().equals("")) continue;
 	           String[] szLineA = szLine.split("\\s+");
-		   if (nstartindex >= szLineA.length)
-		   {
-		      throw new IllegalArgumentException(nstartindex+" is an invalid column index for "+szLine+" in "+szinputcoorddir+files[nfile]);
-		   }
 
-                   if (nendindex >= szLineA.length)
+		   if (nchromindex >= szLineA.length)
 		   {
-		      throw new IllegalArgumentException(nendindex+" is an invalid column index for "+szLine+" in "+szinputcoorddir+files[nfile]);
+		      throw new IllegalArgumentException(nchromindex+" is an invalid column index for line "+szLine+" in "+szinputcoorddir+files[nfile]);
 		   }
 
 	           String szcurrchrom = szLineA[nchromindex];
 	  	   if (szchromwant.equals(szcurrchrom))
 		   {
+		      if (nstartindex >= szLineA.length)
+		      {
+		         throw new IllegalArgumentException(nstartindex+" is an invalid column index for line "+szLine+" in "+szinputcoorddir+files[nfile]);
+		      }
+
+                      if (nendindex >= szLineA.length)
+		      {
+		         throw new IllegalArgumentException(nendindex+" is an invalid column index for line "+szLine+" in "+szinputcoorddir+files[nfile]);
+		      }
+
 		      int nbeginactual =Integer.parseInt(szLineA[nstartindex])-noffsetleft;
 		      int nendactual =Integer.parseInt(szLineA[nendindex])-noffsetright;
 		      if (bcenter)
@@ -1791,14 +1872,30 @@ public class StateAnalysis
 	     else
 	     {
 	        BufferedReader brcoords = Util.getBufferedReader(szinputcoorddir +files[nfile]);
+
 	        while ((szLine = brcoords.readLine())!=null)
 	        {
 	           if (szLine.trim().equals("")) continue;
 	           String[] szLineA = szLine.split("\\s+");
 
+		   if (nchromindex >= szLineA.length)
+		   {
+		      throw new IllegalArgumentException(nchromindex+" is an invalid column index for line "+szLine+" in "+szinputcoorddir+files[nfile]);
+		   }
+
 	           String szchrom = szLineA[nchromindex];
 		   if (!szchromwant.equals(szchrom))
 		      continue;
+
+		   if (nstartindex >= szLineA.length)
+		   {
+		      throw new IllegalArgumentException(nstartindex+" is an invalid column index for line "+szLine+" in "+szinputcoorddir+files[nfile]);
+		   }
+
+		   if (nendindex >= szLineA.length)
+		   {
+		      throw new IllegalArgumentException(nendindex+" is an invalid column index for line "+szLine+" in "+szinputcoorddir+files[nfile]);
+		   }
 
 	           int nbeginactual =Integer.parseInt(szLineA[nstartindex])-noffsetleft;
 	           int nbegin = nbeginactual/nbinsize;
@@ -1809,7 +1906,17 @@ public class StateAnalysis
 		   double damount;
 	           if ((busesignal)&&(nsignalindex < szLineA.length))
 	           {
+		      if (nsignalindex >= szLineA.length)
+		      {
+		         throw new IllegalArgumentException(nsignalindex+" is an invalid column index for line "+szLine+" in "+szinputcoorddir+files[nfile]);
+		      }
 	      	      damount = Double.parseDouble(szLineA[nsignalindex]);
+
+		      if (damount < 0)
+		      {
+		         throw new IllegalArgumentException("A negative weight of "+damount+" was found in "+szinputcoorddir+files[nfile]+
+                                                             " but weights are assumed to be non-negative");
+		      }
 		   }
 	           else
 	           {
@@ -2977,6 +3084,13 @@ public class StateAnalysis
 	      //short slabel = theSegmentRec.slabel;
 	      for (int npos = nbegin; npos <= nend; npos++)
 	      {
+	         if ((!StateAnalysis.bfounddup) &&(labels[npos] >= 0)&&(labels[npos]!=slabel))
+		 {
+		    StateAnalysis.bfounddup = true;
+		    System.out.println("WARNING: found the same position assigned to multiple states. First example found: "+szchrom+
+				       ":"+(npos*nbinsize+1)+". Will use the last occurrence in file.");
+
+		 }
 	         labels[npos] = slabel;
 	      }
 
@@ -3332,6 +3446,13 @@ public class StateAnalysis
 	    short slabel = theSegmentRec.slabel;
 	    for (int npos = nbegin; npos <= nend; npos++)
 	    {
+		if ((!StateAnalysis.bfounddup) &&(labels_nchrom[npos] >= 0)&&(labels_nchrom[npos]!=slabel))
+		{
+		    StateAnalysis.bfounddup = true;
+		    System.out.println("WARNING: found the same position assigned to multiple states. First example found: "+theSegmentRec.szchrom+
+				       ":"+(npos*nbinsize+1)+". Will use the last occurrence in file.");
+
+		}
 		labels_nchrom[npos] = slabel;
 		if (slabel >= 0)
 		{

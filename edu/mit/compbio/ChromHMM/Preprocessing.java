@@ -717,8 +717,8 @@ public class Preprocessing
 
 	       if (bstacked)
 	       {
-		   szcell = "genome";
 		   szmark = szcell + "_" + szmark;
+		   szcell = "genome"; //update in 1.27
 	       }
 
 	       String szfile = st.nextToken().trim();
@@ -1051,8 +1051,8 @@ public class Preprocessing
 
 	       if (bstacked)
 	       {
-		   szcell = "genome";
 		   szmark = szcell + "_" + szmark;
+		   szcell = "genome";
 	       }
 
 	       String szfile = st.nextToken().trim();

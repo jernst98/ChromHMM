@@ -1,5 +1,12 @@
+7/6/2025 ChromHMM 1.27
+* Fixed a bug with the '-stacked' in BinarizeBam and BinarizeBed so marks are now actually named cell_mark as intended
+* Added warning message if the same base is annotated to different states when conducting an OverlapEnrichment or NeighborhoodEnrichment
+* Added additional error checking on input coordinates for OverlapEnrichment and more informative error messages
+* Added the requirement that the values in the signal column be non-negative when using the '-signal' with OverlapEnrichment and throws error if that
+is violated. Previously this was implicitly assumed but not explicitly documented and there was no error checking.
+
 1/2/2025 ChromHMM 1.26
-* Added to ChromHMM's output -log10 p-values of enrichments when using OverlapEnrichment with the '-center' flag. This can be supressed with the use of the '-nopvals' flag
+* Added to ChromHMM's output -log10 p-values of enrichments when using OverlapEnrichment with the '-center' flag. This can be suppressed with the use of the '-nopvals' flag
 * Fixed a bug when running OverlapEnrichment with the '-uniformscale' flag that caused ChromHMM to display an extraneous 'Genome %'
 in the header row and 100% in the bottom row in the text file output. This did not effect the image files or running in a default mode without the flag.
 * Fixed a bug when running OverlapEnrichment with the '-center' and '-multicount' flags that caused an incorrect base % for the annotation category
@@ -74,7 +81,7 @@ to allow binarizing different subsets of the columns in parallel, and then can b
 See manual for details on each otpion
 * Added the option '-t type' to MergeBinary. If this option is specified, then it allows merging 
 files other than binary files, in particular signal or controlsignal files. Files in the subdirectories 
-of inputdir that include ‘_type’ in the file name will be merged. By default type is binary, but for 
+of inputdir that include  _type  in the file name will be merged. By default type is binary, but for 
 regular signal files it should be signal and for control signal files it should be controlsignal.
 * Tweaked the position of column labels to better align with the columns in the heatmap
 * Modified ConvertGeneTable to also read gzipped file
@@ -165,7 +172,7 @@ of additional runtime
 *Added the '-pseudo' flag to LearnModel. If this flag is present, pseudo counts of 1 are used in computing the model parameters to smooth away from zero values. 
 These pseudo counts can provide numerical stability in the situation when the -n numseq  is specified in training and some feature has very few present occurrences.
 *Added the '-lowmem' flag option also to EvalSubset which uses less memory by only loading one chromosome in at a time though with potentially additional runtime.
-*Added the '-paired' flag to BinarizeBam. If this option is present then reads in the BAM file are treated as pairs, and each pair is counted once with bin assignment is based on shifting half the insert size. If this option is present then the –n shift,  –center, and  –peaks  options cannot be used. 
+*Added the '-paired' flag to BinarizeBam. If this option is present then reads in the BAM file are treated as pairs, and each pair is counted once with bin assignment is based on shifting half the insert size. If this option is present then the  n shift,   center, and   peaks  options cannot be used. 
 *Added a more informative error message for the situation in which the chromosome naming in the chromosome length file is
 inconsistent with the Bam/Bed files when binarizing data
 *Added a more informative error message for the situation in which the chromosome names in the segmentation files are not
@@ -188,7 +195,7 @@ Such coordinate positions that are off the chromosome are ignored instead of an 
 
 11/2/2017 ChromHMM 1.13 (GitHub only release)
 *Added '-lowmem' flag to LearnModel, OverlapEnrichment, NeighborhoodEnrichment, and  MakeSegmentation to have ChromHMM only load one chromosome file into memory at time thus reducing maximum memory usage at a potential of additional runtime
-*Added '-n numseq' flag to LearnModel. If this flag is present and the ‘-p’ flag is present then on each iteration of training only numseq chromosome files are randomly selected to be used for training. In such cases the ‘-d’ flag should be set to a negative number so model learning does not terminate prematurely since negative changes in the log-likelihood are expected since different chromosomes are used on each iteration. Also only numseq files are considered in the initial model initialization under the default ‘information’ mode. If the ‘-n’ flag is specified without the ‘-p’ flag a subset of chromosomes will still be used for initialization, but all chromosomes will still be used on all iterations of training.
+*Added '-n numseq' flag to LearnModel. If this flag is present and the  -p  flag is present then on each iteration of training only numseq chromosome files are randomly selected to be used for training. In such cases the  -d  flag should be set to a negative number so model learning does not terminate prematurely since negative changes in the log-likelihood are expected since different chromosomes are used on each iteration. Also only numseq files are considered in the initial model initialization under the default  information  mode. If the  -n  flag is specified without the  -p  flag a subset of chromosomes will still be used for initialization, but all chromosomes will still be used on all iterations of training.
 
 
 4/3/2016 ChromHMM 1.12 (4/15/2016 updated hg38 and rn6 CpGIsland files)
