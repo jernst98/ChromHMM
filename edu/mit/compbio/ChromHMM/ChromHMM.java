@@ -731,7 +731,7 @@ public class ChromHMM
      */
      public ChromHMM(String szinputdir, String szoutputdir, String szinputfilelist,String szchromlengthfile, int numstates,int nseed, int ninitmethod,
                     String szInitFile, double dloadsmoothemission,double dloadsmoothtransition,double dinformationsmooth,
-		     int nmaxiterations,double dcovergediff,int nmaxseconds,boolean bprintposterior,
+		     int nmaxiterations,double dconvergediff,int nmaxseconds,boolean bprintposterior,
 		    boolean bprintsegment,boolean bprintstatebyline, int nbinsize,String szoutfileID,int nstateorder,boolean bordercols,int nzerotransitionpower,
 		     Color theColor, boolean bnormalEM, int nmaxprocessors, boolean blowmem, 
                      int numincludeseq, boolean bprintimage, boolean bscaleemissions, 
@@ -749,7 +749,7 @@ public class ChromHMM
 	this.dinformationsmooth = dinformationsmooth;
 	this.nmaxiterations = nmaxiterations;
 	this.nmaxseconds = nmaxseconds;
-	this.dconvergediff = dcovergediff;
+	this.dconvergediff = dconvergediff; //updated in v1.28
 	this.bprintposterior = bprintposterior;
 	this.bprintsegment = bprintsegment;
 	this.bprintstatebyline = bprintstatebyline;
@@ -2934,7 +2934,7 @@ public class ChromHMM
 	szLoadHeader = br.readLine();
 	if (szLoadHeader == null)
 	{
-	    throw new IllegalArgumentException(szLoadHeader+" is empty!");
+	    throw new IllegalArgumentException(szInitFile+" is empty!"); //updated v1.28
 	}
         StringTokenizer st = new StringTokenizer(szLoadHeader,"\t");
 
@@ -8209,6 +8209,11 @@ public class ChromHMM
 			    {
 			       emissionproducts_ni[ns] *= emissionprobs[ns][nmod][1];
 			    }
+			    else
+			    {
+				//update in v1.28
+			       emissionproducts_ni[ns] *= emissionprobs[ns][nmod][0];
+			    }
 			 }
 					     // otherwise treated as missing omitting from product
 		      }
@@ -13387,7 +13392,7 @@ public class ChromHMM
 
 	if (szcommand.equalsIgnoreCase("Version"))
 	{
-	    System.out.println("This is Version 1.27 of ChromHMM (c) Copyright 2008-2012 Massachusetts Institute of Technology");
+	    System.out.println("This is Version 1.28 of ChromHMM (c) Copyright 2008-2012 Massachusetts Institute of Technology");
 	}
         else if ((szcommand.equals("BinarizeBam"))||(szcommand.equalsIgnoreCase("BinarizeBed")))
 	{
@@ -13417,7 +13422,7 @@ public class ChromHMM
 	    int nsplitindex = -1;
 	    boolean bshift = false;
 	    boolean bflagsplitbins = false;
-
+	    boolean baddchr = false;
 	    boolean bflagsplitcols = false;
 
 	    boolean bsplitcols = false;
@@ -13435,7 +13440,11 @@ public class ChromHMM
 	       {
 	          while (nargindex < args.length-4)
 	          {
-                     if (args[nargindex].equals("-b"))
+		     if (args[nargindex].equals("-addchr"))
+		     {
+			 baddchr = true;
+		     }
+                     else if (args[nargindex].equals("-b"))
 		     {
 		        nbinsize = Integer.parseInt(args[++nargindex]);
 		     }
@@ -13673,7 +13682,7 @@ public class ChromHMM
 
 			    Preprocessing.makeBinaryDataFromPeaksSplit(szchromlengthfile, szmarkdir, szoutputbinarydir, szcellmarkfiletable,
 					                         nbinsize, bgzip, numsplitbins, nsplitindex, noffsetleft,noffsetright,
-								       bsplitcols,nnummarksplit,nmarksplitindex,bstacked);
+								       bsplitcols,nnummarksplit,nmarksplitindex,bstacked,baddchr);
 			}
 		     }
 		     else
@@ -13697,7 +13706,7 @@ public class ChromHMM
 		     
 		        Preprocessing.makeBinaryDataFromPeaksSplit(szchromlengthfile, szmarkdir, szoutputbinarydir, szcellmarkfiletable,
 					                         nbinsize, bgzip, numsplitbins, nsplitindex, noffsetleft,noffsetright,
-								   bsplitcols,nnummarksplit,nmarksplitindex, bstacked);
+								   bsplitcols,nnummarksplit,nmarksplitindex, bstacked,baddchr);
 		     }
 		  }
 		  else
@@ -13758,7 +13767,7 @@ public class ChromHMM
 						szoutputbinarydirsub,szoutputcontroldir,
 					        dpoissonthresh,dfoldthresh,bcontainsthresh,
 					        npseudocountcontrol,nbinsize,szcolfields,bpeaks, dcountthresh,szcommand.equalsIgnoreCase("BinarizeBam"),
-							     bpairend, bgzip, bsplit, numsplitbins, bsplitcols,nnummarksplit,nmarksplitindex, bstacked, bmixed);	   	        
+						bpairend, bgzip, bsplit, numsplitbins, bsplitcols,nnummarksplit,nmarksplitindex, bstacked, bmixed,baddchr);	   	        
 		      }
 		  }
 		  else
@@ -13811,7 +13820,7 @@ public class ChromHMM
 						szoutputbinarydir,szoutputcontroldir,
 					        dpoissonthresh,dfoldthresh,bcontainsthresh,
 					        npseudocountcontrol,nbinsize,szcolfields,bpeaks, dcountthresh,szcommand.equalsIgnoreCase("BinarizeBam"),
-							 bpairend, bgzip, bsplit, numsplitbins, bsplitcols,nnummarksplit,nmarksplitindex,bstacked,bmixed);	   	          
+						bpairend, bgzip, bsplit, numsplitbins, bsplitcols,nnummarksplit,nmarksplitindex,bstacked,bmixed,baddchr);	   	          
 		   
 		  }
 	       }
@@ -13827,14 +13836,14 @@ public class ChromHMM
 	       if (szcommand.equalsIgnoreCase("BinarizeBed"))
 	       {
 		   //v1.18 update
-                  System.out.println("usage BinarizeBed [-b binsize][-c controldir][-center][-colfields chromosome,start,end[,strand]][-e offsetend][-f foldthresh]"+
+                  System.out.println("usage BinarizeBed [-addchr][-b binsize][-c controldir][-center][-colfields chromosome,start,end[,strand]][-e offsetend][-f foldthresh]"+
                                   "[-g signalthresh][-gzip][-n shift][-o outputcontroldir][-p poissonthresh][-peaks [-i splitrowindex]][-s offsetstart][-splitcols [-k splitcolindex][-m numsplitcols]][-splitrows [-j numsplitbins]][-stacked][-strictthresh][-t outputsignaldir]"+
                                   "[-u pseudocountcontrol][-w flankwidthcontrol] "+
                                   "chromosomelengthfile inputbeddir cellmarkfiletable outputbinarydir");
 	       }
 	       else
 	       {
-		   System.out.println("usage BinarizeBam [-b binsize][-c controldir][-e offsetend][-f foldthresh]"+
+		   System.out.println("usage BinarizeBam [-addchr][-b binsize][-c controldir][-e offsetend][-f foldthresh]"+
                                   "[-g signalthresh][-gzip][[-o outputcontroldir][-p poissonthresh][-paired|[-mixed][-center][-n shift][-peaks [-i splitindex]]"+
                                   "[-s offsetstart][-splitcols [-k splitcolindex][-m numsplitcols]][-splitrows [-j numsplitbins]][-stacked][-strictthresh][-t outputsignaldir]"+
                                   "[-u pseudocountcontrol][-w flankwidthcontrol] "+
@@ -14416,7 +14425,7 @@ public class ChromHMM
 	           {
 	              if (!fposterior.mkdirs())
 	              {
-	                 throw new IllegalArgumentException(szoutputdir+"POSTERIOR does not exist and could not be created!");
+		         throw new IllegalArgumentException(szoutputdir+"/POSTERIOR does not exist and could not be created!"); //updated message in v1.28
 		      }
 		   }
 	       }//update in v1.20 to allow creating STATEBYLINE directory even if print posterior not asked for		      
@@ -14428,7 +14437,7 @@ public class ChromHMM
 	          {
 	             if (!fstatebyline.mkdirs())
 	             {
-	                throw new IllegalArgumentException(szoutputdir+" STATEBYLINE does not exist and could not be created!");
+		        throw new IllegalArgumentException(szoutputdir+"/STATEBYLINE does not exist and could not be created!"); //updated message in v1.28
 		     }			  
 		  }
 	       }

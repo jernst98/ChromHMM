@@ -907,15 +907,21 @@ public class StateAnalysis
 	    //stores each label position in the genome
 	    for (int npos = nbegin; npos <= nend; npos++)
 	    {
-		if ((!StateAnalysis.bfounddup) &&(labels_nchrom[npos] >= 0)&&(labels_nchrom[npos]!=slabel))
+		if (labels_nchrom[npos] >= 0)
 		{
-		    StateAnalysis.bfounddup = true;
-		    System.out.println("WARNING: found the same position assigned to multiple states. First example found: "+theSegmentRec.szchrom+
-				       ":"+(npos*nbinsize+1)+". Will use the last occurrence in file.");
-
+		    if ((!StateAnalysis.bfounddup)&&(labels_nchrom[npos]!=slabel))
+		    {
+		       StateAnalysis.bfounddup = true;
+		       System.out.println("WARNING: found the same position assigned to multiple states. First example found: "+theSegmentRec.szchrom+
+				       ":"+(npos*nbinsize+1)+". Will use the first occurrence in file.");
+		    }
 		}
-		labels_nchrom[npos] = slabel;
-		tallylabel[slabel]++; 
+		else
+		{
+		    //added above check in 1.28
+		   labels_nchrom[npos] = slabel;
+		   tallylabel[slabel]++; 
+		}
 	    }
 	}
 
@@ -1689,17 +1695,23 @@ public class StateAnalysis
 	     //stores each label position in the genome
 	     for (int npos = nbegin; npos <= nend; npos++)
 	     {
-		if ((!StateAnalysis.bfounddup) &&(labels[npos] >= 0)&&(labels[npos]!=slabel))
+		if (labels[npos] >= 0)
 		{
-		    StateAnalysis.bfounddup = true;
-		    System.out.println("WARNING: found the same position assigned to multiple states. First example found: "+szchrom+
-				       ":"+(npos*nbinsize+1)+". Will use the last occurrence in file.");
-
+		    if ((!StateAnalysis.bfounddup)&&(labels[npos]!=slabel)) 
+		    {
+		       StateAnalysis.bfounddup = true;
+		       System.out.println("WARNING: found the same position assigned to multiple states. First example found: "+szchrom+
+				       ":"+(npos*nbinsize+1)+". Will use the first occurrence in file.");
+		    }
 		}
-	        labels[npos] = slabel;
-	           //tallylabel[slabel]++; 
+		else
+		{
+	           labels[npos] = slabel;
+	           tallylabel[slabel]++; 
+		}
 	     }
-	     tallylabel[slabel] += (nend-nbegin)+1;
+	     //changed in 1.28 to check for duplicates
+	     //tallylabel[slabel] += (nend-nbegin)+1;
 	  }
 
 
@@ -3084,20 +3096,25 @@ public class StateAnalysis
 	      //short slabel = theSegmentRec.slabel;
 	      for (int npos = nbegin; npos <= nend; npos++)
 	      {
-	         if ((!StateAnalysis.bfounddup) &&(labels[npos] >= 0)&&(labels[npos]!=slabel))
+	         if (labels[npos] >= 0)
 		 {
-		    StateAnalysis.bfounddup = true;
-		    System.out.println("WARNING: found the same position assigned to multiple states. First example found: "+szchrom+
-				       ":"+(npos*nbinsize+1)+". Will use the last occurrence in file.");
-
+		    if ((!StateAnalysis.bfounddup)&&(labels[npos]!=slabel))
+		    {
+		       StateAnalysis.bfounddup = true;
+		       System.out.println("WARNING: found the same position assigned to multiple states. First example found: "+szchrom+
+				       ":"+(npos*nbinsize+1)+". Will use the first occurrence in file.");
+		    }
 		 }
-	         labels[npos] = slabel;
+		 else
+		 {
+	            labels[npos] = slabel;
+	            if (slabel >= 0)
+	            {
+			//changed in 1.28 to move here
+			tallylabel[slabel]++;//=(nend-nbegin)+1; 
+		    }	      
+		 }
 	      }
-
-	      if (slabel >= 0)
-	      {
-	         tallylabel[slabel]+=(nend-nbegin)+1; 
-	      }	      
 	   }
 	   brinputsegment.close();
 
@@ -3446,17 +3463,23 @@ public class StateAnalysis
 	    short slabel = theSegmentRec.slabel;
 	    for (int npos = nbegin; npos <= nend; npos++)
 	    {
-		if ((!StateAnalysis.bfounddup) &&(labels_nchrom[npos] >= 0)&&(labels_nchrom[npos]!=slabel))
+		if (labels_nchrom[npos] >= 0)
 		{
-		    StateAnalysis.bfounddup = true;
-		    System.out.println("WARNING: found the same position assigned to multiple states. First example found: "+theSegmentRec.szchrom+
-				       ":"+(npos*nbinsize+1)+". Will use the last occurrence in file.");
-
+		    if ((!StateAnalysis.bfounddup) && (labels_nchrom[npos]!=slabel))
+		    {
+		       StateAnalysis.bfounddup = true;
+		       System.out.println("WARNING: found the same position assigned to multiple states. First example found: "+theSegmentRec.szchrom+
+				       ":"+(npos*nbinsize+1)+". Will use the first occurrence in file.");
+		    }
 		}
-		labels_nchrom[npos] = slabel;
-		if (slabel >= 0)
+		else
 		{
-		   tallylabel[slabel]++; 
+		    //added above check in 1.28		    
+		   labels_nchrom[npos] = slabel;
+		   if (slabel >= 0)
+		   {
+		      tallylabel[slabel]++; 
+		   }
 		}
 	    }
 	}

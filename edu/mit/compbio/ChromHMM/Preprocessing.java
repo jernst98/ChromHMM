@@ -89,7 +89,7 @@ public class Preprocessing
                                  boolean bcenterinterval,int noffsetleft,
 				 int noffsetright,HashMap hmfiles, String szcell, String szmarkdir,HashMap hmchrom, 
                                  int ninitval, String szcolfields,boolean bpeaks,boolean bcontrol, boolean bbinarizebam, 
-                                 boolean bpairend,boolean bmixed) throws IOException
+                                 boolean bpairend,boolean bmixed, boolean baddchr) throws IOException
     {
 	int nummarks = grid[0][0].length;
 	//initalizes all values in grid to ninitval
@@ -210,6 +210,12 @@ public class Preprocessing
 			         int nstartorig  = rec.getAlignmentStart()-1;
 			         int nendorig = rec.getAlignmentEnd();
 			         String szchrom = rec.getReferenceName();
+				 if (baddchr)
+				 {
+				     //added in 1.28
+				    szchrom = "chr"+ szchrom;
+				 }
+
 			         boolean bnegstrand = rec.getReadNegativeStrandFlag();
 			         int ninsertsize = rec.getInferredInsertSize();
 
@@ -256,6 +262,12 @@ public class Preprocessing
 			      int nstartorig  = rec.getAlignmentStart()-1;
 		      	      int nendorig = rec.getAlignmentEnd();
 			      String szchrom = rec.getReferenceName();
+			      if (baddchr)
+			      {
+			         //added in 1.28
+			         szchrom = "chr"+ szchrom;
+			      }
+
 			      boolean bnegstrand = rec.getReadNegativeStrandFlag();
 			      boolean bunmapped = rec.getReadUnmappedFlag();
 
@@ -337,6 +349,11 @@ public class Preprocessing
 			      int nstartorig  = rec.getAlignmentStart()-1;
 			      int nendorig = rec.getAlignmentEnd();
 			      String szchrom = rec.getReferenceName();
+			      if (baddchr)
+			      {
+			         //added in 1.28
+			         szchrom = "chr"+ szchrom;
+			      }
 			      boolean bnegstrand = rec.getReadNegativeStrandFlag();
 			      int ninsertsize = rec.getInferredInsertSize();
 
@@ -386,6 +403,12 @@ public class Preprocessing
 			   int nstartorig  = rec.getAlignmentStart()-1;
 			   int nendorig = rec.getAlignmentEnd();
 			   String szchrom = rec.getReferenceName();
+			   if (baddchr)
+			   {
+		              //added in 1.28
+			      szchrom = "chr"+ szchrom;
+			   }
+
 			   boolean bnegstrand = rec.getReadNegativeStrandFlag();
 			   boolean bunmapped = rec.getReadUnmappedFlag();
 
@@ -462,6 +485,11 @@ public class Preprocessing
 	               {
 		          String[] szLineA = szLine.split("\\s+");
 		          String szchrom = szLineA[nchromcol];
+			   if (baddchr)
+			   {
+		              //added in 1.28
+			      szchrom = "chr"+ szchrom;
+			   }
 
  	                  Integer objInt = (Integer) hmchrom.get(szchrom);
 
@@ -538,6 +566,12 @@ public class Preprocessing
 		             throw new IllegalArgumentException("Empty line found in "+szmarkdir+"/"+szfile);
 			  }
 		          String szchrom = st.nextToken();//.trim();
+			  if (baddchr)
+			  {
+		             //added in 1.28
+			     szchrom = "chr"+ szchrom;
+			  }
+
 		          Integer objInt = (Integer) hmchrom.get(szchrom);
 
 		          //if we don't have the chromosome for the read will ignore it
@@ -636,11 +670,11 @@ public class Preprocessing
 
 		if (bbinarizebam)
 		{
-		    System.out.println(". Check if the chromosome naming is consistent between the chromosome length files and the bam files.");
+		    System.out.println(". Check if the chromosome naming is consistent between the chromosome length files and the bam files or if the '-addchr' flag should be used.");
 		}
 		else
 		{
-                    System.out.println(". Check if the chromosome naming is consistent between the chromosome length files and the bed files.");
+                    System.out.println(". Check if the chromosome naming is consistent between the chromosome length files and the bed files or if the '-addchr' flag should be used.");
 		}
 	     }
 	  }
@@ -651,7 +685,7 @@ public class Preprocessing
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     public static void makeBinaryDataFromPeaksSplit(String szchromlengthfile, String szmarkdir, String szoutputbinarydir, String szcellmarkfiletable, 
 						    int nbinsize, boolean bgzip, int numsplitbins, int nsplit, int noffsetleft, int noffsetright,
-						    boolean bsplitcols,int nnummarksplit,int nmarksplitindex, boolean bstacked) throws IOException
+						    boolean bsplitcols,int nnummarksplit,int nmarksplitindex, boolean bstacked, boolean baddchr) throws IOException
     {
 	//reads in the chromosome length information file
 	//the first column of this file is the chromosome and the second is the chromsome length
@@ -660,7 +694,11 @@ public class Preprocessing
 	ArrayList allines = new ArrayList();
 	while ((szLine = brchrom.readLine())!=null)
 	{
-	   allines.add(szLine);
+	   if (!szLine.trim().equals(""))
+	   {
+	       //added in v1.28
+	      allines.add(szLine);
+	   }
 	}
 	brchrom.close();
 
@@ -807,6 +845,12 @@ public class Preprocessing
 		       StringTokenizer st = new StringTokenizer(szLine,"\t");
 		       if (st.countTokens() == 0) continue;
 		       String szchrom = st.nextToken().trim();
+		       if (baddchr)
+		       {
+		          //added in 1.28
+		          szchrom = "chr"+ szchrom;
+		       }
+
 		       if (szchrom.equals(szcurrchrom))
 		       {
 			  int nbegin = (Integer.parseInt(st.nextToken().trim())-noffsetleft)/nbinsize;
@@ -985,7 +1029,7 @@ public class Preprocessing
 					     double dpoissonthresh, double dfoldthresh,boolean bcontainsthresh, int npseudocountcontrol,int nbinsize,
 					     String szcolfields, boolean bpeaks, double dcountthresh, boolean bbinarizebam, boolean bpairend,
 					     boolean bgzip, boolean bsplit, int numsplitbins,
-					     boolean bsplitcols,int nnummarksplit,int nmarksplitindex, boolean bstacked, boolean bmixed
+					     boolean bsplitcols,int nnummarksplit,int nmarksplitindex, boolean bstacked, boolean bmixed, boolean baddchr
                                             ) throws IOException
     {
 
@@ -996,7 +1040,10 @@ public class Preprocessing
 	ArrayList allines = new ArrayList();
 	while ((szLine = brchrom.readLine())!=null)
 	{
-	    allines.add(szLine);
+	   if (!szLine.trim().equals(""))
+	   {
+	      allines.add(szLine);
+	   }
 	}
 	brchrom.close();
 
@@ -1186,7 +1233,7 @@ public class Preprocessing
 
 	    //loading data for the cell type
 	    loadGrid(grid,bpresent,bpresentmarks,marks,nshift,nbinsize,bcenterinterval,noffsetleft,
-		     noffsetright,hmfiles,szcell,szmarkdir,hmchrom,0,szcolfields,bpeaks,false,bbinarizebam, bpairend,bmixed);
+		     noffsetright,hmfiles,szcell,szmarkdir,hmchrom,0,szcolfields,bpeaks,false,bbinarizebam, bpairend,bmixed, baddchr);
 	    if (bcontrolfile)
 	    {
 	       if ((gridcontrol[0] == null)||(gridcontrol[0][0].length !=numcontrolmarks))
@@ -1202,7 +1249,7 @@ public class Preprocessing
 
 	       //we have control data loading cell type data for that
 	       loadGrid(gridcontrol,bpresentcontrol,bpresentmarkscontrol,marks,nshift,nbinsize,bcenterinterval,noffsetleft,noffsetright,
-                        hmfilescontrol,szcell,szcontroldir,hmchrom,npseudocountcontrol,szcolfields,bpeaks,true,bbinarizebam,bpairend,bmixed);
+                        hmfilescontrol,szcell,szcontroldir,hmchrom,npseudocountcontrol,szcolfields,bpeaks,true,bbinarizebam,bpairend,bmixed,baddchr);
 	    }
 	    
 
@@ -3943,23 +3990,13 @@ public class Preprocessing
 	   {
 	      int nsplit = 0;
 	      boolean bnull = false;
+	      GZIPOutputStream pwzip = null;
+	      PrintWriter pw = null;
+
 	      while (!bnull)
 	      {
 	         if (bgzip)
 	         {
-		     //System.out.println(szcell+"_"+szchrom+"."+nsplit);
-		     //GZIPOutputStream pwzip = new GZIPOutputStream(new FileOutputStream(szoutputdir+"/"+szcell+"_"+szchrom+"."+nsplit+"_binary.txt.gz"));
-		    GZIPOutputStream pwzip = new GZIPOutputStream(new FileOutputStream(szoutputdir+"/"+szcell+"_"+szchrom+"."+nsplit+"_"+szfiletype+".txt.gz"));
-										    //szfile));
-	            //PrintWriter pw = new PrintWriter(new FileWriter(szoutputdir+"/"+szcell+"_"+szmark+"_binary.txt"));
-	            //need to read here
-		    String szout = szcell+"\t"+szchrom+"."+nsplit+"\n";
-		    byte[] btformat = szout.getBytes();
-		    pwzip.write(btformat,0,btformat.length);
-
-	            //pw.println(szcell+"\t"+szmark);
-		    btformat = (szmergedheader+"\n").getBytes();
-                    pwzip.write(btformat,0,btformat.length);
 
 	            //pw.println(szmergedheader);
 	            //boolean bnull = false;
@@ -4002,27 +4039,41 @@ public class Preprocessing
 
 		       if (!bnull)
 		       {
-		          btformat = (sbout.toString()+"\n").getBytes();
+			  if (nline == 0)
+			  {
+			     //moved to v.1.28
+		             //System.out.println(szcell+"_"+szchrom+"."+nsplit);
+		             //GZIPOutputStream pwzip = new GZIPOutputStream(new FileOutputStream(szoutputdir+"/"+szcell+"_"+szchrom+"."+nsplit+"_binary.txt.gz"));
+		              pwzip = new GZIPOutputStream(new FileOutputStream(szoutputdir+"/"+szcell+"_"+szchrom+"."+nsplit+"_"+szfiletype+".txt.gz"));										    //szfile));
+	                      //PrintWriter pw = new PrintWriter(new FileWriter(szoutputdir+"/"+szcell+"_"+szmark+"_binary.txt"));
+	                      //need to read here
+		              String szout = szcell+"\t"+szchrom+"."+nsplit+"\n";
+		              byte[] btformat = szout.getBytes();
+			      pwzip.write(btformat,0,btformat.length);
+
+	                      //pw.println(szcell+"\t"+szmark);
+		              btformat = (szmergedheader+"\n").getBytes();
+                              pwzip.write(btformat,0,btformat.length);			  
+			  }
+		          byte[] btformat = (sbout.toString()+"\n").getBytes();
 		          pwzip.write(btformat,0,btformat.length);
 		       //pw.println(sbout.toString());
 		       }
 		       nline++;
 		    }
 		    nsplit++;
-		    pwzip.finish();
-	            pwzip.close();
+		    if (pwzip != null)
+		    {
+		       pwzip.finish();
+	               pwzip.close();
+		       pwzip = null;
+		    }
 		 }	      
 	         else
 	         {
 		    //StringTokenizer st = new StringTokenizer(chromfilescombine[nfile],"\t");
 		    //String szcell = st.nextToken();
 		    //String szmark = st.nextToken();
-		     //System.out.println(szcell+"_"+szchrom+"."+nsplit);
-		     //PrintWriter pw = new PrintWriter(new FileWriter(szoutputdir+"/"+szcell+"_"+szchrom+"."+nsplit+"_binary.txt"));
-	            PrintWriter pw = new PrintWriter(new FileWriter(szoutputdir+"/"+szcell+"_"+szchrom+"."+nsplit+"_"+szfiletype+".txt"));
-	            //need to read here
-	            pw.println(szcell+"\t"+szchrom+"."+nsplit);
-	            pw.println(szmergedheader);
 
 
 		    int nline = 0;
@@ -4066,12 +4117,27 @@ public class Preprocessing
 
 		       if (!bnull)
 		       {
-		          pw.println(sbout.toString());
+
+			   if (nline == 0)
+			   {
+			      //moved in v1.28
+	 	              //System.out.println(szcell+"_"+szchrom+"."+nsplit);
+		              //PrintWriter pw = new PrintWriter(new FileWriter(szoutputdir+"/"+szcell+"_"+szchrom+"."+nsplit+"_binary.txt"));
+	                      pw = new PrintWriter(new FileWriter(szoutputdir+"/"+szcell+"_"+szchrom+"."+nsplit+"_"+szfiletype+".txt"));
+	                      //need to read here
+	                      pw.println(szcell+"\t"+szchrom+"."+nsplit);
+	                      pw.println(szmergedheader);
+			      pw.println(sbout.toString());
+			   }
 		       }
 		       nline++;
 		    }
 		    nsplit++;
-	            pw.close();
+		    if (pw != null)
+		    {
+	               pw.close();
+		       pw = null;
+		    }
 		 }
 	      }
 	   }

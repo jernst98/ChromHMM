@@ -1,9 +1,18 @@
+6/16/2026 ChromHMM 1.28
+* Added the '-addchr' flag in BinarizeBam and BinarizeBed which adds the 'chr' prefix to the chromosome entry 
+* Fixed a bug with LearnModel when using the '-many' with the '-lowmem' flag but not using the many '-p' flag
+* For computing enrichments updated handling of case in which the same position could be assigned to different states for consistent handling of foreground and background.  Now both foreground and background are based on the first state assignment at a position.
+* Updated MergeBinary to avoid a possible situation of binary file with no entries being generated when the '-splitrows' flag is present
+* Improved error message and error handling in a few cases
+
+
 7/6/2025 ChromHMM 1.27
 * Fixed a bug with the '-stacked' in BinarizeBam and BinarizeBed so marks are now actually named cell_mark as intended
 * Added warning message if the same base is annotated to different states when conducting an OverlapEnrichment or NeighborhoodEnrichment
 * Added additional error checking on input coordinates for OverlapEnrichment and more informative error messages
 * Added the requirement that the values in the signal column be non-negative when using the '-signal' with OverlapEnrichment and throws error if that
 is violated. Previously this was implicitly assumed but not explicitly documented and there was no error checking.
+
 
 1/2/2025 ChromHMM 1.26
 * Added to ChromHMM's output -log10 p-values of enrichments when using OverlapEnrichment with the '-center' flag. This can be suppressed with the use of the '-nopvals' flag
